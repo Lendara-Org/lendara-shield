@@ -9,10 +9,11 @@ define pending
 endef
 
 .PHONY: help install dev dev-api dev-web db-up db-down migrate setup-testnet \
-	fmt lint typecheck test test-testnet coverage codegen build
+	fmt fmt-check lint lint-api lint-js typecheck test test-api test-js test-testnet coverage deny \
+	codegen build build-api build-js
 
 help: ## List available targets
-	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*## "}; {printf "  %-15s %s\n", $$1, $$2}'
+	@grep -hE '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*## "}; {printf "  %-15s %s\n", $$1, $$2}'
 
 install: ## Install JS dependencies and git hooks
 	pnpm install
@@ -26,38 +27,59 @@ db-down: ## Stop local Postgres (data volume is kept)
 dev: ## Run API and web together
 	$(call pending,H2 and H7)
 
-dev-api: ## Run the API
-	$(call pending,H2)
+dev-api: ## Run the API (applies pending migrations first)
+	cd $(API_DIR) && cargo run
 
 dev-web: ## Run the web app
 	$(call pending,H7)
 
-migrate: ## Apply database migrations
-	$(call pending,H2)
+migrate: ## Apply database migrations and exit
+	cd $(API_DIR) && cargo run --quiet -- migrate
 
 setup-testnet: ## Create and fund testnet accounts, deploy the pool (idempotent)
 	$(call pending,H4)
 
 fmt: ## Format all code
-	$(call pending,H2)
+	cd $(API_DIR) && cargo fmt
 
-lint: ## Lint all code
+fmt-check: ## Fail if any code is not formatted
+	cd $(API_DIR) && cargo fmt --check
+
+lint: lint-api lint-js ## Lint all code
+
+lint-api: ## Clippy with warnings as errors
+	cd $(API_DIR) && cargo clippy --all-targets --all-features -- -D warnings
+
+lint-js: ## Lint TS packages
 	pnpm lint
 
 typecheck: ## Type-check TS packages
 	pnpm typecheck
 
-test: ## Run all tests except testnet ones
+test: test-api test-js ## Run all tests except testnet ones (needs `make db-up`)
+
+test-api: ## API tests against local Postgres (DATABASE_URL)
+	cd $(API_DIR) && cargo test
+
+test-js: ## Test TS packages
 	pnpm test
 
 test-testnet: ## Run end-to-end tests against Stellar testnet (needs .env)
 	$(call pending,H4)
 
-coverage: ## Coverage report for the API
-	$(call pending,H2)
+coverage: ## API coverage summary; `main.rs` is wiring only and excluded
+	cd $(API_DIR) && cargo llvm-cov --ignore-filename-regex 'src/main\.rs' --summary-only
+
+deny: ## Licenses, advisories and sources of API dependencies
+	cd $(API_DIR) && cargo deny check
 
 codegen: ## Generate TS types from openapi.yaml
 	$(call pending,H3)
 
-build: ## Build everything
+build: build-api build-js ## Build everything
+
+build-api: ## Release build of the API
+	cd $(API_DIR) && cargo build --release --locked
+
+build-js: ## Build TS packages
 	pnpm build

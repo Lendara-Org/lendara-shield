@@ -489,7 +489,7 @@ apps/api/src/
 - Fixtures de testnet **sin secretos**: solo cuentas públicas y hashes.
 - Nada de `sleep` en los tests: usar el `Clock` falso y `tokio::time::pause()`.
 - Nombres de test que describen comportamiento: `rejects_transition_from_completed_to_shielding`.
-- **Cobertura** con `cargo llvm-cov`: meta **≥ 90 %** en `domain/`, `intent/` y `asp/`; ≥ 75 % en total. Se reporta en cada PR; no se persigue el número con tests vacíos.
+- **Cobertura** con `cargo llvm-cov` (`make coverage`; excluye `main.rs`, que solo conecta piezas): meta **≥ 90 %** en `domain/`, `intent/` y `asp/`; ≥ 75 % en total. Se reporta en cada PR; no se persigue el número con tests vacíos.
 
 **Frontend (web)**
 
@@ -525,7 +525,7 @@ Cada PR deja el repo funcionando. Marcar ✅ al completar.
 |---|---|---|---|---|
 | H0 ✅ | Scaffold | `chore/repo-scaffold` | Estructura, pnpm workspace, `Makefile`, `docker-compose.yml`, `.gitignore`, `.editorconfig`, `.env.example`, plantilla de PR, CI básico con gitleaks, README esqueleto | `make db-up` levanta Postgres; `pnpm install` funciona; CI en verde |
 | H1 ✅ | Spike de SPP | `spike/spp-verification` | **Timebox: 90 minutos.** Verificar en el repo de Nethermind: (a) si se puede desplegar un pool propio para un activo SEP-41 arbitrario con allow-list y admin propio; (b) si el SDK nativo de Rust funciona del lado servidor con un signer propio (depósito + transferencia a una llave registrada); (c) cómo funciona el registro de llaves públicas; (d) el SDK web en Next.js; (e) si la intake puede derivar y guardar sus propias llaves del pool en el servidor sin Freighter; (f) en el código del sandbox (`Bitacora/lendara`), si SEP-10 acepta `memo` en el challenge y si SEP-24 acepta `memo`/`memo_type` hacia una cuenta ajena (D4). Script mínimo que hace depósito → transferencia → retiro desde el servidor. Resultado en `docs/spikes/spp.md` con la decisión de D1 y D2 | Hashes reales de las tres operaciones; decisiones D1 y D2 confirmadas con Anouk |
-| H2 | Esqueleto del API | `feat/api-skeleton` | Crate, config por env, Axum, `/health`, Postgres + migraciones, `tracing`, manejo de errores | `make dev-api` responde `/health` con la base conectada |
+| H2 ✅ | Esqueleto del API | `feat/api-skeleton` | Crate, config por env, Axum, `/health`, Postgres + migraciones, `tracing`, manejo de errores | `make dev-api` responde `/health` con la base conectada |
 | H3 | Contrato OpenAPI | `feat/repo-openapi` | `openapi.yaml` (sección 7.8), `packages/api-types` con `openapi-typescript`, `make codegen` | Codegen corre sin errores; los tipos compilan |
 | H4 | Setup testnet + pool | `feat/api-testnet-setup` | `make setup-testnet` (sección 7.1), despliegue del SAC del USDC del sandbox (plan A), pool según el plan A o B, `GET /v1/info` | El script es idempotente; `/v1/info` devuelve el contrato del pool |
 | H5 | Onboarding y ASP | `feat/api-asp-onboarding` | `shield_users`, `asp_events`, KYC simulado con escenarios, allow-list y block-list (o simulación en plan B), tests | `approved` agrega la llave; `rejected` no; `blocked` congela; hashes reales |
@@ -589,7 +589,8 @@ Cada una tiene una recomendación. Si Anouk no responde y el PR no puede esperar
 ### Estado
 - H0 (scaffold) ✅ en `chore/repo-scaffold` (25-oct): pnpm workspace, Makefile, Postgres 17, CI (JS, gitleaks, actionlint), validación del título del PR, lefthook + commitlint, Apache-2.0.
 - H1 (spike de SPP) ✅ en `spike/spp-verification` (25-oct): depósito, transferencia privada, retiro y auditoría con GVK desde el servidor, con hashes reales. Detalle en `docs/spikes/spp.md`.
-- Siguiente: H2 (esqueleto del API).
+- H2 (esqueleto del API) ✅ en `feat/api-skeleton` (25-oct): crate `shield-api`, config validada, `ApiError`, tracing JSON, `/health` (200/503), request id, CORS, timeout, apagado ordenado, migraciones embebidas, job `api` en el CI, 23 tests, cobertura 97 % de líneas (sin `main.rs`).
+- Siguiente: H3 (contrato OpenAPI).
 
 ### Riesgos identificados (25-oct)
 1. **Tiempo:** 12 PRs en ~1 día. ~~Plan B del backend~~ descartado en H1.
@@ -609,6 +610,10 @@ Cada una tiene una recomendación. Si Anouk no responde y el PR no puede esperar
 - El pnpm global de la máquina de Anouk es 9.x; el repo fija `pnpm@12.10.1` en `packageManager` y corepack lo usa automáticamente dentro de la carpeta.
 - gitleaks y actionlint no están instalados localmente: correrlos con Docker usando las mismas imágenes del CI.
 - Los targets del `Makefile` cuyo código llega en un PR futuro imprimen "arrives in Hx" en vez de fallar. Cada PR los reemplaza por el comando real.
+- API: las migraciones van embebidas (`sqlx::migrate!`), se aplican al arrancar y con `make migrate`; no hace falta `sqlx-cli` hasta que existan consultas con `query!` (entonces: `cargo sqlx prepare` y el chequeo en el CI).
+- API: `sqlx` 0.9 (versión mayor nueva, oct-2026). La API usada (`PgPoolOptions`, `migrate!`, `#[sqlx::test]`) no cambió respecto a 0.8.
+- API: `cargo test` necesita Postgres arriba (`make db-up`) y `DATABASE_URL`; el `Makefile` la toma del `.env`. `#[sqlx::test]` crea una base aislada por test.
+- `make lint/test/build` corren Rust + JS; el CI usa los targets separados (`-api`, `-js`).
 - SPP: fijar el tag `sdk-v0.2.1` (contratos, crate y npm coinciden). El tag `alpha` de npm está viejo: usar `stellar-private-payments@0.2.1`.
 - SPP: compilar en `--release` (el prover en debug es muy lento). La primera ejecución descarga los artefactos de circuito (~30 s).
 - `deploy.sh` de SPP termina con dos `notice` de custodia (admin sin multisig): esperado en testnet.
