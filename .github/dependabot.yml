@@ -6,3 +6,9 @@ updates:
       interval: weekly
     commit-message:
       prefix: ci(repo)
+  - package-ecosystem: cargo
+    directory: /apps/api
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: chore(api)
