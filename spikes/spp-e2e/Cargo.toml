@@ -1,0 +1,18 @@
+[package]
+name = "spp-e2e"
+version = "0.0.0"
+edition = "2024"
+license = "Apache-2.0"
+publish = false
+description = "H1 spike: server-side deposit, private transfer, withdraw and GVK audit with the Stellar Private Payments Rust SDK"
+
+# Standalone crate: not part of any workspace.
+[workspace]
+
+[dependencies]
+serde_json = "1"
+stellar-private-payments = "=0.2.1"
+tokio = { version = "1", features = ["rt-multi-thread"] }
+
+[profile.release]
+debug = false

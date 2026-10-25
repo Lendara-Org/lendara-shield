@@ -148,20 +148,21 @@ Shield se usa de dos maneras. **No son dos productos ni dos códigos**: comparte
 ### 2.1 Flujo del modo `ramp` (de punta a punta)
 
 ```
-1. Usuario conecta su wallet en la web de Shield, deriva sus llaves del pool
-   y registra su llave pública (registry del pool).
-2. KYC simulado en Shield → si se aprueba, el ASP agrega su llave a la allow-list.
+1. Usuario conecta su wallet en la web de Shield y deriva sus llaves del pool.
+   La web le manda a Shield sus llaves públicas (nota + cifrado) y su hoja ASP
+   (deriveAspUserLeaf). NO se registra en el registry on-chain (expondría su G).
+2. KYC simulado en Shield → si se aprueba, el ASP (operator) inserta su hoja en la allow-list.
 3. POST /v1/intents {mode:"ramp", fiat_currency, amount}
-   → Shield hace SEP-10 contra el anchor (intake account + memo = intent id)
+   → Shield hace SEP-10 contra el anchor (intake account + memo id = id numérico del usuario)
    → Shield pide POST /sep24/transactions/deposit/interactive
-       {asset_code:"USDC", account:<intake>, memo:<intent id>, memo_type:"id"|"text"}
+       {asset_code:"USDC", account:<intake>, memo:<memo numérico del intent>, memo_type:"id"}
    → devuelve la URL interactiva del anchor.
 4. El usuario completa el widget del anchor (en el sandbox: "Simular pago").
 5. El anchor paga USDC a la intake account con el memo del intent.
 6. El watcher de Shield detecta el pago (Horizon), lo empareja por memo
    y verifica asset, issuer y monto.
 7. El worker deposita en el pool desde la intake account (ext_amount > 0).
-8. El worker transfiere en privado a la llave registrada del usuario (ext_amount = 0).
+8. El worker transfiere en privado a las llaves del usuario guardadas en Shield (ext_amount = 0).
 9. Intent → completed. El usuario ve su saldo privado en la web.
 ```
 
@@ -296,24 +297,25 @@ Datos conocidos de SPP (del anuncio oficial; **verificar contra el repo en el sp
 |---|---|---|
 | Operator | Despliega y administra el pool; administra el ASP | `SHIELD_OPERATOR_SECRET` |
 | Intake | Cuenta ómnibus: recibe USDC del anchor, deposita en el pool y transfiere en privado | `SHIELD_INTAKE_SECRET` |
-| Auditor | Dueña de la view key global | `SHIELD_AUDITOR_SECRET` (o la view key directa, según el SDK) |
+| Auditor | View key global (GVK): llave **Baby JubJub**, no de Stellar. Se genera con `tools/gvkey-gen` de SPP; su pública se fija al desplegar el pool | `SHIELD_GVK_KEY_FILE` (ruta al JSON `{privateKey, publicKey}`, fuera del repo) |
 
 - **Activo:** el USDC de prueba del sandbox de Lendara (mismo issuer, `RAMP_ASSET_ISSUER`), para que el modo ramp funcione de punta a punta. La intake necesita trustline a ese activo.
 - **SAC:** el USDC del sandbox es un activo clásico; el pool necesita un token SEP-41. `setup-testnet` despliega (o reutiliza si ya existe) su Stellar Asset Contract y guarda el contract id en `SHIELD_ASSET_CONTRACT`.
-- **Llaves del pool de la intake:** la intake es dueña de la nota intermedia (depósito) antes de transferirla al usuario. Sus llaves del pool se derivan en el servidor y van en `SHIELD_INTAKE_POOL_SEED` (o lo que defina el SDK; confirmar en H1).
+- **Llaves del pool de la intake:** la intake es dueña de la nota intermedia (depósito) antes de transferirla al usuario. El SDK las deriva en el servidor firmando con `SHIELD_INTAKE_SECRET` y las guarda en su wallet SQLite (`SHIELD_INTAKE_WALLET_PATH`, fuera del repo). Verificado en H1.
 - **Script `make setup-testnet`** (`apps/api/src/bin/setup_testnet.rs`): crea y fondea las cuentas con Friendbot, crea la trustline de la intake, despliega o configura el pool (sección 7.2) e imprime las variables para `.env`. **Idempotente.**
 
 ### 7.2 Configuración del pool
 
-- **Plan A (preferido):** desplegar un pool propio de SPP para el USDC del sandbox, en modo **allow-list + block-list**, con Shield (operator) como ASP. Esto permite demostrar el portero.
+- **Decidido en H1: plan A.** Configuración: `allowlist-blocklist` + `gvk-traceable`, contratos del tag `sdk-v0.2.1` de SPP con su `deploy.sh`. **La allow-list solo permite agregar** (`insert_leaf`); bloquear = insertar en la block-list (`asp-non-membership`, que permite `delete_leaf`).
+- **Plan A:** desplegar un pool propio de SPP para el USDC del sandbox, en modo **allow-list + block-list**, con Shield (operator) como ASP. Esto permite demostrar el portero.
 - **Plan B:** usar un pool existente de testnet (XLM o EURC). Se pierde el control del ASP (la demo hospedada usa solo block-list): el rechazo de KYC se demuestra en Shield (no se deposita por esa persona) y se explica que en producción sería el ASP del pool.
 - La decisión se toma en el spike H1 y se registra en `docs/spikes/spp.md` y en la sección 13.
 
 ### 7.3 Modelo de datos (borrador)
 
-- `shield_users` (id, stellar_account, pool_public_key, kyc_status, asp_status, kyc_scenario, created_at, updated_at)
+- `shield_users` (id, stellar_account, sep10_memo `bigint` UNIQUE, note_public_key, encryption_public_key, asp_leaf, kyc_status, asp_status, kyc_scenario, created_at, updated_at)
 - `asp_events` (id, user_id, action `allow|revoke|block|unblock`, tx_hash, created_at)
-- `intents` (id, mode `ramp`, user_id, status, fiat_currency, amount_fiat, asset_code, amount_stroops, anchor_home_domain, anchor_tx_id, memo, intake_payment_tx_hash, pool_deposit_tx_hash, pool_transfer_tx_hash, next_attempt_at, attempts, message, created_at, updated_at, completed_at)
+- `intents` (id, mode `ramp`, user_id, status, fiat_currency, amount_fiat, asset_code, amount_stroops, anchor_home_domain, anchor_tx_id, memo `bigint` UNIQUE (memo `id` de SEP-24), intake_payment_tx_hash, pool_deposit_tx_hash, pool_transfer_tx_hash, next_attempt_at, attempts, message, created_at, updated_at, completed_at)
 - `intent_events` (id, intent_id, from_status, to_status, created_at)
 
 Estados y enums como `text` + `CHECK`. Montos en `bigint` (stroops) o `numeric` leído como string.
@@ -337,12 +339,12 @@ Salidas de error:
 - Implementada en **un solo módulo** (`apps/api/src/intent/state.rs`), con transiciones explícitas y validadas. Una transición inválida es un error, no un no-op.
 - Toda transición registra un `intent_events`.
 - Tests unitarios de todas las transiciones válidas e inválidas.
-- **Idempotencia:** se guarda el hash de cada transacción antes de enviarla; al reintentar se consulta su estado en la red.
+- **Idempotencia:** se guarda el hash de cada transacción antes de enviarla; al reintentar se consulta su estado en la red. El SDK lo permite: `prepare_*` → `prove_next` → `sign` (da el hash) → guardar → `submit` → `confirm(hash)`. No usar `deposit()`/`transfer()` de un solo paso en el worker.
 - Para seguir el estado del anchor se consulta `GET /sep24/transaction?id=...` (el sandbox no tiene webhooks).
 
 ### 7.5 KYC simulado y ASP
 
-- Onboarding: el usuario conecta Freighter, deriva sus llaves del pool, registra su llave pública y llama a `POST /v1/onboarding`.
+- Onboarding: el usuario conecta Freighter, deriva sus llaves del pool y llama a `POST /v1/onboarding` con su cuenta, sus llaves públicas y su hoja ASP. Shield valida y, si el KYC aprueba, el operator invoca `insert_leaf` en el contrato ASP. **El SDK no trae funciones de admin del ASP:** H5 implementa un adaptador `AspContract` (invocación Soroban firmada por el operator).
 - **Escenarios de KYC de Shield** (para el modo direct y para la demo), elegidos con un campo `scenario` en el onboarding (solo sandbox):
 
 | Escenario | Resultado |
@@ -522,7 +524,7 @@ Cada PR deja el repo funcionando. Marcar ✅ al completar.
 | # | PR | Rama | Contenido | Criterio de aceptación |
 |---|---|---|---|---|
 | H0 ✅ | Scaffold | `chore/repo-scaffold` | Estructura, pnpm workspace, `Makefile`, `docker-compose.yml`, `.gitignore`, `.editorconfig`, `.env.example`, plantilla de PR, CI básico con gitleaks, README esqueleto | `make db-up` levanta Postgres; `pnpm install` funciona; CI en verde |
-| H1 | Spike de SPP | `spike/spp-verification` | **Timebox: 90 minutos.** Verificar en el repo de Nethermind: (a) si se puede desplegar un pool propio para un activo SEP-41 arbitrario con allow-list y admin propio; (b) si el SDK nativo de Rust funciona del lado servidor con un signer propio (depósito + transferencia a una llave registrada); (c) cómo funciona el registro de llaves públicas; (d) el SDK web en Next.js; (e) si la intake puede derivar y guardar sus propias llaves del pool en el servidor sin Freighter; (f) en el código del sandbox (`Bitacora/lendara`), si SEP-10 acepta `memo` en el challenge y si SEP-24 acepta `memo`/`memo_type` hacia una cuenta ajena (D4). Script mínimo que hace depósito → transferencia → retiro desde el servidor. Resultado en `docs/spikes/spp.md` con la decisión de D1 y D2 | Hashes reales de las tres operaciones; decisiones D1 y D2 confirmadas con Anouk |
+| H1 ✅ | Spike de SPP | `spike/spp-verification` | **Timebox: 90 minutos.** Verificar en el repo de Nethermind: (a) si se puede desplegar un pool propio para un activo SEP-41 arbitrario con allow-list y admin propio; (b) si el SDK nativo de Rust funciona del lado servidor con un signer propio (depósito + transferencia a una llave registrada); (c) cómo funciona el registro de llaves públicas; (d) el SDK web en Next.js; (e) si la intake puede derivar y guardar sus propias llaves del pool en el servidor sin Freighter; (f) en el código del sandbox (`Bitacora/lendara`), si SEP-10 acepta `memo` en el challenge y si SEP-24 acepta `memo`/`memo_type` hacia una cuenta ajena (D4). Script mínimo que hace depósito → transferencia → retiro desde el servidor. Resultado en `docs/spikes/spp.md` con la decisión de D1 y D2 | Hashes reales de las tres operaciones; decisiones D1 y D2 confirmadas con Anouk |
 | H2 | Esqueleto del API | `feat/api-skeleton` | Crate, config por env, Axum, `/health`, Postgres + migraciones, `tracing`, manejo de errores | `make dev-api` responde `/health` con la base conectada |
 | H3 | Contrato OpenAPI | `feat/repo-openapi` | `openapi.yaml` (sección 7.8), `packages/api-types` con `openapi-typescript`, `make codegen` | Codegen corre sin errores; los tipos compilan |
 | H4 | Setup testnet + pool | `feat/api-testnet-setup` | `make setup-testnet` (sección 7.1), despliegue del SAC del USDC del sandbox (plan A), pool según el plan A o B, `GET /v1/info` | El script es idempotente; `/v1/info` devuelve el contrato del pool |
@@ -571,12 +573,12 @@ Cada una tiene una recomendación. Si Anouk no responde y el PR no puede esperar
 
 | # | Decisión | Recomendación | Antes del PR |
 |---|---|---|---|
-| D1 | Lenguaje del backend | Rust (Axum) si el SDK nativo de SPP funciona del lado servidor; si no, Go + sidecar Node con el SDK web | H2 (se decide en H1) |
-| D2 | Pool propio o existente | Plan A: pool propio para el USDC del sandbox con allow-list. Plan B: pool de XLM o EURC existente | H4 (se decide en H1) |
-| D3 | Cómo se identifica al receptor en el pool | Su dirección G registrada en el registro de llaves del pool (si el SDK lo permite); si no, la llave pública de la nota | H5 |
-| D4 | Tipo de memo hacia el anchor | `id` (entero) si el sandbox lo acepta en SEP-10 y SEP-24; si no, `text` | H6a |
+| D1 | Lenguaje del backend | ✅ **Rust (Axum)** + `stellar-private-payments = "=0.2.1"` (H1) | — |
+| D2 | Pool propio o existente | ✅ **Plan A**: pool propio `allowlist-blocklist` + `gvk-traceable` (H1) | — |
+| D3 | Cómo se identifica al receptor en el pool | ✅ **Llaves públicas crudas** (nota + cifrado) guardadas en Shield; sin registry on-chain porque expone la G (H1, hallazgo 8). Verificar con hash real en H6b | — |
+| D4 | Tipo de memo hacia el anchor | ✅ **`id`**: SEP-10 con el memo del usuario, SEP-24 con el memo del intent (columnas `bigint`). El sandbox acepta ambos (H1) | — |
 | D5 | Hosting | Fly.io o Railway para API + Postgres, Vercel para la web | H10 |
-| D6 | Si el sandbox no acepta memo en SEP-10 o SEP-24 | Usar una cuenta muxed (`M...`) de la intake con el id del intent; si tampoco, abrir un PR mínimo en el sandbox | H6a (se verifica en H1) |
+| D6 | Si el sandbox no acepta memo en SEP-10 o SEP-24 | ✅ No hace falta: el sandbox acepta memos (H1) | — |
 
 ---
 
@@ -586,14 +588,17 @@ Cada una tiene una recomendación. Si Anouk no responde y el PR no puede esperar
 
 ### Estado
 - H0 (scaffold) ✅ en `chore/repo-scaffold` (25-oct): pnpm workspace, Makefile, Postgres 17, CI (JS, gitleaks, actionlint), validación del título del PR, lefthook + commitlint, Apache-2.0.
-- Siguiente: H1 (spike de SPP).
+- H1 (spike de SPP) ✅ en `spike/spp-verification` (25-oct): depósito, transferencia privada, retiro y auditoría con GVK desde el servidor, con hashes reales. Detalle en `docs/spikes/spp.md`.
+- Siguiente: H2 (esqueleto del API).
 
 ### Riesgos identificados (25-oct)
-1. **Tiempo:** 12 PRs en ~1 día. H1 decide D1; si el SDK de Rust no sirve en el servidor, el plan B cuesta horas.
-2. **SAC del USDC** necesario para el pool propio (agregado a H4).
+1. **Tiempo:** 12 PRs en ~1 día. ~~Plan B del backend~~ descartado en H1.
+2. **SAC del USDC** necesario para el pool propio (H4). Revisar también los flags del issuer del USDC del sandbox: con `AUTH_REVOCABLE` o `AUTH_CLAWBACK_ENABLED` el issuer puede congelar todo el pool (va al threat model).
 3. **Correlación por monto y hora** en la entrada del modo ramp (documentado en 2.1; mitigación en P4).
-4. **Llaves del pool de la intake** en el servidor (verificar en H1, punto e).
-5. **Memo en SEP-10/SEP-24 del sandbox** (verificar en H1, punto f; ver D6).
+4. ~~Llaves del pool de la intake~~ resuelto en H1.
+5. ~~Memo en SEP-10/SEP-24~~ resuelto en H1.
+6. **Ventana de 7 días del RPC:** el prover necesita todo el historial del pool. Un pool desplegado el 26-oct dura hasta ~2-nov sin bootnode. Después: correr `tools/bootnode` de SPP o redesplegar.
+7. **Modo direct:** quien firma una operación del pool queda visible; hasta el relayer (P3), la dirección del usuario aparece como usuaria del pool en cada transferencia.
 
 ### Decisiones tomadas
 - Nombre del producto y del repo: **Lendara Shield** (`lendara-shield`). Nombre del estándar: **Shield Protocol**.
@@ -604,6 +609,9 @@ Cada una tiene una recomendación. Si Anouk no responde y el PR no puede esperar
 - El pnpm global de la máquina de Anouk es 9.x; el repo fija `pnpm@12.10.1` en `packageManager` y corepack lo usa automáticamente dentro de la carpeta.
 - gitleaks y actionlint no están instalados localmente: correrlos con Docker usando las mismas imágenes del CI.
 - Los targets del `Makefile` cuyo código llega en un PR futuro imprimen "arrives in Hx" en vez de fallar. Cada PR los reemplaza por el comando real.
+- SPP: fijar el tag `sdk-v0.2.1` (contratos, crate y npm coinciden). El tag `alpha` de npm está viejo: usar `stellar-private-payments@0.2.1`.
+- SPP: compilar en `--release` (el prover en debug es muy lento). La primera ejecución descarga los artefactos de circuito (~30 s).
+- `deploy.sh` de SPP termina con dos `notice` de custodia (admin sin multisig): esperado en testnet.
 - Heredado del sandbox: pnpm puede bloquear paquetes publicados hace menos de un día (`minimumReleaseAge`); usar la versión anterior y no agregar excepciones.
 
 ---
