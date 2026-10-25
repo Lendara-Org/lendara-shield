@@ -1,0 +1,16 @@
+[extend]
+useDefault = true
+
+[[rules]]
+id = "stellar-secret-seed"
+description = "Stellar secret seed"
+regex = '''\bS[A-Z2-7]{55}\b'''
+keywords = ["S"]
+
+# Checksums in lockfiles look like high-entropy secrets.
+[[allowlists]]
+description = "Dependency lockfiles"
+paths = [
+  '''(^|/)Cargo\.lock$''',
+  '''(^|/)pnpm-lock\.yaml$''',
+]

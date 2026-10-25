@@ -521,7 +521,7 @@ Cada PR deja el repo funcionando. Marcar ✅ al completar.
 
 | # | PR | Rama | Contenido | Criterio de aceptación |
 |---|---|---|---|---|
-| H0 | Scaffold | `chore/repo-scaffold` | Estructura, pnpm workspace, `Makefile`, `docker-compose.yml`, `.gitignore`, `.editorconfig`, `.env.example`, plantilla de PR, CI básico con gitleaks, README esqueleto | `make db-up` levanta Postgres; `pnpm install` funciona; CI en verde |
+| H0 ✅ | Scaffold | `chore/repo-scaffold` | Estructura, pnpm workspace, `Makefile`, `docker-compose.yml`, `.gitignore`, `.editorconfig`, `.env.example`, plantilla de PR, CI básico con gitleaks, README esqueleto | `make db-up` levanta Postgres; `pnpm install` funciona; CI en verde |
 | H1 | Spike de SPP | `spike/spp-verification` | **Timebox: 90 minutos.** Verificar en el repo de Nethermind: (a) si se puede desplegar un pool propio para un activo SEP-41 arbitrario con allow-list y admin propio; (b) si el SDK nativo de Rust funciona del lado servidor con un signer propio (depósito + transferencia a una llave registrada); (c) cómo funciona el registro de llaves públicas; (d) el SDK web en Next.js; (e) si la intake puede derivar y guardar sus propias llaves del pool en el servidor sin Freighter; (f) en el código del sandbox (`Bitacora/lendara`), si SEP-10 acepta `memo` en el challenge y si SEP-24 acepta `memo`/`memo_type` hacia una cuenta ajena (D4). Script mínimo que hace depósito → transferencia → retiro desde el servidor. Resultado en `docs/spikes/spp.md` con la decisión de D1 y D2 | Hashes reales de las tres operaciones; decisiones D1 y D2 confirmadas con Anouk |
 | H2 | Esqueleto del API | `feat/api-skeleton` | Crate, config por env, Axum, `/health`, Postgres + migraciones, `tracing`, manejo de errores | `make dev-api` responde `/health` con la base conectada |
 | H3 | Contrato OpenAPI | `feat/repo-openapi` | `openapi.yaml` (sección 7.8), `packages/api-types` con `openapi-typescript`, `make codegen` | Codegen corre sin errores; los tipos compilan |
@@ -585,8 +585,8 @@ Cada una tiene una recomendación. Si Anouk no responde y el PR no puede esperar
 > Actualizar al cerrar cada PR.
 
 ### Estado
-- Repo creado en GitHub y vacío (25-oct). Nada mergeado todavía.
-- Siguiente: H0 (scaffold) y H1 (spike de SPP).
+- H0 (scaffold) ✅ en `chore/repo-scaffold` (25-oct): pnpm workspace, Makefile, Postgres 17, CI (JS, gitleaks, actionlint), validación del título del PR, lefthook + commitlint, Apache-2.0.
+- Siguiente: H1 (spike de SPP).
 
 ### Riesgos identificados (25-oct)
 1. **Tiempo:** 12 PRs en ~1 día. H1 decide D1; si el SDK de Rust no sirve en el servidor, el plan B cuesta horas.
@@ -601,7 +601,9 @@ Cada una tiene una recomendación. Si Anouk no responde y el PR no puede esperar
 - Mismas reglas de Git, PRs y flujo de ramas que el sandbox.
 
 ### Herramientas y trampas conocidas
-- (Completar a medida que aparezcan.)
+- El pnpm global de la máquina de Anouk es 9.x; el repo fija `pnpm@12.10.1` en `packageManager` y corepack lo usa automáticamente dentro de la carpeta.
+- gitleaks y actionlint no están instalados localmente: correrlos con Docker usando las mismas imágenes del CI.
+- Los targets del `Makefile` cuyo código llega en un PR futuro imprimen "arrives in Hx" en vez de fallar. Cada PR los reemplaza por el comando real.
 - Heredado del sandbox: pnpm puede bloquear paquetes publicados hace menos de un día (`minimumReleaseAge`); usar la versión anterior y no agregar excepciones.
 
 ---
