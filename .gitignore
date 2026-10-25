@@ -1,0 +1,32 @@
+# Env (only the example is versioned)
+.env*
+!.env.example
+
+# JS
+node_modules/
+.next/
+dist/
+coverage/
+*.tsbuildinfo
+playwright-report/
+test-results/
+
+# Rust
+/apps/api/target/
+target/
+*.profraw
+lcov.info
+
+# Pool SDK local state, circuit artifacts and downloaded proving keys
+.storage/
+artifacts/
+*.zkey
+*.ptau
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+
+# Local AI context
+CLAUDE.local.md
