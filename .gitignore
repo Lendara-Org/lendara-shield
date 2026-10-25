@@ -17,8 +17,11 @@ target/
 *.profraw
 lcov.info
 
-# Pool SDK local state, circuit artifacts and downloaded proving keys
+# Pool SDK local state (wallets), circuit artifacts and downloaded proving keys
 .storage/
+*.sqlite
+*.sqlite-*
+*.db.key
 artifacts/
 *.zkey
 *.ptau
