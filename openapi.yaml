@@ -1,0 +1,719 @@
+openapi: 3.1.0
+info:
+  title: Lendara Shield API
+  version: 0.1.0
+  license:
+    name: Apache-2.0
+    identifier: Apache-2.0
+  description: |
+    Reference implementation of the **Shield Protocol**: a compliant privacy layer for Stellar
+    that connects SEP-24 on-ramps to a [Stellar Private Payments](https://developers.stellar.org/docs/build/apps/privacy)
+    pool. **Testnet only**; the pool contracts are an unaudited developer preview.
+
+    - **`ramp` mode:** fiat → anchor (SEP-24) → Shield's intake account → pool deposit → private
+      transfer to the user's pool keys. The user's address never appears on-chain.
+    - **`direct` mode:** the user deposits from their own wallet with the pool's web SDK. Shield only
+      does KYC/ASP and audit, so no endpoint here moves money in direct mode.
+
+    Pool spending keys never leave the user's browser. Shield only receives **public** pool keys and
+    the ASP membership leaf.
+
+    Every error response has the body `{ "error": "<code>", "message": "..." }`. Codes are stable and
+    listed in each operation.
+servers:
+  - url: http://localhost:8080
+    description: Local development
+tags:
+  - name: Service
+    description: Health and public configuration.
+  - name: Onboarding
+    description: Simulated KYC and ASP allow-list registration.
+  - name: Intents
+    description: "`ramp` mode: from local currency to a private balance."
+  - name: ASP
+    description: Association Set Provider administration. Requires the admin token.
+  - name: Audit
+    description: Auditor view (Global View Key) and the public on-chain view, side by side.
+
+paths:
+  /health:
+    get:
+      tags: [Service]
+      operationId: getHealth
+      summary: Service and database health
+      security: []
+      responses:
+        "200":
+          description: Every dependency answers.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+              example: { status: ok, database: ok }
+        "503":
+          description: A dependency is unreachable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+              example: { status: degraded, database: unreachable }
+
+  /v1/info:
+    get:
+      tags: [Service]
+      operationId: getInfo
+      summary: Network, pool and enabled modes
+      description: Public configuration the web needs to talk to the pool and to know which modes to offer.
+      security: []
+      responses:
+        "200":
+          description: Current configuration.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Info"
+
+  /v1/onboarding:
+    post:
+      tags: [Onboarding]
+      operationId: createOnboarding
+      summary: Register a user, run simulated KYC and request ASP membership
+      description: |
+        The web derives the user's pool keys in the browser and sends only the **public** keys and the
+        ASP membership leaf (`deriveAspUserLeaf()` in the pool SDK). The user does **not** register in the
+        pool's on-chain key registry, because that would publish their address.
+
+        KYC is simulated and decided by `scenario`. When it is approved, Shield inserts the leaf into the
+        allow-list on-chain; that takes a few seconds, so the response may come back with
+        `asp_status: pending`. Poll `GET /v1/users/{account}` until it is final.
+
+        Idempotent: repeating the call with the same account and keys returns the existing user with `200`.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OnboardingRequest"
+      responses:
+        "201":
+          description: User created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ShieldUser"
+        "200":
+          description: The user already exists with the same keys.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ShieldUser"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "409":
+          description: "`account_already_onboarded`: the account exists with different pool keys."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /v1/users/{account}:
+    get:
+      tags: [Onboarding]
+      operationId: getUser
+      summary: KYC and ASP status of a user
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/Account"
+      responses:
+        "200":
+          description: The user.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ShieldUser"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /v1/intents:
+    post:
+      tags: [Intents]
+      operationId: createIntent
+      summary: Start a ramp deposit
+      description: |
+        Creates an intent and a SEP-24 interactive deposit at the anchor with
+        `account` = Shield's intake account and `memo` = the intent's numeric memo (`memo_type: id`).
+        Open `interactive_url` for the user, then poll `GET /v1/intents/{id}` every 2–3 seconds.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateIntentRequest"
+      responses:
+        "201":
+          description: Intent created and waiting for the anchor.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Intent"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          description: "`user_not_found`: the account has not been onboarded."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: |
+            - `ramp_mode_disabled`: `RAMP_ANCHOR_HOME_DOMAIN` is not configured.
+            - `user_not_allowed`: the user's key is not in the allow-list (KYC rejected, pending or blocked).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "502":
+          description: "`anchor_unavailable`: the anchor failed SEP-1, SEP-10 or SEP-24."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /v1/intents/{id}:
+    get:
+      tags: [Intents]
+      operationId: getIntent
+      summary: Intent status and its transaction hashes
+      security: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: The intent.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Intent"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /v1/asp/block:
+    post:
+      tags: [ASP]
+      operationId: blockUser
+      summary: Freeze a user's pool key
+      description: Inserts the user's key into the pool's block-list. Blocked keys cannot deposit, transfer or withdraw.
+      security:
+        - adminToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AspActionRequest"
+      responses:
+        "200":
+          description: The user, now blocked (or pending the on-chain update).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ShieldUser"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /v1/asp/unblock:
+    post:
+      tags: [ASP]
+      operationId: unblockUser
+      summary: Lift a freeze
+      description: Removes the user's key from the block-list. The allow-list is append-only and is not touched.
+      security:
+        - adminToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AspActionRequest"
+      responses:
+        "200":
+          description: The user, now allowed again (or pending the on-chain update).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ShieldUser"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /v1/audit/transactions:
+    get:
+      tags: [Audit]
+      operationId: listAuditTransactions
+      summary: Pool activity decrypted with the Global View Key
+      description: |
+        What the auditor sees. The Global View Key stays on the server; this endpoint never returns it.
+        Newest first.
+      security:
+        - auditorToken: []
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        "200":
+          description: Decrypted pool transactions.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuditTransactionList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /v1/audit/public/{tx_hash}:
+    get:
+      tags: [Audit]
+      operationId: getPublicTransaction
+      summary: What anyone sees on the explorer for a transaction
+      description: The public counterpart of an audited transaction, for the side-by-side comparison.
+      security: []
+      parameters:
+        - name: tx_hash
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/TxHash"
+      responses:
+        "200":
+          description: Public view of the transaction.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PublicTransaction"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+components:
+  securitySchemes:
+    adminToken:
+      type: http
+      scheme: bearer
+      description: "`ADMIN_TOKEN` from the server environment (hackathon). Project API keys come in P2."
+    auditorToken:
+      type: http
+      scheme: bearer
+      description: "`AUDITOR_TOKEN` from the server environment (hackathon)."
+
+  parameters:
+    Account:
+      name: account
+      in: path
+      required: true
+      description: The user's Stellar account.
+      schema:
+        $ref: "#/components/schemas/StellarAccount"
+
+  responses:
+    BadRequest:
+      description: |
+        The request is malformed. Codes: `invalid_request` (unparseable body or parameter),
+        `invalid_account`, `invalid_key`, `invalid_amount`, `invalid_currency`.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example: { error: invalid_account, message: "stellar_account must be a G... address" }
+    Unauthorized:
+      description: "`unauthorized`: missing or wrong bearer token."
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    NotFound:
+      description: "`not_found`, `user_not_found` or `intent_not_found`."
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
+  schemas:
+    Error:
+      type: object
+      required: [error, message]
+      properties:
+        error:
+          type: string
+          description: Stable `snake_case` code.
+          examples: [invalid_amount]
+        message:
+          type: string
+          description: Human-readable explanation. Do not parse it.
+
+    StellarAccount:
+      type: string
+      description: Stellar account public key (`G...`).
+      pattern: "^G[A-Z2-7]{55}$"
+      examples: [GBJ3H74T4LB23V3WKE46BSWMZVOH4YWX2P5ZLQTY4EZXH3YAZZUCPFWY]
+
+    ContractId:
+      type: string
+      description: Soroban contract address (`C...`).
+      pattern: "^C[A-Z2-7]{55}$"
+
+    TxHash:
+      type: string
+      description: Stellar transaction hash (lowercase hex).
+      pattern: "^[0-9a-f]{64}$"
+
+    PoolField:
+      type: string
+      description: 32-byte value of the pool's ZK field (keys, ASP leaf), `0x`-prefixed hex.
+      pattern: "^0x[0-9a-fA-F]{64}$"
+      examples: ["0x05a8c36ec6273fca4fed02573a4030279b2ec26f79ebf9cc784d8e6313f8fd74"]
+
+    DecimalAmount:
+      type: string
+      description: Positive decimal amount as a string, never a float. Up to 7 decimals (Stellar precision).
+      pattern: "^(0|[1-9][0-9]*)(\\.[0-9]{1,7})?$"
+      examples: ["100.00"]
+
+    SignedDecimalAmount:
+      type: string
+      description: Decimal amount that can be negative (pool `ext_amount`).
+      pattern: "^-?(0|[1-9][0-9]*)(\\.[0-9]{1,7})?$"
+
+    Timestamp:
+      type: string
+      format: date-time
+
+    Health:
+      type: object
+      required: [status, database]
+      properties:
+        status:
+          type: string
+          enum: [ok, degraded]
+        database:
+          type: string
+          enum: [ok, unreachable]
+
+    Info:
+      type: object
+      required: [network, network_passphrase, pool, modes]
+      properties:
+        network:
+          type: string
+          const: testnet
+        network_passphrase:
+          type: string
+          examples: ["Test SDF Network ; September 2015"]
+        pool:
+          $ref: "#/components/schemas/PoolInfo"
+        modes:
+          type: object
+          required: [ramp, direct]
+          properties:
+            ramp:
+              type: object
+              required: [enabled]
+              properties:
+                enabled:
+                  type: boolean
+                anchor_home_domain:
+                  type: [string, "null"]
+                  description: SEP-1 home domain of the anchor. `null` when ramp mode is disabled.
+            direct:
+              type: object
+              required: [enabled]
+              properties:
+                enabled:
+                  type: boolean
+                  const: true
+
+    PoolInfo:
+      type: object
+      required:
+        [contract_id, asset, asp_policy, asp_membership_contract, asp_non_membership_contract, gvk_mode, kdf_domain]
+      properties:
+        contract_id:
+          $ref: "#/components/schemas/ContractId"
+        asset:
+          type: object
+          required: [code, issuer, contract_id]
+          properties:
+            code:
+              type: string
+              examples: [USDC]
+            issuer:
+              $ref: "#/components/schemas/StellarAccount"
+            contract_id:
+              description: The asset's Stellar Asset Contract (SAC).
+              $ref: "#/components/schemas/ContractId"
+        asp_policy:
+          type: array
+          items:
+            type: string
+            enum: [allowlist, blocklist]
+          examples: [[allowlist, blocklist]]
+        asp_membership_contract:
+          $ref: "#/components/schemas/ContractId"
+        asp_non_membership_contract:
+          $ref: "#/components/schemas/ContractId"
+        gvk_mode:
+          type: string
+          enum: [off, view_only, traceable]
+        kdf_domain:
+          type: string
+          description: Domain used in the message users sign to derive their pool keys.
+          examples: [Lendara Shield]
+
+    KycScenario:
+      type: string
+      description: Simulated KYC outcome (sandbox only).
+      enum: [approved, rejected, blocked]
+      default: approved
+
+    OnboardingRequest:
+      type: object
+      required: [stellar_account, note_public_key, encryption_public_key, asp_leaf]
+      properties:
+        stellar_account:
+          $ref: "#/components/schemas/StellarAccount"
+        note_public_key:
+          $ref: "#/components/schemas/PoolField"
+        encryption_public_key:
+          $ref: "#/components/schemas/PoolField"
+        asp_leaf:
+          description: ASP membership leaf from `deriveAspUserLeaf()`.
+          $ref: "#/components/schemas/PoolField"
+        scenario:
+          $ref: "#/components/schemas/KycScenario"
+
+    ShieldUser:
+      type: object
+      required: [stellar_account, kyc_status, asp_status, created_at, updated_at]
+      properties:
+        stellar_account:
+          $ref: "#/components/schemas/StellarAccount"
+        kyc_status:
+          type: string
+          enum: [approved, rejected]
+        asp_status:
+          type: string
+          description: |
+            - `pending`: the on-chain allow-list (or block-list) update is in flight.
+            - `allowed`: in the allow-list and not blocked; can transact.
+            - `not_allowed`: KYC rejected; never inserted.
+            - `blocked`: in the block-list; frozen.
+          enum: [pending, allowed, not_allowed, blocked]
+        last_asp_tx_hash:
+          description: Last on-chain ASP update for this user, if any.
+          oneOf:
+            - $ref: "#/components/schemas/TxHash"
+            - type: "null"
+        created_at:
+          $ref: "#/components/schemas/Timestamp"
+        updated_at:
+          $ref: "#/components/schemas/Timestamp"
+
+    AspActionRequest:
+      type: object
+      required: [stellar_account]
+      properties:
+        stellar_account:
+          $ref: "#/components/schemas/StellarAccount"
+
+    CreateIntentRequest:
+      type: object
+      required: [mode, stellar_account, fiat_currency, amount]
+      properties:
+        mode:
+          type: string
+          const: ramp
+        stellar_account:
+          description: The onboarded user who receives the private balance.
+          $ref: "#/components/schemas/StellarAccount"
+        fiat_currency:
+          type: string
+          description: ISO 4217 code accepted by the anchor.
+          pattern: "^[A-Z]{3}$"
+          examples: [CRC]
+        amount:
+          description: Amount in `fiat_currency`. In the Lendara sandbox the cents select a scenario (`.13` KYC rejected, `.50` delayed, `.99` expired).
+          $ref: "#/components/schemas/DecimalAmount"
+
+    IntentStatus:
+      type: string
+      description: |
+        Happy path: `created` → `awaiting_anchor` → `funds_received` → `shielding` → `transferring` → `completed`.
+        Final states: `completed`, `rejected`, `expired`, `error`.
+      enum:
+        [created, awaiting_anchor, funds_received, shielding, transferring, completed, rejected, expired, error]
+
+    Intent:
+      type: object
+      required:
+        [id, mode, status, fiat_currency, amount_fiat, asset_code, amount_asset, interactive_url, transactions, message, created_at, updated_at, completed_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        mode:
+          type: string
+          const: ramp
+        status:
+          $ref: "#/components/schemas/IntentStatus"
+        fiat_currency:
+          type: string
+        amount_fiat:
+          $ref: "#/components/schemas/DecimalAmount"
+        asset_code:
+          type: string
+          examples: [USDC]
+        amount_asset:
+          description: Asset amount received from the anchor. `null` until `funds_received`.
+          oneOf:
+            - $ref: "#/components/schemas/DecimalAmount"
+            - type: "null"
+        interactive_url:
+          description: Anchor's SEP-24 interactive URL to open for the user. `null` once the anchor step is over.
+          type: [string, "null"]
+          format: uri
+        transactions:
+          type: object
+          description: On-chain hashes, filled as each step completes.
+          required: [intake_payment, pool_deposit, pool_transfer]
+          properties:
+            intake_payment:
+              description: Anchor → intake account payment.
+              oneOf:
+                - $ref: "#/components/schemas/TxHash"
+                - type: "null"
+            pool_deposit:
+              description: Intake → pool deposit (`ext_amount > 0`).
+              oneOf:
+                - $ref: "#/components/schemas/TxHash"
+                - type: "null"
+            pool_transfer:
+              description: Private transfer to the user's pool keys (`ext_amount = 0`).
+              oneOf:
+                - $ref: "#/components/schemas/TxHash"
+                - type: "null"
+        message:
+          description: Reason for `rejected`, `expired` or `error`.
+          type: [string, "null"]
+        created_at:
+          $ref: "#/components/schemas/Timestamp"
+        updated_at:
+          $ref: "#/components/schemas/Timestamp"
+        completed_at:
+          oneOf:
+            - $ref: "#/components/schemas/Timestamp"
+            - type: "null"
+
+    AuditNote:
+      type: object
+      required: [owner_note_public_key, owner_stellar_account, amount]
+      properties:
+        owner_note_public_key:
+          $ref: "#/components/schemas/PoolField"
+        owner_stellar_account:
+          description: Resolved from Shield's records (Shield is the ASP). `null` if the key is not a Shield user.
+          oneOf:
+            - $ref: "#/components/schemas/StellarAccount"
+            - type: "null"
+        amount:
+          $ref: "#/components/schemas/DecimalAmount"
+
+    AuditTransaction:
+      type: object
+      required: [ledger, kind, ext_amount, inputs, outputs]
+      properties:
+        ledger:
+          type: integer
+          minimum: 0
+        tx_hash:
+          description: Transaction hash when it can be resolved from the pool events.
+          oneOf:
+            - $ref: "#/components/schemas/TxHash"
+            - type: "null"
+        kind:
+          type: string
+          enum: [deposit, transfer, withdraw]
+        ext_amount:
+          description: Public amount entering (+) or leaving (−) the pool; `0` for a private transfer.
+          $ref: "#/components/schemas/SignedDecimalAmount"
+        inputs:
+          description: Notes spent. Zero-value padding notes are omitted.
+          type: array
+          items:
+            $ref: "#/components/schemas/AuditNote"
+        outputs:
+          description: Notes created. Zero-value padding notes are omitted.
+          type: array
+          items:
+            $ref: "#/components/schemas/AuditNote"
+
+    AuditTransactionList:
+      type: object
+      required: [transactions]
+      properties:
+        transactions:
+          type: array
+          items:
+            $ref: "#/components/schemas/AuditTransaction"
+
+    PublicTransaction:
+      type: object
+      required: [tx_hash, ledger, created_at, source_account, is_pool_transaction, ext_amount, visible_accounts, explorer_url]
+      properties:
+        tx_hash:
+          $ref: "#/components/schemas/TxHash"
+        ledger:
+          type: integer
+          minimum: 0
+        created_at:
+          $ref: "#/components/schemas/Timestamp"
+        source_account:
+          $ref: "#/components/schemas/StellarAccount"
+        is_pool_transaction:
+          type: boolean
+        ext_amount:
+          description: Public pool amount, when it is a pool transaction.
+          oneOf:
+            - $ref: "#/components/schemas/SignedDecimalAmount"
+            - type: "null"
+        visible_accounts:
+          description: Every account that appears in the transaction.
+          type: array
+          items:
+            $ref: "#/components/schemas/StellarAccount"
+        explorer_url:
+          type: string
+          format: uri

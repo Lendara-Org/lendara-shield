@@ -9,7 +9,7 @@ define pending
 endef
 
 .PHONY: help install dev dev-api dev-web db-up db-down migrate setup-testnet \
-	fmt fmt-check lint lint-api lint-js typecheck test test-api test-js test-testnet coverage deny \
+	fmt fmt-check lint lint-api lint-js lint-openapi typecheck test test-api test-js test-testnet coverage deny \
 	codegen build build-api build-js
 
 help: ## List available targets
@@ -45,13 +45,16 @@ fmt: ## Format all code
 fmt-check: ## Fail if any code is not formatted
 	cd $(API_DIR) && cargo fmt --check
 
-lint: lint-api lint-js ## Lint all code
+lint: lint-api lint-js lint-openapi ## Lint all code
 
 lint-api: ## Clippy with warnings as errors
 	cd $(API_DIR) && cargo clippy --all-targets --all-features -- -D warnings
 
 lint-js: ## Lint TS packages
 	pnpm lint
+
+lint-openapi: ## Validate openapi.yaml (the API contract)
+	pnpm exec redocly lint openapi.yaml
 
 typecheck: ## Type-check TS packages
 	pnpm typecheck
@@ -73,8 +76,8 @@ coverage: ## API coverage summary; `main.rs` is wiring only and excluded
 deny: ## Licenses, advisories and sources of API dependencies
 	cd $(API_DIR) && cargo deny check
 
-codegen: ## Generate TS types from openapi.yaml
-	$(call pending,H3)
+codegen: ## Generate TS types from openapi.yaml into packages/api-types
+	pnpm --filter @lendara/shield-api-types codegen
 
 build: build-api build-js ## Build everything
 
