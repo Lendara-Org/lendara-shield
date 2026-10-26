@@ -2,16 +2,20 @@
 //! account. Stateless between runs: the SDK's wallet (SQLite) holds the
 //! intake's keys and notes.
 
+use std::collections::VecDeque;
+
 use serde_json::{Value, json};
 use stellar_private_payments::{
     CircuitStore, Client, Error as SdkError, LocalProver, LocalSigner, LocalStorage, PrivatePool,
     ProverHandle, SignerHandle,
     chain::{LocalSigner as Keypair, RpcClient},
     circuit_lock,
+    gvk::{GvkAudit, GvkTxAudit},
     types::{
-        ContractConfig, EncryptionPublicKey, NoteAmount, NoteOwnerAddress, NotePublicKey,
+        ContractConfig, EncryptionPublicKey, Field, NoteAmount, NoteOwnerAddress, NotePublicKey,
         SignedTransaction, SignerAddress, TransferRecipient,
     },
+    zk::gvk::GvkAuditedNote,
 };
 
 use crate::command::{CliError, Command, describe, hex};
@@ -192,12 +196,64 @@ async fn execute(session: &Session, command: Command) -> Result<Value, CliError>
             }
             Ok(json!({ "hash": hash }))
         }
+        Command::Audit { limit } => audit(session, limit).await,
         Command::Status { .. } => Err(CliError::new(
             "internal",
             "status is handled before opening the wallet",
             false,
         )),
     }
+}
+
+/// The newest `limit` pool transactions decrypted with the Global View Key,
+/// newest first. Only notes with value are listed (zero-value notes pad
+/// every transaction). Owners are note public keys as the SDK prints them.
+async fn audit(session: &Session, limit: usize) -> Result<Value, CliError> {
+    let gvk = gvk_private_key()?;
+    session.account.sync().await.map_err(|e| sdk(&e))?;
+    let storage = session.account.storage().fork().map_err(|e| sdk(&e))?;
+    let mut audit = GvkAudit::new(storage, &session.pool_id, gvk);
+    let mut newest = VecDeque::with_capacity(limit + 1);
+    while let Some(tx) = audit
+        .next_tx()
+        .await
+        .map_err(|e| CliError::new("sdk", e.to_string(), true))?
+    {
+        newest.push_front(audited(&tx));
+        newest.truncate(limit);
+    }
+    Ok(json!({ "transactions": newest }))
+}
+
+fn audited(tx: &GvkTxAudit) -> Value {
+    let notes = |notes: Vec<Option<&GvkAuditedNote>>| -> Vec<Value> {
+        notes
+            .into_iter()
+            .flatten()
+            .filter_map(|n| {
+                let amount = u128::from(n.note.amount().ok()?);
+                (amount > 0).then(
+                    || json!({ "owner": n.note.pk.to_string(), "amount": amount.to_string() }),
+                )
+            })
+            .collect()
+    };
+    json!({
+        "ledger": tx.ledger,
+        "inputs": notes(tx.inputs.iter().map(|i| i.note.as_ref()).collect()),
+        "outputs": notes(tx.outputs.iter().map(|o| o.note.as_ref()).collect()),
+    })
+}
+
+/// The auditor's private key, from `SHIELD_GVK_KEY_FILE` (SPP's
+/// `tools/gvkey-gen` JSON). Never printed, not even in errors.
+fn gvk_private_key() -> Result<Field, CliError> {
+    let file: Value = serde_json::from_str(&read(&require("SHIELD_GVK_KEY_FILE")?)?)
+        .map_err(|_| CliError::new("config", "the GVK key file is not JSON", false))?;
+    file["privateKey"]
+        .as_str()
+        .and_then(|raw| raw.parse::<Field>().ok())
+        .ok_or_else(|| CliError::new("config", "the GVK key file has no valid privateKey", false))
 }
 
 /// Proves, simulates and signs a single-transaction plan.
