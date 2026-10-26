@@ -27,6 +27,7 @@ use sqlx::PgPool;
 
 use super::state::IntentStatus;
 use crate::{
+    asp::AspStatus,
     ports::{Clock, PoolClient, PoolError, PoolTx, TxStatus},
     store::{
         StoreError,
@@ -45,6 +46,10 @@ const CHECK_AFTER: Duration = Duration::from_secs(4);
 const RETRY_BASE: Duration = Duration::from_secs(5);
 const RETRY_CAP: Duration = Duration::from_secs(300);
 const BATCH: i64 = 5;
+
+/// Message of an intent stopped because its user's key is no longer allowed.
+pub const BLOCKED_USER_MESSAGE: &str =
+    "The account was blocked by the ASP; the funds are in Shield's custody and need review.";
 
 #[derive(Debug, thiserror::Error)]
 pub enum ShieldingError {
@@ -92,6 +97,10 @@ impl ShieldingWorker {
             return self.give_up(intent).await;
         }
         match intent.status {
+            // Nothing has moved yet: a blocked key gets no deposit.
+            IntentStatus::FundsReceived if item.asp_status != AspStatus::Allowed => {
+                self.stop_for_blocked_user(intent).await
+            }
             IntentStatus::FundsReceived => self.start_deposit(item).await,
             IntentStatus::Shielding => self.follow(item, PoolStep::Deposit).await,
             IntentStatus::Transferring => self.follow(item, PoolStep::Transfer).await,
@@ -171,6 +180,11 @@ impl ShieldingWorker {
         }
         match status {
             TxStatus::Success => match step {
+                // The deposit landed in Shield's own note: keep it there
+                // rather than send it to a key the ASP froze meanwhile.
+                PoolStep::Deposit if item.asp_status != AspStatus::Allowed => {
+                    self.stop_for_blocked_user(&item.intent).await
+                }
                 PoolStep::Deposit => self.start_transfer(item).await,
                 PoolStep::Transfer => self.complete(&item.intent).await,
             },
@@ -227,6 +241,11 @@ impl ShieldingWorker {
     /// Prepares a new transaction for `step` and stores it in place of the
     /// one that can no longer land. Counts as a failed attempt.
     async fn replace(&self, item: &WorkItem, step: PoolStep) -> Result<(), ShieldingError> {
+        // The old transfer can no longer land: never build a new one for a
+        // key the ASP froze meanwhile. The funds stay in Shield's note.
+        if step == PoolStep::Transfer && item.asp_status != AspStatus::Allowed {
+            return self.stop_for_blocked_user(&item.intent).await;
+        }
         let id = item.intent.id;
         let prepared = match step {
             PoolStep::Deposit => self.pool.prepare_deposit(amount(&item.intent)).await,
@@ -271,6 +290,26 @@ impl ShieldingWorker {
         )
         .await?;
         tracing::info!(intent_id = %intent.id, "intent completed");
+        Ok(())
+    }
+
+    /// The recipient's key is no longer allowed. The funds stay in Shield's
+    /// custody (the intake, or Shield's note after the deposit) for review;
+    /// a transfer already sent is never chased.
+    async fn stop_for_blocked_user(&self, intent: &Intent) -> Result<(), ShieldingError> {
+        let mut conn = self.db.acquire().await?;
+        intents::transition(
+            &mut conn,
+            intent.id,
+            intent.status,
+            IntentStatus::Error,
+            Changes {
+                message: Some(BLOCKED_USER_MESSAGE.to_owned()),
+                ..Changes::default()
+            },
+        )
+        .await?;
+        tracing::warn!(intent_id = %intent.id, "shielding stopped: the user's key is not allowed; manual review needed");
         Ok(())
     }
 

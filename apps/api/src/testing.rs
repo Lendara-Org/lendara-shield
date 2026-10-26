@@ -56,6 +56,9 @@ pub enum ChainBehaviour {
     Drops,
     /// The network rejects the transaction.
     Rejects,
+    /// `submit` succeeds and the transaction lands on the n-th status check
+    /// (a slow network).
+    ConfirmsAfter(u8),
 }
 
 /// One write the fake chain applied.
@@ -70,6 +73,8 @@ struct ChainState {
     prepared: Vec<(TxHash, AspAction, PoolField)>,
     landed: Vec<TxHash>,
     pending: Vec<TxHash>,
+    /// Transactions landing after this many more status checks.
+    slow: Vec<(TxHash, u8)>,
     failed: Vec<TxHash>,
     applied: Vec<AppliedWrite>,
     submits: usize,
@@ -174,6 +179,10 @@ impl AspContract for FakeAspContract {
                 Ok(())
             }
             ChainBehaviour::Drops => Ok(()),
+            ChainBehaviour::ConfirmsAfter(checks) => {
+                state.slow.push((tx.hash.clone(), checks));
+                Ok(())
+            }
             ChainBehaviour::Rejects => {
                 state.failed.push(tx.hash.clone());
                 Err(ChainError::Rejected("tx_bad_auth".into()))
@@ -183,7 +192,15 @@ impl AspContract for FakeAspContract {
     }
 
     async fn status(&self, hash: &TxHash) -> Result<TxStatus, ChainError> {
-        let state = lock(&self.state);
+        let mut state = lock(&self.state);
+        if let Some(i) = state.slow.iter().position(|(h, _)| h == hash) {
+            state.slow[i].1 = state.slow[i].1.saturating_sub(1);
+            if state.slow[i].1 > 0 {
+                return Ok(TxStatus::Pending);
+            }
+            state.slow.remove(i);
+            Self::land(&mut state, hash);
+        }
         Ok(if state.landed.contains(hash) {
             TxStatus::Success
         } else if state.pending.contains(hash) {
@@ -345,6 +362,8 @@ pub enum PoolBehaviour {
     Pending,
     /// `submit` is refused (e.g. stale proof); nothing lands.
     Refuses,
+    /// `prepare_*` never returns (a stuck prover).
+    ProverHangs,
 }
 
 /// One pool write the fake chain applied successfully.
@@ -405,6 +424,13 @@ impl Default for FakePool {
 impl FakePool {
     pub fn set_behaviour(&self, behaviour: PoolBehaviour) {
         lock(&self.0).behaviour = behaviour;
+    }
+
+    async fn hang_if_stuck(&self) {
+        let stuck = lock(&self.0).behaviour == PoolBehaviour::ProverHangs;
+        if stuck {
+            std::future::pending::<()>().await;
+        }
     }
 
     /// Makes `prepare_*` fail; `Some(retryable)` or `None` to recover.
@@ -504,6 +530,7 @@ impl FakePool {
 #[async_trait]
 impl PoolClient for FakePool {
     async fn prepare_deposit(&self, amount: i64) -> Result<PoolTx, PoolError> {
+        self.hang_if_stuck().await;
         self.prepare(PoolWrite::Deposit { amount })
     }
 
@@ -513,6 +540,7 @@ impl PoolClient for FakePool {
         note_public_key: &PoolField,
         _encryption_public_key: &PoolField,
     ) -> Result<PoolTx, PoolError> {
+        self.hang_if_stuck().await;
         self.prepare(PoolWrite::Transfer {
             amount,
             note_public_key: note_public_key.clone(),
@@ -557,7 +585,8 @@ impl PoolClient for FakePool {
                 }
                 Ok(())
             }
-            PoolBehaviour::Drops => Ok(()),
+            // A hung prover never gets as far as submitting.
+            PoolBehaviour::Drops | PoolBehaviour::ProverHangs => Ok(()),
             PoolBehaviour::Refuses => Err(refused("simulation failed: stale ASP root")),
         }
     }

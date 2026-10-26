@@ -7,7 +7,7 @@ use sqlx::PgPool;
 
 use crate::{
     asp::service::AspService, audit::AuditService, http::InfoResponse,
-    intent::service::IntentService,
+    intent::service::IntentService, ports::Clock,
 };
 
 /// Cheap to clone: every field is reference-counted.
@@ -23,4 +23,6 @@ pub struct AppState {
     pub admin_token: Arc<Option<SecretString>>,
     /// Bearer token for the audit endpoints; `None` disables them.
     pub auditor_token: Arc<Option<SecretString>>,
+    /// Checks the freshness of signed requests.
+    pub clock: Arc<dyn Clock>,
 }

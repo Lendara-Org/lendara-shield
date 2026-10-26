@@ -10,9 +10,10 @@ use shield_api::{
     domain::{AccountId, DecimalAmount, FiatCurrency, PoolField, TxHash},
     intent::{
         IntentStatus,
-        anchor_sync::AnchorSync,
+        anchor_sync::{ANCHOR_PAYMENT_GRACE, AnchorSync, UNCONFIRMED_PAYMENT_MESSAGE},
         matching::ExpectedAsset,
         service::{CreateIntent, IntentService},
+        shielding::ShieldingWorker,
         watcher::{IntakeWatcher, WatchReport},
     },
     ports::{AnchorClient, AnchorStatus, IncomingPayment},
@@ -21,7 +22,7 @@ use shield_api::{
         intents::Intent,
         users::{self, NewUser},
     },
-    testing::{AnchorBehaviour, FakeAnchor, FakeClock, FakeLedger},
+    testing::{AnchorBehaviour, FakeAnchor, FakeClock, FakeLedger, FakePool, PoolBehaviour},
 };
 use sqlx::PgPool;
 
@@ -87,6 +88,7 @@ impl Harness {
         Ok(self
             .intents
             .create(CreateIntent {
+                request_id: uuid::Uuid::now_v7(),
                 stellar_account: AccountId::parse(ALICE)?,
                 fiat_currency: FiatCurrency::parse("CRC")?,
                 amount: DecimalAmount::parse("5000")?,
@@ -545,5 +547,125 @@ async fn intent_memos_are_not_guessable(db: PgPool) -> TestResult {
         b.memo
     );
     assert_ne!(b.memo, a.memo + 1);
+    Ok(())
+}
+
+#[sqlx::test]
+async fn an_anchor_payment_that_never_shows_up_ends_in_review(db: PgPool) -> TestResult {
+    let h = harness(db.clone()).await?;
+    let intent = h.intent().await?;
+    // The anchor names transaction 3, which never reaches the intake.
+    h.anchor_paid(&intent, 3);
+    assert_eq!(h.sync.check_due().await?, 0, "the grace period starts");
+
+    let grace = chrono::Duration::from_std(ANCHOR_PAYMENT_GRACE)?;
+    let step = chrono::Duration::minutes(4);
+    let mut waited = chrono::Duration::zero();
+    while waited + step < grace {
+        h.clock.advance(step);
+        waited += step;
+        assert_eq!(h.sync.check_due().await?, 0);
+        assert_eq!(h.status(&intent).await?, IntentStatus::AwaitingAnchor);
+    }
+    h.clock.advance(step);
+    assert_eq!(h.sync.check_due().await?, 1);
+    let ended = h.intents.get(intent.id).await?;
+    assert_eq!(ended.status, IntentStatus::Error);
+    assert_eq!(ended.message.as_deref(), Some(UNCONFIRMED_PAYMENT_MESSAGE));
+    assert!(ended.amount_asset.is_none(), "nothing was funded");
+
+    // If the payment turns up later, it is kept for review and funds nothing.
+    h.ledger.push(payment(3, memo(&intent), "USDC", ISSUER)?);
+    h.watcher.poll().await?;
+    let reason: Option<String> = sqlx::query_scalar(
+        "SELECT unmatched_reason FROM intake_payments WHERE operation_id = 'op-3'",
+    )
+    .fetch_one(&db)
+    .await?;
+    assert_eq!(reason.as_deref(), Some("intent is error"));
+    assert_eq!(h.status(&intent).await?, IntentStatus::Error);
+    Ok(())
+}
+
+#[sqlx::test]
+async fn a_completed_report_without_its_transaction_ends_in_review(db: PgPool) -> TestResult {
+    let h = harness(db).await?;
+    let intent = h.intent().await?;
+    h.anchor.set_status(
+        &intent.anchor_tx_id.clone().unwrap_or_default(),
+        AnchorStatus::Completed(None),
+    );
+    h.sync.check_due().await?;
+    h.clock
+        .advance(chrono::Duration::from_std(ANCHOR_PAYMENT_GRACE)? - chrono::Duration::seconds(1));
+    h.sync.check_due().await?;
+    assert_eq!(h.status(&intent).await?, IntentStatus::AwaitingAnchor);
+
+    h.clock.advance(chrono::Duration::seconds(30));
+    assert_eq!(h.sync.check_due().await?, 1);
+    assert_eq!(h.status(&intent).await?, IntentStatus::Error);
+    Ok(())
+}
+
+#[sqlx::test]
+async fn a_payment_inside_the_grace_period_still_funds_the_intent(db: PgPool) -> TestResult {
+    let h = harness(db).await?;
+    let intent = h.intent().await?;
+    h.anchor_paid(&intent, 3);
+    h.sync.check_due().await?;
+    h.clock.advance(chrono::Duration::minutes(10));
+    h.sync.check_due().await?;
+
+    h.ledger.push(payment(3, memo(&intent), "USDC", ISSUER)?);
+    h.watcher.poll().await?;
+    h.clock.advance(chrono::Duration::seconds(5));
+    assert_eq!(h.sync.check_due().await?, 1);
+    assert_eq!(h.status(&intent).await?, IntentStatus::FundsReceived);
+    Ok(())
+}
+
+#[sqlx::test]
+async fn a_stuck_prover_holds_up_neither_payments_nor_the_anchor(db: PgPool) -> TestResult {
+    let h = harness(db.clone()).await?;
+    // One intent already funded: the worker hangs proving its deposit.
+    let stuck = h.intent().await?;
+    h.ledger.push(payment(1, memo(&stuck), "USDC", ISSUER)?);
+    h.anchor_paid(&stuck, 1);
+    h.watcher.poll().await?;
+    h.sync.check_due().await?;
+    assert_eq!(h.status(&stuck).await?, IntentStatus::FundsReceived);
+    let waiting = h.intent().await?;
+
+    let pool = Arc::new(FakePool::default());
+    pool.set_behaviour(PoolBehaviour::ProverHangs);
+    let shutdown = tokio_util::sync::CancellationToken::new();
+    let task = tokio::spawn(
+        Background {
+            watcher: h.watcher.clone(),
+            anchor_sync: h.sync.clone(),
+            shielding: Some(ShieldingWorker::new(db, pool.clone(), h.clock.clone())),
+        }
+        .run(std::time::Duration::from_millis(20), shutdown.clone()),
+    );
+
+    // The worker is stuck on the first intent; only now does the second
+    // one's payment arrive, so whatever order a single loop used, it would
+    // never get to read it.
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    h.ledger.push(payment(2, memo(&waiting), "USDC", ISSUER)?);
+    h.anchor_paid(&waiting, 2);
+    for _ in 0..50 {
+        if h.status(&waiting).await? == IntentStatus::FundsReceived {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    assert_eq!(h.status(&waiting).await?, IntentStatus::FundsReceived);
+    assert_eq!(h.status(&stuck).await?, IntentStatus::FundsReceived);
+    assert!(pool.applied().is_empty(), "the prover never finished");
+
+    // Shutdown does not wait for the hung proof either.
+    shutdown.cancel();
+    tokio::time::timeout(std::time::Duration::from_secs(2), task).await??;
     Ok(())
 }

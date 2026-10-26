@@ -44,6 +44,31 @@ pub fn onboarding_message(
     )
 }
 
+/// The text the user signs to start a ramp intent. `fiat_currency` and
+/// `amount` exactly as sent in the request; `request_id` in lowercase
+/// hyphenated form and `issued_at` in Unix seconds make every signature
+/// single-use (see `POST /v1/intents`). The web builds the same text.
+#[must_use]
+pub fn intent_message(
+    account: &AccountId,
+    fiat_currency: &str,
+    amount: &str,
+    request_id: &uuid::Uuid,
+    issued_at: i64,
+) -> String {
+    format!(
+        "Lendara Shield intent\n\
+         network: testnet\n\
+         account: {account}\n\
+         fiat_currency: {fiat_currency}\n\
+         amount: {amount}\n\
+         request_id: {request_id}\n\
+         issued_at: {issued_at}",
+        account = account.as_str(),
+        request_id = request_id.hyphenated(),
+    )
+}
+
 /// Checks that `signature` is `account`'s SEP-53 signature of `message`.
 pub fn verify(account: &AccountId, message: &str, signature: &str) -> Result<(), OwnershipError> {
     let bytes = STANDARD
@@ -96,6 +121,58 @@ mod tests {
                 "01".repeat(32),
                 "05".repeat(32)
             )
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn the_intent_message_binds_the_amount_and_a_single_use_request()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let alice = AccountId::parse("GDZOAGBQFY65MGK5Z6RBBFCHPYB2PJDJW3UV47IWK53UQF4LFSUP6XZC")?;
+        let request_id = uuid::Uuid::parse_str("0194F3A2-7C1E-7D3B-9A4F-2B6C8E1D5F70")?;
+        // The web builds the same text (apps/web/src/lib/intent-request.ts).
+        assert_eq!(
+            intent_message(&alice, "CRC", "5000", &request_id, 1_793_016_000),
+            "Lendara Shield intent\nnetwork: testnet\n\
+             account: GDZOAGBQFY65MGK5Z6RBBFCHPYB2PJDJW3UV47IWK53UQF4LFSUP6XZC\n\
+             fiat_currency: CRC\namount: 5000\n\
+             request_id: 0194f3a2-7c1e-7d3b-9a4f-2b6c8e1d5f70\nissued_at: 1793016000"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn an_intent_signature_does_not_cover_another_amount() -> Result<(), Box<dyn std::error::Error>>
+    {
+        let key = SigningKey::from_bytes(&[7; 32]);
+        let alice = account(&key)?;
+        let id = uuid::Uuid::from_u128(1);
+        let signed = sep53(&key, &intent_message(&alice, "CRC", "5000", &id, 1));
+        assert_eq!(
+            verify(
+                &alice,
+                &intent_message(&alice, "CRC", "5000", &id, 1),
+                &signed
+            ),
+            Ok(())
+        );
+        assert_eq!(
+            verify(
+                &alice,
+                &intent_message(&alice, "CRC", "50000", &id, 1),
+                &signed
+            ),
+            Err(OwnershipError::Invalid)
+        );
+        // An onboarding signature cannot be reused as an intent signature.
+        let onboarding = sep53(&key, &message(&alice));
+        assert_eq!(
+            verify(
+                &alice,
+                &intent_message(&alice, "CRC", "5000", &id, 1),
+                &onboarding
+            ),
+            Err(OwnershipError::Invalid)
         );
         Ok(())
     }

@@ -3,7 +3,10 @@
 mod common;
 
 use axum::http::StatusCode;
-use common::{ALICE, TestResult, app_with_fakes, app_with_ramp, get, post_json, send, signed};
+use common::{
+    ALICE, BOB, TestResult, app_with_fakes, app_with_ramp, get, post_json, send, signed,
+    signed_intent, signed_intent_with,
+};
 use serde_json::{Value, json};
 use shield_api::testing::{AnchorBehaviour, ChainBehaviour};
 use sqlx::PgPool;
@@ -17,8 +20,13 @@ fn onboarding() -> Value {
     })
 }
 
-fn intent_request(amount: &str) -> Value {
+fn unsigned_request(amount: &str) -> Value {
     json!({"mode": "ramp", "stellar_account": ALICE, "fiat_currency": "CRC", "amount": amount})
+}
+
+/// A request signed by ALICE, fresh and single-use.
+fn intent_request(amount: &str) -> Value {
+    signed_intent(&unsigned_request(amount))
 }
 
 fn assert_intent_shape(body: &Value) {
@@ -89,7 +97,12 @@ async fn creates_and_reads_an_intent(db: PgPool) -> TestResult {
     let id = created["id"].as_str().ok_or("id")?;
     let (status, _, read) = send(app, get(&format!("/v1/intents/{id}"))?).await?;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(read, created);
+    assert_intent_shape(&read);
+    // Same intent; only the creator's response carries the interactive URL.
+    assert_eq!(read["interactive_url"], Value::Null);
+    let mut expected = created.clone();
+    expected["interactive_url"] = Value::Null;
+    assert_eq!(read, expected);
     Ok(())
 }
 
@@ -204,5 +217,98 @@ async fn reading_validates_the_id(db: PgPool) -> TestResult {
     .await?;
     assert_eq!(status, StatusCode::NOT_FOUND);
     assert_eq!(err["error"], "intent_not_found");
+    Ok(())
+}
+
+async fn onboarded(db: PgPool) -> Result<common::Fakes, Box<dyn std::error::Error>> {
+    let (app, chain, anchor) = app_with_fakes(db)?;
+    send(
+        app.clone(),
+        post_json("/v1/onboarding", &signed(&onboarding()), None)?,
+    )
+    .await?;
+    Ok((app, chain, anchor))
+}
+
+#[sqlx::test]
+async fn an_unsigned_request_is_refused(db: PgPool) -> TestResult {
+    let (app, _, anchor) = onboarded(db).await?;
+    let (status, _, err) = send(
+        app,
+        post_json("/v1/intents", &unsigned_request("10"), None)?,
+    )
+    .await?;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(err["error"], "invalid_request");
+    assert!(anchor.requests().is_empty());
+    Ok(())
+}
+
+#[sqlx::test]
+async fn only_the_account_can_start_its_deposit(db: PgPool) -> TestResult {
+    let (app, _, anchor) = onboarded(db).await?;
+
+    // BOB signs a request and swaps in ALICE's account.
+    let mut forged = signed_intent(&json!({
+        "mode": "ramp", "stellar_account": BOB, "fiat_currency": "CRC", "amount": "10"
+    }));
+    forged["stellar_account"] = json!(ALICE);
+    // ALICE signed 10; the amount is changed afterwards.
+    let mut tampered = intent_request("10");
+    tampered["amount"] = json!("10000");
+    let mut garbage = intent_request("10");
+    garbage["signature"] = json!("not base64!");
+
+    for (name, body, code) in [
+        ("forged", forged, "invalid_signature"),
+        ("tampered", tampered, "invalid_signature"),
+        ("garbage", garbage, "invalid_signature"),
+    ] {
+        let (status, _, err) = send(app.clone(), post_json("/v1/intents", &body, None)?).await?;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{name}");
+        assert_eq!(err["error"], code, "{name}");
+    }
+    assert!(anchor.requests().is_empty());
+    Ok(())
+}
+
+#[sqlx::test]
+async fn a_stale_or_future_request_is_refused(db: PgPool) -> TestResult {
+    let (app, _, anchor) = onboarded(db).await?;
+    let now = chrono::Utc::now().timestamp();
+    for issued_at in [now - 301, now + 120] {
+        let body = signed_intent_with(
+            &unsigned_request("10"),
+            &uuid::Uuid::now_v7().to_string(),
+            issued_at,
+        );
+        let (status, _, err) = send(app.clone(), post_json("/v1/intents", &body, None)?).await?;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{issued_at}");
+        assert_eq!(err["error"], "request_expired", "{issued_at}");
+    }
+    let bad_id = signed_intent_with(&unsigned_request("10"), "not-a-uuid", now);
+    let (status, _, err) = send(app, post_json("/v1/intents", &bad_id, None)?).await?;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(err["error"], "invalid_request");
+    assert!(anchor.requests().is_empty());
+    Ok(())
+}
+
+#[sqlx::test]
+async fn a_replayed_request_starts_no_second_deposit(db: PgPool) -> TestResult {
+    let (app, _, anchor) = onboarded(db.clone()).await?;
+    let body = intent_request("10");
+
+    let (status, _, _) = send(app.clone(), post_json("/v1/intents", &body, None)?).await?;
+    assert_eq!(status, StatusCode::CREATED);
+    let (status, _, err) = send(app, post_json("/v1/intents", &body, None)?).await?;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(err["error"], "request_replayed");
+
+    assert_eq!(anchor.requests().len(), 1);
+    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM intents")
+        .fetch_one(&db)
+        .await?;
+    assert_eq!(count, 1);
     Ok(())
 }

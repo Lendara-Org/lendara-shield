@@ -6,9 +6,13 @@
 use std::{fmt, path::PathBuf, str::FromStr};
 
 use axum::http::HeaderValue;
-use secrecy::SecretString;
+
+use crate::http::rate_limit::RateLimit;
+use secrecy::{ExposeSecret, SecretString};
 
 const DEFAULT_API_PORT: u16 = 8080;
+/// Onboardings plus intents one client may start per minute.
+const DEFAULT_RATE_LIMIT_PER_MINUTE: u32 = 20;
 const DEFAULT_SOROBAN_RPC_URL: &str = "https://soroban-testnet.stellar.org";
 const DEFAULT_HORIZON_URL: &str = "https://horizon-testnet.stellar.org";
 /// Shortest accepted admin token, so it cannot be guessed.
@@ -29,6 +33,9 @@ pub struct Config {
     pub deployment_file: PathBuf,
     /// SEP-1 home domain of the anchor. `None` disables ramp mode.
     pub ramp_anchor_home_domain: Option<String>,
+    /// Per-client limit on onboarding and intent creation; `None` when
+    /// `RATE_LIMIT_PER_MINUTE` is `0`.
+    pub rate_limit: Option<RateLimit>,
     /// Bearer token for `/v1/asp/*`. `None` disables the admin endpoints.
     pub admin_token: Option<SecretString>,
     /// Bearer token for the audit endpoints; `None` disables them.
@@ -87,6 +94,15 @@ impl Config {
         let get = |name: &str| lookup(name).filter(|value| !value.trim().is_empty());
 
         let api_port = parse_or("API_PORT", get("API_PORT"), DEFAULT_API_PORT)?;
+        let per_minute: u32 = parse_or(
+            "RATE_LIMIT_PER_MINUTE",
+            get("RATE_LIMIT_PER_MINUTE"),
+            DEFAULT_RATE_LIMIT_PER_MINUTE,
+        )?;
+        let rate_limit = (per_minute > 0).then_some(RateLimit {
+            requests: per_minute,
+            window: std::time::Duration::from_secs(60),
+        });
         let database_url = get("DATABASE_URL")
             .map(SecretString::from)
             .ok_or(ConfigError::Missing("DATABASE_URL"))?;
@@ -113,6 +129,16 @@ impl Config {
             get("SHIELD_OPERATOR_SECRET").map(|raw| SecretString::from(raw.trim().to_owned()));
         let intake_secret =
             get("SHIELD_INTAKE_SECRET").map(|raw| SecretString::from(raw.trim().to_owned()));
+        // Separation of duties (AGENTS.md §5.2): the pool and ASP admin is
+        // never the omnibus account that holds users' funds.
+        if let (Some(operator), Some(intake)) = (&operator_secret, &intake_secret)
+            && operator.expose_secret() == intake.expose_secret()
+        {
+            return Err(ConfigError::Invalid {
+                name: "SHIELD_INTAKE_SECRET",
+                reason: "must be a different key from SHIELD_OPERATOR_SECRET".into(),
+            });
+        }
         let pool_cli_path = get("POOL_CLI_PATH").map(|raw| PathBuf::from(raw.trim()));
         let admin_token = get("ADMIN_TOKEN")
             .map(|raw| parse_token("ADMIN_TOKEN", &raw))
@@ -128,6 +154,7 @@ impl Config {
             cors_allowed_origins,
             deployment_file,
             ramp_anchor_home_domain,
+            rate_limit,
             admin_token,
             auditor_token,
             soroban_rpc_url,
@@ -174,15 +201,31 @@ fn parse_origins(raw: &str) -> Result<Vec<HeaderValue>, ConfigError> {
         .collect()
 }
 
+/// An RPC or Horizon URL. Statuses read from it decide when Shield signs
+/// and resends, so plain `http` is only accepted on this machine.
 fn parse_url(name: &'static str, raw: &str) -> Result<String, ConfigError> {
-    if raw.starts_with("https://") || raw.starts_with("http://") {
-        Ok(raw.trim_end_matches('/').to_owned())
-    } else {
-        Err(ConfigError::Invalid {
-            name,
-            reason: format!("`{raw}` must start with http:// or https://"),
-        })
+    let invalid = |reason: String| ConfigError::Invalid { name, reason };
+    let url =
+        reqwest::Url::parse(raw).map_err(|e| invalid(format!("`{raw}` is not a URL: {e}")))?;
+    let loopback = url.host_str().is_some_and(|host| {
+        host == "localhost"
+            || host
+                .trim_start_matches('[')
+                .trim_end_matches(']')
+                .parse::<std::net::IpAddr>()
+                .is_ok_and(|ip| ip.is_loopback())
+    });
+    match url.scheme() {
+        "https" => {}
+        "http" if loopback => {}
+        "http" => {
+            return Err(invalid(format!(
+                "`{raw}` must use https (plain http only for localhost)"
+            )));
+        }
+        _ => return Err(invalid(format!("`{raw}` must start with https://"))),
     }
+    Ok(raw.trim_end_matches('/').to_owned())
 }
 
 fn parse_token(name: &'static str, raw: &str) -> Result<SecretString, ConfigError> {
@@ -401,6 +444,95 @@ mod tests {
                 ..
             })
         ));
+        Ok(())
+    }
+
+    #[test]
+    fn rpc_and_horizon_need_https_except_on_this_machine() -> Result<(), ConfigError> {
+        for local in [
+            "http://localhost:8000",
+            "http://127.0.0.1:8000",
+            "http://[::1]:8000",
+            "https://rpc.example",
+        ] {
+            for name in ["SOROBAN_RPC_URL", "HORIZON_URL"] {
+                load(&[("DATABASE_URL", DB_URL), (name, local)])?;
+            }
+        }
+        for remote in [
+            "http://soroban-testnet.stellar.org",
+            "http://localhost.evil.example",
+            "http://10.0.0.5:8000",
+            "ftp://rpc.example",
+        ] {
+            for name in ["SOROBAN_RPC_URL", "HORIZON_URL"] {
+                let err = load(&[("DATABASE_URL", DB_URL), (name, remote)]).err();
+                assert!(
+                    matches!(err, Some(ConfigError::Invalid { name: n, .. }) if n == name),
+                    "{name}={remote}"
+                );
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn the_rate_limit_is_on_by_default_and_zero_disables_it() -> Result<(), ConfigError> {
+        let minute = std::time::Duration::from_secs(60);
+        assert_eq!(
+            load(&[("DATABASE_URL", DB_URL)])?.rate_limit,
+            Some(RateLimit {
+                requests: DEFAULT_RATE_LIMIT_PER_MINUTE,
+                window: minute
+            })
+        );
+        assert_eq!(
+            load(&[("DATABASE_URL", DB_URL), ("RATE_LIMIT_PER_MINUTE", "5")])?.rate_limit,
+            Some(RateLimit {
+                requests: 5,
+                window: minute
+            })
+        );
+        assert_eq!(
+            load(&[("DATABASE_URL", DB_URL), ("RATE_LIMIT_PER_MINUTE", "0")])?.rate_limit,
+            None
+        );
+        assert!(matches!(
+            load(&[("DATABASE_URL", DB_URL), ("RATE_LIMIT_PER_MINUTE", "-1")]).err(),
+            Some(ConfigError::Invalid {
+                name: "RATE_LIMIT_PER_MINUTE",
+                ..
+            })
+        ));
+        Ok(())
+    }
+
+    #[test]
+    fn operator_and_intake_must_be_different_keys() -> Result<(), ConfigError> {
+        let seed = "test-shared-secret-not-a-real-seed";
+        let err = load(&[
+            ("DATABASE_URL", DB_URL),
+            ("SHIELD_OPERATOR_SECRET", seed),
+            ("SHIELD_INTAKE_SECRET", &format!(" {seed} ")),
+        ])
+        .err();
+        assert!(matches!(
+            err,
+            Some(ConfigError::Invalid {
+                name: "SHIELD_INTAKE_SECRET",
+                ..
+            })
+        ));
+        assert!(!format!("{err:?}").contains(seed), "the seed never leaks");
+
+        load(&[
+            ("DATABASE_URL", DB_URL),
+            (
+                "SHIELD_OPERATOR_SECRET",
+                "test-operator-secret-not-a-real-seed",
+            ),
+            ("SHIELD_INTAKE_SECRET", "test-intake-secret-not-a-real-seed"),
+        ])?;
         Ok(())
     }
 

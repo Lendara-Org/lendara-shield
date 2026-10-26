@@ -114,9 +114,11 @@ async fn run() -> Result<(), BoxError> {
             audit: audit_service(&config, &deployment, &pool, &wallet)?,
             admin_token: Arc::new(config.admin_token),
             auditor_token: Arc::new(config.auditor_token),
+            clock: clock.clone(),
         },
         HttpOptions {
             cors_allowed_origins: config.cors_allowed_origins,
+            rate_limit: config.rate_limit,
         },
     );
     let addr = SocketAddr::from(([0, 0, 0, 0], config.api_port));
@@ -127,16 +129,22 @@ async fn run() -> Result<(), BoxError> {
     let background = background.map(|b| tokio::spawn(b.run(background::TICK, shutdown.clone())));
 
     let stop = shutdown.clone();
-    axum::serve(listener, app)
-        .with_graceful_shutdown(async move {
-            shutdown_signal().await;
-            stop.cancel();
-        })
-        .await?;
+    // The peer address keys the rate limit.
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .with_graceful_shutdown(async move {
+        shutdown_signal().await;
+        stop.cancel();
+    })
+    .await?;
 
     shutdown.cancel();
     if let Some(handle) = background {
-        // Lets the current round finish its database transaction.
+        // Waits for the loops to stop. A round still running is dropped: its
+        // open database transaction rolls back and `pool-cli` is killed, and
+        // every step stored its state before any network call.
         if let Err(err) = handle.await {
             tracing::error!(error = %err, "background loop panicked");
         }

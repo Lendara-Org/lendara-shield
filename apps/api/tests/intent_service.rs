@@ -63,6 +63,7 @@ fn service(db: PgPool) -> (IntentService, Arc<FakeAnchor>) {
 
 fn request(account: &str, amount: &str) -> Result<CreateIntent, Box<dyn std::error::Error>> {
     Ok(CreateIntent {
+        request_id: uuid::Uuid::now_v7(),
         stellar_account: AccountId::parse(account)?,
         fiat_currency: FiatCurrency::parse("CRC")?,
         amount: DecimalAmount::parse(amount)?,
@@ -399,5 +400,22 @@ async fn concurrent_transitions_of_one_intent_have_one_winner(db: PgPool) -> Tes
         3,
         "one event per applied change"
     );
+    Ok(())
+}
+
+#[sqlx::test]
+async fn a_request_id_creates_at_most_one_intent(db: PgPool) -> TestResult {
+    user(&db, ALICE, 1, AspStatus::Allowed).await?;
+    let (service, anchor) = service(db.clone());
+    let first = request(ALICE, "10")?;
+    let mut replay = request(ALICE, "10")?;
+    replay.request_id = first.request_id;
+
+    service.create(first).await?;
+    assert!(matches!(
+        service.create(replay).await,
+        Err(IntentError::Replayed)
+    ));
+    assert_eq!(anchor.requests().len(), 1, "the anchor is asked only once");
     Ok(())
 }

@@ -7,10 +7,19 @@ use chrono::{TimeZone, Utc};
 use shield_api::{
     asp::{
         AspAction, AspStatus, KycScenario, KycStatus,
-        service::{AspService, AspServiceError, Onboarded, OnboardingInput, UserView},
+        service::{
+            AspService, AspServiceError, BLOCKED_INTENT_MESSAGE, Onboarded, OnboardingInput,
+            UserView,
+        },
     },
-    domain::{AccountId, PoolField},
-    testing::{AppliedWrite, ChainBehaviour, FakeAspContract, FakeClock},
+    domain::{AccountId, DecimalAmount, FiatCurrency, PoolField, TxHash},
+    intent::{
+        IntentStatus,
+        service::{CreateIntent, IntentError, IntentService},
+    },
+    ports::{AnchorClient, AnchorDeposit, AnchorError, AnchorStatus, StartDeposit},
+    store::intents::{self, Changes},
+    testing::{AppliedWrite, ChainBehaviour, FakeAnchor, FakeAspContract, FakeClock},
 };
 use sqlx::PgPool;
 
@@ -33,8 +42,10 @@ fn harness(db: PgPool) -> Harness {
     let chain = Arc::new(FakeAspContract::default());
     chain.set_now(now);
     let clock = Arc::new(FakeClock::at(now));
+    // The budget covers a whole request (every step), so it must leave room
+    // for the database work of several steps under a parallel test run.
     let service = AspService::new(db, chain.clone(), clock.clone())
-        .with_timing(Duration::from_millis(60), Duration::from_millis(5));
+        .with_timing(Duration::from_secs(1), Duration::from_millis(5));
     Harness {
         service,
         chain,
@@ -425,5 +436,195 @@ async fn concurrent_onboardings_of_one_account_write_once(db: PgPool) -> TestRes
         ],
         "each write happens exactly once"
     );
+    Ok(())
+}
+
+#[sqlx::test]
+async fn blocking_rejects_the_users_unfunded_intents_and_refuses_new_ones(
+    db: PgPool,
+) -> TestResult {
+    let h = harness(db.clone());
+    h.service
+        .onboard(input(ALICE, 1, KycScenario::Approved)?)
+        .await?;
+    let anchor: Arc<dyn AnchorClient> = Arc::new(FakeAnchor::default());
+    let intents_service = IntentService::new(db.clone(), Some(anchor), "USDC".into());
+    let request = || -> Result<CreateIntent, Box<dyn std::error::Error>> {
+        Ok(CreateIntent {
+            request_id: uuid::Uuid::now_v7(),
+            stellar_account: AccountId::parse(ALICE)?,
+            fiat_currency: FiatCurrency::parse("CRC")?,
+            amount: DecimalAmount::parse("5000")?,
+        })
+    };
+    let waiting = intents_service.create(request()?).await?;
+    let funded = intents_service.create(request()?).await?;
+    let mut conn = db.acquire().await?;
+    intents::transition(
+        &mut conn,
+        funded.id,
+        IntentStatus::AwaitingAnchor,
+        IntentStatus::FundsReceived,
+        Changes {
+            amount_asset: Some(DecimalAmount::parse("9.3")?),
+            intake_payment_tx_hash: Some(TxHash::from_bytes([0xee; 32])),
+            ..Changes::default()
+        },
+    )
+    .await?;
+
+    h.service.block(&AccountId::parse(ALICE)?).await?;
+
+    let rejected = intents_service.get(waiting.id).await?;
+    assert_eq!(rejected.status, IntentStatus::Rejected);
+    assert_eq!(rejected.message.as_deref(), Some(BLOCKED_INTENT_MESSAGE));
+    assert_eq!(
+        intents::events(&db, waiting.id).await?.last(),
+        Some(&(Some(IntentStatus::AwaitingAnchor), IntentStatus::Rejected))
+    );
+    // Funds already in custody: only the worker may end it (completed or error).
+    assert_eq!(
+        intents_service.get(funded.id).await?.status,
+        IntentStatus::FundsReceived
+    );
+    assert!(matches!(
+        intents_service.create(request()?).await,
+        Err(IntentError::UserNotAllowed)
+    ));
+    Ok(())
+}
+
+#[sqlx::test]
+async fn unblocking_does_not_revive_rejected_intents(db: PgPool) -> TestResult {
+    let h = harness(db.clone());
+    h.service
+        .onboard(input(ALICE, 1, KycScenario::Approved)?)
+        .await?;
+    let anchor: Arc<dyn AnchorClient> = Arc::new(FakeAnchor::default());
+    let intents_service = IntentService::new(db, Some(anchor), "USDC".into());
+    let intent = intents_service
+        .create(CreateIntent {
+            request_id: uuid::Uuid::now_v7(),
+            stellar_account: AccountId::parse(ALICE)?,
+            fiat_currency: FiatCurrency::parse("CRC")?,
+            amount: DecimalAmount::parse("5000")?,
+        })
+        .await?;
+    let account = AccountId::parse(ALICE)?;
+    h.service.block(&account).await?;
+    h.service.unblock(&account).await?;
+
+    assert_eq!(
+        intents_service.get(intent.id).await?.status,
+        IntentStatus::Rejected
+    );
+    Ok(())
+}
+
+#[sqlx::test]
+async fn one_request_waits_for_the_chain_within_one_budget(db: PgPool) -> TestResult {
+    // Each ASP write lands on its third status check, 100 ms apart. The allow
+    // lands at ~200 ms, inside the 250 ms budget, so the block is sent; its
+    // second check (~310 ms) is already past the budget, so the request
+    // returns with the block in flight. A per-step budget would give the
+    // block its own 250 ms and wait for it to land (~410 ms).
+    let chain = Arc::new(FakeAspContract::default());
+    chain.set_behaviour(ChainBehaviour::ConfirmsAfter(3));
+    let service = AspService::new(db, chain.clone(), Arc::new(FakeClock::at(Utc::now())))
+        .with_timing(Duration::from_millis(250), Duration::from_millis(100));
+
+    let view = created(
+        service
+            .onboard(input(ALICE, 1, KycScenario::Blocked)?)
+            .await?,
+    )?;
+    assert_eq!(view.user.asp_status, AspStatus::Pending);
+
+    // Nothing was lost: a later read settles what is in flight, and the
+    // replayed onboarding finishes the scenario.
+    let account = AccountId::parse(ALICE)?;
+    for _ in 0..3 {
+        service.user(&account).await?;
+    }
+    let done = service
+        .onboard(input(ALICE, 1, KycScenario::Blocked)?)
+        .await?;
+    let Onboarded::Existing(view) = done else {
+        return Err("expected the existing user".into());
+    };
+    for _ in 0..3 {
+        if view.user.asp_status == AspStatus::Blocked {
+            break;
+        }
+        service.user(&account).await?;
+    }
+    assert_eq!(
+        service.user(&account).await?.user.asp_status,
+        AspStatus::Blocked
+    );
+    assert_eq!(
+        chain.applied().iter().map(|w| w.action).collect::<Vec<_>>(),
+        [AspAction::Allow, AspAction::Block]
+    );
+    Ok(())
+}
+
+/// An anchor during whose `start_deposit` the ASP confirms a block of the
+/// user: the race between a block and an intent waiting for the anchor.
+#[derive(Debug)]
+struct BlockedWhileTheAnchorAnswers {
+    anchor: FakeAnchor,
+    asp: AspService,
+    account: AccountId,
+}
+
+#[async_trait::async_trait]
+impl AnchorClient for BlockedWhileTheAnchorAnswers {
+    fn home_domain(&self) -> &str {
+        self.anchor.home_domain()
+    }
+    async fn start_deposit(&self, request: &StartDeposit) -> Result<AnchorDeposit, AnchorError> {
+        self.asp
+            .block(&self.account)
+            .await
+            .map_err(|e| AnchorError::Unavailable(e.to_string()))?;
+        self.anchor.start_deposit(request).await
+    }
+    async fn deposit_status(&self, memo: i64, id: &str) -> Result<AnchorStatus, AnchorError> {
+        self.anchor.deposit_status(memo, id).await
+    }
+}
+
+#[sqlx::test]
+async fn a_block_while_the_anchor_answers_refuses_the_intent(db: PgPool) -> TestResult {
+    let h = harness(db.clone());
+    h.service
+        .onboard(input(ALICE, 1, KycScenario::Approved)?)
+        .await?;
+    let anchor: Arc<dyn AnchorClient> = Arc::new(BlockedWhileTheAnchorAnswers {
+        anchor: FakeAnchor::default(),
+        asp: h.service.clone(),
+        account: AccountId::parse(ALICE)?,
+    });
+    let intents_service = IntentService::new(db.clone(), Some(anchor), "USDC".into());
+
+    let outcome = intents_service
+        .create(CreateIntent {
+            request_id: uuid::Uuid::now_v7(),
+            stellar_account: AccountId::parse(ALICE)?,
+            fiat_currency: FiatCurrency::parse("CRC")?,
+            amount: DecimalAmount::parse("5000")?,
+        })
+        .await;
+
+    // A conflict the client understands, not a server error, and no URL.
+    assert!(
+        matches!(outcome, Err(IntentError::UserNotAllowed)),
+        "{outcome:?}"
+    );
+    let status: String = sqlx::query_scalar("SELECT status FROM intents")
+        .fetch_one(&db)
+        .await?;
+    assert_eq!(status, "rejected");
     Ok(())
 }
