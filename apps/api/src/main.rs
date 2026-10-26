@@ -10,19 +10,22 @@ use std::sync::Arc;
 
 use shield_api::{
     HttpOptions,
+    adapters::soroban::{DEFAULT_VALIDITY, SorobanAspConfig, SorobanAspContract},
     asp::service::AspService,
     build_app,
     config::Config,
     db,
     deployment::PoolDeployment,
     http::InfoResponse,
-    ports::{SystemClock, UnconfiguredAspContract},
+    ports::{AspContract, Clock, SystemClock, UnconfiguredAspContract},
     state::AppState,
     telemetry,
 };
 use tokio::net::TcpListener;
 
 type BoxError = Box<dyn std::error::Error + Send + Sync>;
+
+const TESTNET_PASSPHRASE: &str = "Test SDF Network ; September 2015";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Command {
@@ -70,6 +73,9 @@ async fn run() -> Result<(), BoxError> {
         return Ok(());
     }
 
+    let clock: Arc<dyn Clock> = Arc::new(SystemClock);
+    let asp_contract = asp_contract(&config, &deployment, clock.clone())?;
+
     let app = build_app(
         AppState {
             db: pool.clone(),
@@ -77,12 +83,7 @@ async fn run() -> Result<(), BoxError> {
                 &deployment,
                 config.ramp_anchor_home_domain,
             )),
-            // The Soroban ASP adapter lands in H5b; until then users stay pending.
-            asp: AspService::new(
-                pool.clone(),
-                Arc::new(UnconfiguredAspContract),
-                Arc::new(SystemClock),
-            ),
+            asp: AspService::new(pool.clone(), asp_contract, clock),
             admin_token: Arc::new(config.admin_token),
         },
         HttpOptions {
@@ -100,6 +101,32 @@ async fn run() -> Result<(), BoxError> {
     pool.close().await;
     tracing::info!("shield-api stopped");
     Ok(())
+}
+
+/// The Soroban ASP adapter when the operator seed is configured; otherwise a
+/// placeholder that keeps users `pending`.
+fn asp_contract(
+    config: &Config,
+    deployment: &PoolDeployment,
+    clock: Arc<dyn Clock>,
+) -> Result<Arc<dyn AspContract>, BoxError> {
+    let Some(operator_secret) = config.operator_secret.clone() else {
+        tracing::warn!("SHIELD_OPERATOR_SECRET is not set: ASP writes are off, users stay pending");
+        return Ok(Arc::new(UnconfiguredAspContract));
+    };
+    let contract = SorobanAspContract::new(
+        SorobanAspConfig {
+            rpc_url: config.soroban_rpc_url.clone(),
+            network_passphrase: TESTNET_PASSPHRASE.to_owned(),
+            operator_secret,
+            asp_membership: deployment.asp_membership.clone(),
+            asp_non_membership: deployment.asp_non_membership.clone(),
+            validity: DEFAULT_VALIDITY,
+        },
+        clock,
+    )?;
+    tracing::info!(operator = %contract.operator_address(), "ASP writes signed by the operator");
+    Ok(Arc::new(contract))
 }
 
 /// Resolves on Ctrl+C or SIGTERM so in-flight requests can finish.
