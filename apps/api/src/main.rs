@@ -10,7 +10,10 @@ use std::sync::Arc;
 
 use shield_api::{
     HttpOptions,
-    adapters::soroban::{DEFAULT_VALIDITY, SorobanAspConfig, SorobanAspContract},
+    adapters::{
+        anchor::{Sep24AnchorClient, Sep24AnchorConfig},
+        soroban::{DEFAULT_VALIDITY, SorobanAspConfig, SorobanAspContract},
+    },
     asp::service::AspService,
     build_app,
     config::Config,
@@ -79,13 +82,7 @@ async fn run() -> Result<(), BoxError> {
 
     let clock: Arc<dyn Clock> = Arc::new(SystemClock);
     let asp_contract = asp_contract(&config, &deployment, clock.clone())?;
-    // The SEP-24 client lands in H6a2; until then ramp intents end in `error`.
-    let anchor = config.ramp_anchor_home_domain.clone().map(|home_domain| {
-        Arc::new(UnconfiguredAnchorClient { home_domain }) as Arc<dyn AnchorClient>
-    });
-    if anchor.is_none() {
-        tracing::info!("RAMP_ANCHOR_HOME_DOMAIN is not set: ramp mode is disabled");
-    }
+    let anchor = anchor_client(&config, &deployment, clock.clone())?;
 
     let app = build_app(
         AppState {
@@ -139,6 +136,34 @@ fn asp_contract(
     )?;
     tracing::info!(operator = %contract.operator_address(), "ASP writes signed by the operator");
     Ok(Arc::new(contract))
+}
+
+/// The SEP-24 anchor client when ramp mode is configured; `None` disables
+/// ramp mode.
+fn anchor_client(
+    config: &Config,
+    deployment: &PoolDeployment,
+    clock: Arc<dyn Clock>,
+) -> Result<Option<Arc<dyn AnchorClient>>, BoxError> {
+    let Some(home_domain) = config.ramp_anchor_home_domain.clone() else {
+        tracing::info!("RAMP_ANCHOR_HOME_DOMAIN is not set: ramp mode is disabled");
+        return Ok(None);
+    };
+    let Some(intake_secret) = config.intake_secret.clone() else {
+        tracing::warn!("SHIELD_INTAKE_SECRET is not set: ramp intents cannot reach the anchor");
+        return Ok(Some(Arc::new(UnconfiguredAnchorClient { home_domain })));
+    };
+    let client = Sep24AnchorClient::new(
+        Sep24AnchorConfig {
+            home_domain,
+            intake_secret,
+            asset_issuer: deployment.asset.issuer.clone(),
+            network_passphrase: TESTNET_PASSPHRASE.to_owned(),
+        },
+        clock,
+    )?;
+    tracing::info!(anchor = client.home_domain(), "ramp mode enabled");
+    Ok(Some(Arc::new(client)))
 }
 
 /// Resolves on Ctrl+C or SIGTERM so in-flight requests can finish.
