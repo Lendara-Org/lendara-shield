@@ -10,9 +10,11 @@ use axum::{
     http::{HeaderMap, HeaderValue, Request, StatusCode},
 };
 use http_body_util::BodyExt;
+use secrecy::SecretString;
 use serde_json::Value;
 use shield_api::{
-    HttpOptions, build_app, deployment::PoolDeployment, http::InfoResponse, state::AppState,
+    HttpOptions, asp::service::AspService, build_app, deployment::PoolDeployment,
+    http::InfoResponse, ports::SystemClock, state::AppState, testing::FakeAspContract,
 };
 use sqlx::{PgPool, postgres::PgPoolOptions};
 use tower::ServiceExt;
@@ -21,6 +23,7 @@ pub type TestResult = Result<(), Box<dyn std::error::Error>>;
 
 pub const WEB_ORIGIN: &str = "http://localhost:3000";
 pub const ANCHOR: &str = "lendara-monorepo-fixh.vercel.app";
+pub const ADMIN_TOKEN: &str = "test-admin-token-0123456789abcdef0123";
 
 /// The deployment fixture: a real SPP manifest shape with public testnet ids.
 pub fn deployment() -> Result<PoolDeployment, Box<dyn std::error::Error>> {
@@ -37,11 +40,35 @@ pub fn app_with_ramp(
     db: PgPool,
     ramp_anchor_home_domain: Option<String>,
 ) -> Result<Router, Box<dyn std::error::Error>> {
+    app_with(
+        db,
+        ramp_anchor_home_domain,
+        Arc::new(FakeAspContract::default()),
+    )
+}
+
+/// The app wired to a fake chain the test can script and inspect.
+pub fn app_with_chain(
+    db: PgPool,
+) -> Result<(Router, Arc<FakeAspContract>), Box<dyn std::error::Error>> {
+    let chain = Arc::new(FakeAspContract::default());
+    Ok((app_with(db, Some(ANCHOR.to_owned()), chain.clone())?, chain))
+}
+
+fn app_with(
+    db: PgPool,
+    ramp_anchor_home_domain: Option<String>,
+    chain: Arc<FakeAspContract>,
+) -> Result<Router, Box<dyn std::error::Error>> {
     let info = InfoResponse::new(&deployment()?, ramp_anchor_home_domain);
+    let asp = AspService::new(db.clone(), chain, Arc::new(SystemClock))
+        .with_timing(Duration::from_millis(60), Duration::from_millis(5));
     Ok(build_app(
         AppState {
             db,
             info: Arc::new(info),
+            asp,
+            admin_token: Arc::new(Some(SecretString::from(ADMIN_TOKEN))),
         },
         HttpOptions {
             cors_allowed_origins: vec![HeaderValue::from_static(WEB_ORIGIN)],
@@ -74,4 +101,16 @@ pub async fn send(
 
 pub fn get(uri: &str) -> Result<Request<Body>, axum::http::Error> {
     Request::get(uri).body(Body::empty())
+}
+
+pub fn post_json(
+    uri: &str,
+    body: &Value,
+    bearer: Option<&str>,
+) -> Result<Request<Body>, axum::http::Error> {
+    let mut request = Request::post(uri).header("content-type", "application/json");
+    if let Some(token) = bearer {
+        request = request.header("authorization", format!("Bearer {token}"));
+    }
+    request.body(Body::from(body.to_string()))
 }
