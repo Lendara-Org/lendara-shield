@@ -93,10 +93,14 @@ test("switches language and reads the docs", async ({ page }) => {
 });
 
 test("the visual identity stays readable and usable across viewport widths", async ({ page }) => {
-  for (const width of [375, 768, 1280]) {
+  for (const width of [375, 768, 1280, 1920]) {
     await page.setViewportSize({ width, height: 900 });
     await page.goto("/es");
     await page.evaluate(() => document.fonts.ready);
+    if (width === 1920) {
+      await expect(page.getByRole("main")).toHaveCSS("max-width", "1440px");
+      await expect(page.getByRole("heading", { level: 1 })).toHaveCSS("font-size", "76px");
+    }
     await expect(page.getByRole("heading", { level: 1 })).toHaveCSS("font-weight", "600");
     await expect(page.getByRole("link", { name: "Empezar: registro" })).toHaveCSS("background-color", "rgb(194, 24, 82)");
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);

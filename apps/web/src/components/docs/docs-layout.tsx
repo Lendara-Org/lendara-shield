@@ -18,7 +18,7 @@ export function DocsLayout({ lang, slug, page, chrome, titles }: Props) {
   const next = index < DOC_SLUGS.length - 1 ? DOC_SLUGS[index + 1] : undefined;
 
   const nav = (
-    <ul className="flex flex-col gap-0.5 text-sm">
+    <ul className="flex flex-col gap-0.5 text-base">
       {DOC_SLUGS.map((s) => (
         <li key={s}>
           <Link
@@ -36,7 +36,7 @@ export function DocsLayout({ lang, slug, page, chrome, titles }: Props) {
   );
 
   return (
-    <main className="mx-auto grid max-w-5xl grid-cols-[minmax(0,1fr)] gap-8 px-4 py-8 lg:grid-cols-[200px_minmax(0,1fr)] lg:py-12">
+    <main className="mx-auto grid max-w-[1440px] grid-cols-[minmax(0,1fr)] gap-10 px-5 py-10 sm:px-8 lg:px-12 lg:grid-cols-[240px_minmax(0,1fr)] lg:py-12">
       <aside className="lg:sticky lg:top-6 lg:self-start">
         <details className="rounded-lg border border-line bg-surface lg:hidden">
           <summary className="cursor-pointer px-4 py-3 text-sm font-medium">{chrome.menu}</summary>

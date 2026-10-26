@@ -23,12 +23,12 @@ export function SiteHeader() {
   ];
   return (
     <header className="border-b border-line bg-surface">
-      <nav aria-label={t.nav.main} className="mx-auto flex max-w-5xl flex-wrap items-center gap-x-6 gap-y-2 px-5 py-4">
-        <Link href={href("/")} className="flex items-center gap-2.5 font-display font-semibold tracking-normal">
+      <nav aria-label={t.nav.main} className="mx-auto flex max-w-[1440px] flex-wrap items-center gap-x-6 gap-y-2 px-5 py-5 sm:px-8 lg:px-12 lg:py-6">
+        <Link href={href("/")} className="flex items-center gap-2.5 text-lg font-display font-semibold tracking-normal">
           <Isotipo className="h-8 w-auto text-crimson" />
           Lendara Shield
         </Link>
-        <ul className="flex flex-wrap gap-4 text-sm">
+        <ul className="flex flex-wrap gap-4 text-base lg:gap-6">
           {links.map(({ path, label }) => {
             const target = href(path);
             const current = pathname === target || (path === "/docs" && pathname.startsWith(`${target}/`));
