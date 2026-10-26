@@ -9,6 +9,8 @@
 #   5. Stellar Private Payments pool: allowlist-blocklist + gvk-traceable,
 #      deployed with SPP's own deploy.sh at a pinned release.
 #   6. Writes the resulting variables to $STATE_DIR/testnet.env.
+#   7. Initialises the intake for the pool (scripts/init-intake.sh): derives
+#      its pool keys and inserts its ASP leaf into the allow-list.
 #
 # Secrets never touch the repository: identities live in the Stellar CLI
 # config and everything else under $STATE_DIR (mode 700).
@@ -44,6 +46,8 @@ readonly SPP_DIR=$STATE_DIR/spp
 readonly GVK_DIR=$STATE_DIR/gvk
 readonly DEPLOYMENT_DIR=$STATE_DIR/deployment
 readonly ENV_FILE=$STATE_DIR/testnet.env
+REPO_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+readonly REPO_ROOT
 
 step() { printf '\n==> %s\n' "$*"; }
 ok() { printf '    ok: %s\n' "$*"; }
@@ -168,6 +172,13 @@ RAMP_ASSET_ISSUER=$ASSET_ISSUER
 EOF
 }
 
+# Without this every ramp deposit fails: the intake has no pool keys and is
+# not in the allow-list. Re-run after FORCE_REDEPLOY (a new allow-list).
+init_intake() {
+  (cd "$REPO_ROOT" && make --no-print-directory build-api build-pool-cli)
+  "$REPO_ROOT/scripts/init-intake.sh" "$ENV_FILE"
+}
+
 summary() {
   local manifest=$DEPLOYMENT_DIR/deployments.json
   step "Done"
@@ -206,6 +217,8 @@ main() {
   ensure_gvk
   ensure_pool
   write_env
+  step "Intake (pool keys and allow-list)"
+  init_intake
   summary
 }
 
