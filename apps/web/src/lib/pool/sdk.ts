@@ -9,7 +9,9 @@ import type * as Spp from "stellar-private-payments";
 import circuitLock from "stellar-private-payments/circuits/circuits.json";
 
 import { SDK_BASE_PATH, SOROBAN_RPC_URL } from "../config";
+import { circuitsBaseUrl, preloadPoolCircuits } from "./circuits";
 import { FreighterSigner, connectFreighter } from "./freighter-signer";
+import { withOneProverRetry } from "./retry";
 import { PoolOperationError, type PoolResult, type RecipientKeys, type ShieldWallet, type WalletConnector } from "./types";
 
 type SppModule = typeof Spp;
@@ -36,7 +38,7 @@ async function loadRuntime() {
     rpcUrl: SOROBAN_RPC_URL,
     storage,
     contractConfig,
-    circuitsBaseUrl: `${origin}${SDK_BASE_PATH}/sdk/dist/circuits/`,
+    circuitsBaseUrl: circuitsBaseUrl(origin),
     circuitLock,
   });
   return { sdk, client, poolContract };
@@ -102,18 +104,23 @@ export function sppConnector(networkPassphrase: string): WalletConnector {
           await client.sync();
           return opened.balance();
         },
+        // Each operation proves: the circuit is downloaded first, outside
+        // the prover's 30 s budget, and a proving timeout is retried once.
         async deposit(amount: bigint) {
-          return done(await (await openPool()).deposit(amount));
+          const [opened] = await Promise.all([openPool(), preloadPoolCircuits()]);
+          return done(await withOneProverRetry(() => opened.deposit(amount)));
         },
         async transfer(to: RecipientKeys, amount: bigint) {
-          const opened = await openPool();
+          const [opened] = await Promise.all([openPool(), preloadPoolCircuits()]);
           await client.sync();
-          return done(await opened.transferToKeys(to.notePublicKey, to.encryptionPublicKey, amount));
+          return done(
+            await withOneProverRetry(() => opened.transferToKeys(to.notePublicKey, to.encryptionPublicKey, amount)),
+          );
         },
         async withdraw(amount: bigint) {
-          const opened = await openPool();
+          const [opened] = await Promise.all([openPool(), preloadPoolCircuits()]);
           await client.sync();
-          return done(await opened.withdraw(amount));
+          return done(await withOneProverRetry(() => opened.withdraw(amount)));
         },
       };
     },
