@@ -31,6 +31,8 @@ pub struct Config {
     pub ramp_anchor_home_domain: Option<String>,
     /// Bearer token for `/v1/asp/*`. `None` disables the admin endpoints.
     pub admin_token: Option<SecretString>,
+    /// Bearer token for the audit endpoints; `None` disables them.
+    pub auditor_token: Option<SecretString>,
     /// Stellar RPC used for Soroban calls.
     pub soroban_rpc_url: String,
     /// Horizon, to read the intake's payments.
@@ -113,7 +115,10 @@ impl Config {
             get("SHIELD_INTAKE_SECRET").map(|raw| SecretString::from(raw.trim().to_owned()));
         let pool_cli_path = get("POOL_CLI_PATH").map(|raw| PathBuf::from(raw.trim()));
         let admin_token = get("ADMIN_TOKEN")
-            .map(|raw| parse_admin_token(&raw))
+            .map(|raw| parse_token("ADMIN_TOKEN", &raw))
+            .transpose()?;
+        let auditor_token = get("AUDITOR_TOKEN")
+            .map(|raw| parse_token("AUDITOR_TOKEN", &raw))
             .transpose()?;
 
         Ok(Self {
@@ -124,6 +129,7 @@ impl Config {
             deployment_file,
             ramp_anchor_home_domain,
             admin_token,
+            auditor_token,
             soroban_rpc_url,
             horizon_url,
             operator_secret,
@@ -179,11 +185,11 @@ fn parse_url(name: &'static str, raw: &str) -> Result<String, ConfigError> {
     }
 }
 
-fn parse_admin_token(raw: &str) -> Result<SecretString, ConfigError> {
+fn parse_token(name: &'static str, raw: &str) -> Result<SecretString, ConfigError> {
     let token = raw.trim();
     if token.len() < MIN_ADMIN_TOKEN_LEN {
         return Err(ConfigError::Invalid {
-            name: "ADMIN_TOKEN",
+            name,
             reason: format!("must be at least {MIN_ADMIN_TOKEN_LEN} characters"),
         });
     }
@@ -317,6 +323,29 @@ mod tests {
                 "{raw}: {err:?}"
             );
         }
+    }
+
+    #[test]
+    fn auditor_token_is_optional_but_must_be_long() -> Result<(), ConfigError> {
+        assert!(load(&[("DATABASE_URL", DB_URL)])?.auditor_token.is_none());
+        let token = "a".repeat(32);
+        let config = load(&[("DATABASE_URL", DB_URL), ("AUDITOR_TOKEN", &token)])?;
+        assert_eq!(
+            config
+                .auditor_token
+                .as_ref()
+                .map(ExposeSecret::expose_secret),
+            Some(token.as_str())
+        );
+        assert!(!format!("{config:?}").contains(&token));
+        assert!(matches!(
+            load(&[("DATABASE_URL", DB_URL), ("AUDITOR_TOKEN", "short")]).err(),
+            Some(ConfigError::Invalid {
+                name: "AUDITOR_TOKEN",
+                ..
+            })
+        ));
+        Ok(())
     }
 
     #[test]

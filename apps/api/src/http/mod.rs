@@ -1,6 +1,7 @@
 //! HTTP layer: routing and cross-cutting middleware. Handlers stay thin and
 //! delegate business logic to services.
 
+mod audit;
 mod extract;
 mod health;
 mod info;
@@ -57,6 +58,8 @@ pub fn build_app(state: AppState, options: HttpOptions) -> Router {
         .route("/v1/asp/unblock", post(users::unblock))
         .route("/v1/intents", post(intents::create))
         .route("/v1/intents/{id}", get(intents::get))
+        .route("/v1/audit/transactions", get(audit::transactions))
+        .route("/v1/audit/public/{tx_hash}", get(audit::public))
         .fallback(not_found)
         .with_state(state)
         .layer(TimeoutLayer::with_status_code(

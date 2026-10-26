@@ -11,11 +11,13 @@ use shield_api::{
     adapters::{
         account_of,
         anchor::{Sep24AnchorClient, Sep24AnchorConfig},
+        explorer::HorizonExplorer,
         horizon::HorizonLedger,
         pool_cli::{self, CliPoolClient},
         soroban::{DEFAULT_VALIDITY, SorobanAspConfig, SorobanAspContract, rpc::SorobanRpc},
     },
     asp::service::AspService,
+    audit::AuditService,
     background::{self, Background},
     build_app,
     config::Config,
@@ -27,8 +29,8 @@ use shield_api::{
         shielding::ShieldingWorker, watcher::IntakeWatcher,
     },
     ports::{
-        AnchorClient, AspContract, Clock, SystemClock, UnconfiguredAnchorClient,
-        UnconfiguredAspContract,
+        AnchorClient, AspContract, Clock, Explorer, PoolAuditor, SystemClock,
+        UnconfiguredAnchorClient, UnconfiguredAspContract,
     },
     state::AppState,
     telemetry,
@@ -89,18 +91,29 @@ async fn run() -> Result<(), BoxError> {
     let clock: Arc<dyn Clock> = Arc::new(SystemClock);
     let asp_contract = asp_contract(&config, &deployment, clock.clone())?;
     let anchor = anchor_client(&config, &deployment, clock.clone())?;
-    let background = background_loop(&config, &deployment, &pool, anchor.as_ref(), &clock)?;
+    // `pool-cli` runs for the worker and the auditor share the intake's wallet.
+    let wallet = Arc::new(tokio::sync::Mutex::new(()));
+    let background = background_loop(
+        &config,
+        &deployment,
+        &pool,
+        anchor.as_ref(),
+        &clock,
+        &wallet,
+    )?;
 
     let app = build_app(
         AppState {
             db: pool.clone(),
             info: Arc::new(InfoResponse::new(
                 &deployment,
-                config.ramp_anchor_home_domain,
+                config.ramp_anchor_home_domain.clone(),
             )),
             asp: AspService::new(pool.clone(), asp_contract, clock.clone()),
             intents: IntentService::new(pool.clone(), anchor, deployment.asset.code.clone()),
+            audit: audit_service(&config, &deployment, &pool, &wallet)?,
             admin_token: Arc::new(config.admin_token),
+            auditor_token: Arc::new(config.auditor_token),
         },
         HttpOptions {
             cors_allowed_origins: config.cors_allowed_origins,
@@ -167,6 +180,7 @@ fn background_loop(
     pool: &sqlx::PgPool,
     anchor: Option<&Arc<dyn AnchorClient>>,
     clock: &Arc<dyn Clock>,
+    wallet: &Arc<tokio::sync::Mutex<()>>,
 ) -> Result<Option<Background>, BoxError> {
     let (Some(anchor), Some(secret)) = (anchor, config.intake_secret.as_ref()) else {
         return Ok(None);
@@ -178,7 +192,7 @@ fn background_loop(
         issuer: deployment.asset.issuer.as_str().to_owned(),
     };
     tracing::info!("intake watcher and anchor sync enabled");
-    let shielding = shielding_worker(config, pool, &intake, clock)?;
+    let shielding = shielding_worker(config, pool, &intake, clock, wallet)?;
     Ok(Some(Background {
         watcher: IntakeWatcher::new(pool.clone(), Arc::new(ledger), asset),
         anchor_sync: AnchorSync::new(pool.clone(), anchor.clone(), clock.clone()),
@@ -192,6 +206,7 @@ fn shielding_worker(
     pool: &sqlx::PgPool,
     intake: &shield_api::domain::AccountId,
     clock: &Arc<dyn Clock>,
+    wallet: &Arc<tokio::sync::Mutex<()>>,
 ) -> Result<Option<ShieldingWorker>, BoxError> {
     let Some(binary) = config.pool_cli_path.clone() else {
         tracing::warn!("POOL_CLI_PATH is not set: funded intents will not be shielded");
@@ -203,13 +218,53 @@ fn shielding_worker(
         pool_cli::DEFAULT_TIMEOUT,
         SorobanRpc::new(config.soroban_rpc_url.clone())?,
         stellar_strkey::ed25519::PublicKey::from_string(intake.as_str())?.0,
-    );
+    )
+    .sharing_wallet(wallet.clone());
     tracing::info!(binary = %binary.display(), "shielding worker enabled");
     Ok(Some(ShieldingWorker::new(
         pool.clone(),
         Arc::new(pool_client),
         clock.clone(),
     )))
+}
+
+/// The auditor's view (`pool-cli audit`, needs `POOL_CLI_PATH`, the intake
+/// and `AUDITOR_TOKEN`) and the public view (Horizon, always on).
+fn audit_service(
+    config: &Config,
+    deployment: &PoolDeployment,
+    pool: &sqlx::PgPool,
+    wallet: &Arc<tokio::sync::Mutex<()>>,
+) -> Result<AuditService, BoxError> {
+    let explorer: Arc<dyn Explorer> = Arc::new(HorizonExplorer::new(
+        &format!("{}/", config.horizon_url),
+        deployment.pool.clone(),
+    )?);
+    let intake = config.intake_secret.as_ref().and_then(account_of);
+    let (Some(binary), Some(intake), Some(_)) =
+        (&config.pool_cli_path, intake, &config.auditor_token)
+    else {
+        tracing::warn!(
+            "auditor disabled: needs POOL_CLI_PATH, SHIELD_INTAKE_SECRET and AUDITOR_TOKEN"
+        );
+        return Ok(AuditService::new(pool.clone(), None, Some(explorer)));
+    };
+    tracing::info!("auditor enabled");
+    let auditor: Arc<dyn PoolAuditor> = Arc::new(
+        CliPoolClient::new(
+            binary.clone(),
+            CliPoolClient::auditor_env(),
+            pool_cli::DEFAULT_TIMEOUT,
+            SorobanRpc::new(config.soroban_rpc_url.clone())?,
+            stellar_strkey::ed25519::PublicKey::from_string(intake.as_str())?.0,
+        )
+        .sharing_wallet(wallet.clone()),
+    );
+    Ok(AuditService::new(
+        pool.clone(),
+        Some(auditor),
+        Some(explorer),
+    ))
 }
 
 /// The SEP-24 anchor client when ramp mode is configured; `None` disables

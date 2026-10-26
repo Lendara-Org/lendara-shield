@@ -5,7 +5,7 @@ use axum::{
     extract::{FromRequest, FromRequestParts, Request, rejection::JsonRejection},
     http::{header, request::Parts},
 };
-use secrecy::ExposeSecret;
+use secrecy::{ExposeSecret, SecretString};
 use serde::de::DeserializeOwned;
 
 use crate::{error::ApiError, state::AppState};
@@ -40,14 +40,28 @@ impl FromRequestParts<AppState> for AdminAuth {
         parts: &mut Parts,
         state: &AppState,
     ) -> impl Future<Output = Result<Self, Self::Rejection>> + Send {
-        std::future::ready(authorize(parts, state))
+        std::future::ready(bearer(parts, state.admin_token.as_ref().as_ref()).map(|()| Self))
     }
 }
 
-fn authorize(parts: &Parts, state: &AppState) -> Result<AdminAuth, ApiError> {
-    let Some(expected) = state.admin_token.as_ref() else {
-        return Err(ApiError::Unauthorized);
-    };
+/// Proof that the request carries the auditor bearer token.
+#[derive(Debug)]
+pub struct AuditorAuth;
+
+impl FromRequestParts<AppState> for AuditorAuth {
+    type Rejection = ApiError;
+
+    fn from_request_parts(
+        parts: &mut Parts,
+        state: &AppState,
+    ) -> impl Future<Output = Result<Self, Self::Rejection>> + Send {
+        std::future::ready(bearer(parts, state.auditor_token.as_ref().as_ref()).map(|()| Self))
+    }
+}
+
+/// Checks `Authorization: Bearer <expected>`; no token configured rejects all.
+fn bearer(parts: &Parts, expected: Option<&SecretString>) -> Result<(), ApiError> {
+    let expected = expected.ok_or(ApiError::Unauthorized)?;
     let provided = parts
         .headers
         .get(header::AUTHORIZATION)
@@ -55,7 +69,7 @@ fn authorize(parts: &Parts, state: &AppState) -> Result<AdminAuth, ApiError> {
         .and_then(|value| value.strip_prefix("Bearer "))
         .ok_or(ApiError::Unauthorized)?;
     if constant_time_eq(provided.as_bytes(), expected.expose_secret().as_bytes()) {
-        Ok(AdminAuth)
+        Ok(())
     } else {
         Err(ApiError::Unauthorized)
     }
