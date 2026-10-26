@@ -4,6 +4,14 @@ const nextConfig: NextConfig = {
   poweredByHeader: false,
   // The API types package ships TypeScript sources.
   transpilePackages: ["@lendara/shield-api-types"],
+  // Pages moved under /<lang>; old links keep working in English.
+  async redirects() {
+    return ["onboard", "deposit", "wallet", "audit", "docs"].map((page) => ({
+      source: `/${page}/:rest*`,
+      destination: `/en/${page}/:rest*`,
+      permanent: false,
+    }));
+  },
   async headers() {
     return [
       {

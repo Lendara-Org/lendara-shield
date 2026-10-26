@@ -3,6 +3,7 @@
 import type { Intent } from "@lendara/shield-api-types";
 import { useState } from "react";
 
+import { useI18n } from "@/components/i18n";
 import { message } from "@/components/session";
 import { Button, Card, Field, Notice, inputClass } from "@/components/ui/primitives";
 import { api } from "@/lib/api";
@@ -14,6 +15,7 @@ const CURRENCY = /^[A-Z]{3}$/;
 const ZERO = /^0+(\.0+)?$/;
 
 export function RampDeposit({ account, anchor }: { account: string; anchor: string | null | undefined }) {
+  const { t } = useI18n();
   const [currency, setCurrency] = useState("CRC");
   const [amount, setAmount] = useState("");
   const [busy, setBusy] = useState(false);
@@ -55,9 +57,9 @@ export function RampDeposit({ account, anchor }: { account: string; anchor: stri
       <div className="space-y-4">
         {intent.interactive_url && (
           <Notice>
-            Complete the payment in the anchor&apos;s window.{" "}
+            {t.deposit.completeInWindow}{" "}
             <a href={intent.interactive_url} target="_blank" rel="noreferrer" className="font-medium underline">
-              Reopen it
+              {t.deposit.reopen}
             </a>
           </Notice>
         )}
@@ -67,14 +69,11 @@ export function RampDeposit({ account, anchor }: { account: string; anchor: stri
   }
 
   return (
-    <Card title="Pay in local currency">
-      <p className="mb-4 text-sm text-gray">
-        The anchor{anchor ? ` (${anchor})` : ""} pays Shield&apos;s account with a memo. Shield deposits and transfers the USDC to
-        your keys privately. Nothing on-chain points to your address.
-      </p>
+    <Card title={t.deposit.rampTitle}>
+      <p className="mb-4 text-sm text-gray">{t.deposit.rampIntro(anchor ?? null)}</p>
       <form onSubmit={(e) => void start(e)} className="space-y-4">
         <div className="grid gap-4 sm:grid-cols-[8rem_1fr]">
-          <Field label="Currency">
+          <Field label={t.deposit.currency}>
             {(control) => (
               <input
                 {...control}
@@ -86,7 +85,7 @@ export function RampDeposit({ account, anchor }: { account: string; anchor: stri
               />
             )}
           </Field>
-          <Field label="Amount" hint="The anchor quotes it in USDC.">
+          <Field label={t.deposit.amount} hint={t.deposit.amountHint}>
             {(control) => (
               <input
                 {...control}
@@ -100,7 +99,7 @@ export function RampDeposit({ account, anchor }: { account: string; anchor: stri
           </Field>
         </div>
         <Button type="submit" busy={busy} disabled={!valid}>
-          Continue to the anchor
+          {t.deposit.toAnchor}
         </Button>
         {error && <Notice tone="error">{error}</Notice>}
       </form>

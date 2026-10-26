@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useState } from "react";
 
 import { ConnectGate } from "@/components/connect-gate";
+import { useI18n } from "@/components/i18n";
 import { message, useSession } from "@/components/session";
 import { Button, Card, Field, Notice, TxLink, inputClass } from "@/components/ui/primitives";
 import { api } from "@/lib/api";
@@ -13,17 +14,13 @@ import { usePoll } from "@/lib/hooks/use-poll";
 import { onboardingMessage } from "@/lib/onboarding";
 import type { ShieldWallet } from "@/lib/pool/types";
 
-const SCENARIOS: { value: KycScenario; label: string }[] = [
-  { value: "approved", label: "Approved: your key joins the allow-list" },
-  { value: "rejected", label: "Rejected: your key never enters the pool" },
-  { value: "blocked", label: "Blocked: approved, then frozen by the ASP" },
-];
+const SCENARIOS: KycScenario[] = ["approved", "rejected", "blocked"];
 
-const STATUS_TEXT: Record<ShieldUser["asp_status"], { tone: "ok" | "warn" | "error" | "info"; text: string }> = {
-  pending: { tone: "info", text: "Updating the pool's allow-list on-chain…" },
-  allowed: { tone: "ok", text: "You are in the allow-list. You can deposit and transact privately." },
-  not_allowed: { tone: "error", text: "KYC rejected: your key is not in the allow-list, so the pool refuses your proofs." },
-  blocked: { tone: "error", text: "Your key is in the block-list: it is frozen until the ASP unblocks it." },
+const TONE: Record<ShieldUser["asp_status"], "ok" | "warn" | "error" | "info"> = {
+  pending: "info",
+  allowed: "ok",
+  not_allowed: "error",
+  blocked: "error",
 };
 
 export function OnboardFlow() {
@@ -32,6 +29,7 @@ export function OnboardFlow() {
 
 function Onboarding({ wallet }: { wallet: ShieldWallet }) {
   const { user, setUser } = useSession();
+  const { t, href } = useI18n();
   const [scenario, setScenario] = useState<KycScenario>("approved");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -65,27 +63,26 @@ function Onboarding({ wallet }: { wallet: ShieldWallet }) {
   }
 
   if (user) {
-    const status = STATUS_TEXT[user.asp_status];
     return (
-      <Card title="Your Shield status">
+      <Card title={t.onboard.statusTitle}>
         <dl className="mb-4 grid grid-cols-[8rem_1fr] gap-y-2 text-sm">
-          <dt className="text-gray">KYC</dt>
-          <dd className="capitalize">{user.kyc_status}</dd>
-          <dt className="text-gray">Allow-list</dt>
-          <dd>{user.asp_status.replace("_", " ")}</dd>
+          <dt className="text-gray">{t.onboard.kyc}</dt>
+          <dd className="capitalize">{t.onboard.kycStatus[user.kyc_status]}</dd>
+          <dt className="text-gray">{t.onboard.allowList}</dt>
+          <dd>{t.aspStatus[user.asp_status]}</dd>
           {user.last_asp_tx_hash && (
             <>
-              <dt className="text-gray">ASP update</dt>
+              <dt className="text-gray">{t.onboard.aspUpdate}</dt>
               <dd>
                 <TxLink hash={user.last_asp_tx_hash} />
               </dd>
             </>
           )}
         </dl>
-        <Notice tone={status.tone}>{status.text}</Notice>
+        <Notice tone={TONE[user.asp_status]}>{t.onboard.statusText[user.asp_status]}</Notice>
         {user.asp_status === "allowed" && (
-          <Link href="/deposit" className="mt-4 inline-block text-sm font-medium underline">
-            Continue to deposit →
+          <Link href={href("/deposit")} className="mt-4 inline-block text-sm font-medium underline">
+            {t.onboard.continue}
           </Link>
         )}
       </Card>
@@ -93,32 +90,31 @@ function Onboarding({ wallet }: { wallet: ShieldWallet }) {
   }
 
   return (
-    <Card title="Register with Shield">
+    <Card title={t.onboard.registerTitle}>
       <ol className="mb-5 list-decimal space-y-1 pl-5 text-sm text-gray">
-        <li>Freighter signs a message to derive your pool keys, here in the browser.</li>
-        <li>Freighter signs once more to prove this account is yours.</li>
-        <li>Shield receives only your public keys and your allow-list leaf.</li>
-        <li>After the (simulated) KYC, Shield, as the pool&apos;s ASP, adds your leaf on-chain.</li>
+        {t.onboard.steps.map((step) => (
+          <li key={step}>{step}</li>
+        ))}
       </ol>
       <div className="space-y-4">
-        <Field label="KYC scenario" hint="Sandbox only: choose the outcome of the simulated KYC.">
+        <Field label={t.onboard.scenario} hint={t.onboard.scenarioHint}>
           {(control) => (
             <select
               {...control}
               className={inputClass}
               value={scenario}
-              onChange={(e) => setScenario(SCENARIOS.find((s) => s.value === e.target.value)?.value ?? "approved")}
+              onChange={(e) => setScenario(SCENARIOS.find((s) => s === e.target.value) ?? "approved")}
             >
               {SCENARIOS.map((s) => (
-                <option key={s.value} value={s.value}>
-                  {s.label}
+                <option key={s} value={s}>
+                  {t.onboard.scenarios[s]}
                 </option>
               ))}
             </select>
           )}
         </Field>
         <Button onClick={() => void register()} busy={busy}>
-          Derive keys and register
+          {t.onboard.register}
         </Button>
         {error && <Notice tone="error">{error}</Notice>}
       </div>

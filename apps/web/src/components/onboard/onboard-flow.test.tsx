@@ -44,7 +44,7 @@ describe("OnboardFlow", () => {
     });
     expect(await screen.findByText(/Updating the pool's allow-list/)).toBeInTheDocument();
     expect(await screen.findByText(/You are in the allow-list/)).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /Continue to deposit/ })).toHaveAttribute("href", "/deposit");
+    expect(screen.getByRole("link", { name: /Continue to deposit/ })).toHaveAttribute("href", "/en/deposit");
   });
 
   it("shows an existing user's status and ASP transaction", async () => {
@@ -95,5 +95,12 @@ describe("OnboardFlow", () => {
     await ui.click(await screen.findByRole("button", { name: "Derive keys and register" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("User declined to sign");
     expect(onboard).not.toHaveBeenCalled();
+  });
+
+  it("speaks Spanish under /es", async () => {
+    server.use(http.get(url(`/v1/users/${ACCOUNT}`), () => HttpResponse.json(user())));
+    await renderConnected(<OnboardFlow />, fakeWallet(), "es");
+    expect(await screen.findByText(/Estás en la allow-list/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Seguir a depositar/ })).toHaveAttribute("href", "/es/deposit");
   });
 });

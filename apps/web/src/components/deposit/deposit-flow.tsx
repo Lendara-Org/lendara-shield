@@ -4,6 +4,7 @@ import { useSearchParams } from "next/navigation";
 import { useState } from "react";
 
 import { ConnectGate } from "@/components/connect-gate";
+import { useI18n } from "@/components/i18n";
 import { useSession } from "@/components/session";
 
 import { DirectDeposit } from "./direct-deposit";
@@ -13,6 +14,7 @@ type Mode = "ramp" | "direct";
 
 export function DepositFlow() {
   const { info } = useSession();
+  const { t } = useI18n();
   const params = useSearchParams();
   const rampEnabled = info?.modes.ramp.enabled ?? false;
   const [chosen, setChosen] = useState<Mode>(params.get("mode") === "direct" ? "direct" : "ramp");
@@ -22,11 +24,11 @@ export function DepositFlow() {
     <ConnectGate requireAllowed>
       {(wallet) => (
         <div className="space-y-6">
-          <div role="radiogroup" aria-label="Deposit mode" className="inline-flex rounded-md border border-line bg-surface p-1 text-sm">
+          <div role="radiogroup" aria-label={t.deposit.mode} className="inline-flex rounded-md border border-line bg-surface p-1 text-sm">
             {(
               [
-                ["ramp", "With a ramp"],
-                ["direct", "From my wallet"],
+                ["ramp", t.deposit.ramp],
+                ["direct", t.deposit.direct],
               ] as const
             ).map(([value, label]) => (
               <button

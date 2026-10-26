@@ -3,16 +3,19 @@
 import type { AuditNote, AuditTransaction, PublicTransaction } from "@lendara/shield-api-types";
 import { useEffect, useState } from "react";
 
+import { useI18n } from "@/components/i18n";
 import { message } from "@/components/session";
 import { Card, Notice, TxLink } from "@/components/ui/primitives";
 import { api } from "@/lib/api";
-import { isChange, kindLabel, otherVisible, owner, publicAmount } from "@/lib/audit";
+import { isChange, otherVisible, owner, publicAmount } from "@/lib/audit";
 import { shorten } from "@/lib/explorer";
 
 type PublicView = { tx: PublicTransaction } | { error: string } | null;
 
 /** One transaction, side by side: the explorer's view and the auditor's. */
 export function Comparison({ tx, asset }: { tx: AuditTransaction; asset: string }) {
+  const { t } = useI18n();
+  const a = t.audit;
   const [view, setView] = useState<PublicView>(null);
   const hash = tx.tx_hash;
 
@@ -32,45 +35,43 @@ export function Comparison({ tx, asset }: { tx: AuditTransaction; asset: string 
 
   return (
     <div className="grid gap-4 md:grid-cols-2">
-      <Card title="What anyone sees on the explorer">
-        {!hash && <Notice>This transaction&apos;s hash could not be resolved yet.</Notice>}
+      <Card title={a.explorerTitle}>
+        {!hash && <Notice>{a.unresolved}</Notice>}
         {hash && view && "error" in view && <Notice tone="error">{view.error}</Notice>}
-        {hash && !current && !(view && "error" in view) && <p className="text-sm text-gray">Loading…</p>}
+        {hash && !current && !(view && "error" in view) && <p className="text-sm text-gray">{a.loading}</p>}
         {current && (
           <dl className="space-y-3 text-sm">
-            <Row label="Signed by">
+            <Row label={a.signedBy}>
               <span className="font-mono">{shorten(current.source_account, 6, 4)}</span>
             </Row>
-            <Row label="Public amount">{publicAmount(current.ext_amount, asset)}</Row>
-            <Row label="Recipient">Not visible</Row>
+            <Row label={a.publicAmount}>{publicAmount(a, current.ext_amount, asset)}</Row>
+            <Row label={a.recipient}>{a.notVisible}</Row>
             {otherVisible(current).length > 0 && (
-              <Row label="Also visible">
+              <Row label={a.alsoVisible}>
                 <span className="font-mono">{otherVisible(current).map((a) => shorten(a, 6, 4)).join(", ")}</span>
-                <span className="block text-xs text-gray">The asset issuer appears in every transfer of its asset.</span>
+                <span className="block text-xs text-gray">{a.issuerNote}</span>
               </Row>
             )}
-            <Row label="Transaction">
+            <Row label={a.transaction}>
               <TxLink hash={current.tx_hash} />
             </Row>
           </dl>
         )}
       </Card>
 
-      <Card title="What the auditor sees" className="border-ink/30">
+      <Card title={a.auditorTitle} className="border-ink/30">
         <dl className="space-y-3 text-sm">
-          <Row label="Operation">
-            {kindLabel(tx.kind)} · ledger {tx.ledger}
+          <Row label={a.operation}>
+            {a.kinds[tx.kind]} · {a.ledger(tx.ledger)}
           </Row>
-          <Row label="From">
-            <Notes tx={tx} notes={tx.inputs} asset={asset} empty={tx.kind === "deposit" ? "A public deposit" : "—"} />
+          <Row label={a.from}>
+            <Notes tx={tx} notes={tx.inputs} asset={asset} empty={tx.kind === "deposit" ? a.publicDeposit : "—"} />
           </Row>
-          <Row label="To">
-            <Notes tx={tx} notes={tx.outputs} asset={asset} empty={tx.kind === "withdraw" ? "A public withdrawal" : "—"} />
+          <Row label={a.to}>
+            <Notes tx={tx} notes={tx.outputs} asset={asset} empty={tx.kind === "withdraw" ? a.publicWithdrawal : "—"} />
           </Row>
         </dl>
-        <p className="mt-4 text-xs text-gray">
-          Decrypted with the pool&apos;s Global View Key, which never leaves Shield&apos;s server.
-        </p>
+        <p className="mt-4 text-xs text-gray">{a.gvkNote}</p>
       </Card>
     </div>
   );
@@ -86,13 +87,14 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
 }
 
 function Notes({ tx, notes, asset, empty }: { tx: AuditTransaction; notes: AuditNote[]; asset: string; empty: string }) {
+  const { t } = useI18n();
   if (notes.length === 0) return <span className="text-gray">{empty}</span>;
   return (
     <ul className="space-y-1">
       {notes.map((note) => (
         <li key={`${note.owner_note_public_key}:${note.amount}`}>
-          <span className="font-mono">{owner(note)}</span> · {note.amount} {asset}
-          {notes === tx.outputs && isChange(tx, note) && <span className="text-gray"> (change)</span>}
+          <span className="font-mono">{owner(t.audit, note)}</span> · {note.amount} {asset}
+          {notes === tx.outputs && isChange(tx, note) && <span className="text-gray"> {t.audit.change}</span>}
         </li>
       ))}
     </ul>

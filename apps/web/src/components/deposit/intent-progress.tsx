@@ -4,6 +4,7 @@ import type { Intent } from "@lendara/shield-api-types";
 import { isFinalIntentStatus } from "@lendara/shield-api-types";
 import { useState } from "react";
 
+import { useI18n } from "@/components/i18n";
 import { Card, Notice, TxLink } from "@/components/ui/primitives";
 import { api } from "@/lib/api";
 import { INTENT_POLL_MS } from "@/lib/config";
@@ -19,6 +20,7 @@ const MARK: Record<StepState, string> = {
 
 /** Live timeline of a ramp intent, polled until it reaches a final state. */
 export function IntentProgress({ initial }: { initial: Intent }) {
+  const { t } = useI18n();
   const [intent, setIntent] = useState(initial);
   const final = isFinalIntentStatus(intent.status);
 
@@ -27,7 +29,7 @@ export function IntentProgress({ initial }: { initial: Intent }) {
   });
 
   return (
-    <Card title="Your private deposit">
+    <Card title={t.progress.title}>
       <ol className="space-y-4" aria-live="polite">
         {intentSteps(intent).map((step, i) => (
           <li key={step.key} className="flex gap-3" data-state={step.state}>
@@ -36,10 +38,10 @@ export function IntentProgress({ initial }: { initial: Intent }) {
             </span>
             <div className="space-y-0.5">
               <p className="text-sm font-medium">
-                {step.label}
-                <span className="sr-only">: {step.state}</span>
+                {t.progress.steps[step.key].label}
+                <span className="sr-only">: {t.progress.state[step.state]}</span>
               </p>
-              <p className="text-xs text-gray">{step.detail}</p>
+              <p className="text-xs text-gray">{t.progress.steps[step.key].detail}</p>
               {step.hash && <TxLink hash={step.hash} />}
             </div>
           </li>
@@ -47,15 +49,10 @@ export function IntentProgress({ initial }: { initial: Intent }) {
       </ol>
       <div className="mt-5">
         {intent.status === "completed" && (
-          <Notice tone="ok">
-            {intent.amount_asset} {intent.asset_code} are now private in your pool balance.
-          </Notice>
+          <Notice tone="ok">{t.progress.completed(intent.amount_asset ?? "", intent.asset_code)}</Notice>
         )}
         {final && intent.status !== "completed" && (
-          <Notice tone="error">
-            Deposit {intent.status}
-            {intent.message ? `: ${intent.message}` : "."}
-          </Notice>
+          <Notice tone="error">{t.progress.ended(t.progress.status[intent.status] ?? intent.status, intent.message)}</Notice>
         )}
       </div>
     </Card>

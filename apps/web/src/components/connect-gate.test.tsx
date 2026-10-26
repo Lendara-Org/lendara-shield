@@ -40,7 +40,7 @@ describe("ConnectGate", () => {
     server.use(http.get(url(`/v1/users/${ACCOUNT}`), () => HttpResponse.json(user({ asp_status: "blocked" }))));
     await renderConnected(<ConnectGate requireAllowed>{content}</ConnectGate>, fakeWallet());
     expect(await screen.findByText(/Your key is blocked/)).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Go to onboarding" })).toHaveAttribute("href", "/onboard");
+    expect(screen.getByRole("link", { name: "Go to onboarding" })).toHaveAttribute("href", "/en/onboard");
     expect(screen.queryByText("private content")).not.toBeInTheDocument();
   });
 
