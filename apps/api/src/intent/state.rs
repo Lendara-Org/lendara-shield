@@ -1,4 +1,4 @@
-//! The ramp intent state machine (CLAUDE.md §7.4). Pure: the single source
+//! The ramp intent state machine (AGENTS.md §6.4). Pure: the single source
 //! of truth for which status changes are legal. Every write goes through
 //! [`check`]; an invalid transition is an error, never a no-op.
 //!
