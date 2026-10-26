@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { MeshGradient } from "@paper-design/shaders-react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import type { Messages } from "@/content/messages";
 
 import { Isotipo } from "../brand/isotipo";
@@ -37,7 +38,7 @@ export function HeroPaymentVisual({ copy }: { copy: VisualCopy }) {
 
   return (
     <div className="payment-hero-visual" data-authorized={authorized} onMouseEnter={() => setPaused(true)} onMouseLeave={() => setPaused(false)} onFocusCapture={() => setManual(true)}>
-      <div className="payment-mesh" data-testid="payment-mesh" />
+      <PaperHeroMesh />
       <div className="payment-illustration">
         <div className="payment-illustration-brand">
           <span className="inline-flex items-center gap-2 font-display text-xl font-semibold">
@@ -100,4 +101,33 @@ function LockIcon() {
 
 function WalletIcon() {
   return <svg aria-hidden="true" focusable="false" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="5" width="18" height="15" rx="3" /><path d="M3 8h18M17 13h4M17 16h4" /></svg>;
+}
+
+
+function subscribeToMotionPreference(onChange: () => void) {
+  const preference = window.matchMedia("(prefers-reduced-motion: reduce)");
+  preference.addEventListener("change", onChange);
+  return () => preference.removeEventListener("change", onChange);
+}
+
+function motionIsAllowed() {
+  return !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
+/** Original Paper shader parameters; a stationary frame honors reduced motion. */
+function PaperHeroMesh() {
+  const animate = useSyncExternalStore(subscribeToMotionPreference, motionIsAllowed, () => false);
+  return (
+    <div className="payment-mesh" data-testid="payment-mesh" data-speed={animate ? "1" : "0"} aria-hidden="true">
+      <MeshGradient
+        speed={animate ? 1 : 0}
+        scale={1}
+        distortion={0.8}
+        swirl={0.1}
+        frame={5927957.59999519}
+        colors={["#FBE3ED", "#FF8A3D", "#E22366", "#F7F5F2", "#E22366"]}
+        style={{ height: "100%", width: "100%", position: "absolute", inset: 0 }}
+      />
+    </div>
+  );
 }

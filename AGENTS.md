@@ -199,7 +199,7 @@ Routes: `/` (what Shield is), `/docs` (overview, protocol, quickstart, API, scen
 - The existing web screens and flows remain the product baseline. Apply Paper identity through `apps/web/src/app/design-tokens.css` and shared primitives; do not recreate Paper screens.
 - Token values come from `docs/design-system/tokens.css`; the runtime copy uses Tailwind `@theme static` to expose utilities. Keep their values aligned. Use Sora 600 for headings, Inter for UI and amounts, and Geist Mono for code and identifiers.
 
-- Landing visuals use bilingual HTML/SVG and light CSS mesh backgrounds. The hero preview switches public/authorized views using fixture data only; never connect it to wallets or backend audit permissions. Stop its automatic cycle on interaction, honor reduced motion, and preserve entry links.
+- Landing visuals use bilingual HTML/SVG and the pinned @paper-design/shaders-react 0.0.81 MeshGradient. The hero preview switches public/authorized views using fixture data only; never connect it to wallets or backend audit permissions. Stop its automatic cycle on interaction, honor reduced motion (shader speed 0), and preserve entry links. Entry previews lift on hover without rotation.
 
 ### TypeScript
 

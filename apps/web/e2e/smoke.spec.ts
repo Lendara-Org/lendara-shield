@@ -117,11 +117,12 @@ test("the visual identity stays readable and usable across viewport widths", asy
 test("the illustrative mesh honors reduced motion without changing entry links", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/es");
-  await expect(page.getByTestId("payment-mesh")).toHaveCSS("animation-name", "none");
+  await expect(page.getByTestId("payment-mesh")).toHaveAttribute("data-speed", "0");
+  await expect(page.getByTestId("payment-mesh").locator("canvas")).toHaveCount(1);
   await expect(page.getByRole("link", { name: /Con rampa/ })).toHaveAttribute("href", "/es/deposit");
   await expect(page.getByRole("link", { name: /Desde tu wallet/ })).toHaveAttribute("href", "/es/deposit?mode=direct");
   await page.emulateMedia({ reducedMotion: "no-preference" });
-  await expect(page.getByTestId("payment-mesh")).toHaveCSS("animation-name", "payment-mesh-drift");
+  await expect(page.getByTestId("payment-mesh")).toHaveAttribute("data-speed", "1");
 });
 
 test("public payment details reveal on selection and stay under manual control", async ({ page }) => {
@@ -157,4 +158,13 @@ test("the preview cycles automatically until a visitor chooses a view", async ({
   await page.mouse.move(0, 0);
   await page.clock.fastForward(8500);
   await expect(illustration).toHaveAttribute("data-authorized", "false");
+});
+
+
+test("entry illustrations lift on hover without rotation or zoom", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await page.goto("/es");
+  const card = page.getByRole("link", { name: /Con rampa/ });
+  await card.hover();
+  await expect(card.locator(".entry-payment-window")).toHaveCSS("transform", "matrix(1, 0, 0, 1, 0, -10)");
 });

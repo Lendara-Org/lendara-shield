@@ -73,8 +73,7 @@
 /* Light, code-native illustrations adapted from Paper's recovered v03 visuals. */
 .landing-visual-hero { display: grid; align-items: center; gap: 48px; }
 .payment-hero-visual { position: relative; isolation: isolate; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 24px; min-height: 640px; padding: 48px 32px; overflow: hidden; border-radius: 32px; background: var(--color-brand-soft); }
-.payment-mesh { position: absolute; z-index: -1; inset: -25%; background-color: var(--color-gradient-peach); background-image: radial-gradient(ellipse at 85% 15%, var(--color-brand-secondary) 0%, transparent 48%), radial-gradient(ellipse at 12% 45%, var(--color-brand-primary) 0%, transparent 43%), radial-gradient(ellipse at 85% 90%, var(--color-gradient-coral) 0%, transparent 48%), radial-gradient(ellipse at 35% 80%, var(--color-surface-primary) 0%, var(--color-brand-soft) 40%, transparent 65%); animation: payment-mesh-drift 12s ease-in-out infinite alternate; will-change: transform; }
-@keyframes payment-mesh-drift { 0% { transform: translate(-8%, -5%) rotate(-12deg) scale(1); } 50% { transform: translate(7%, -4%) rotate(12deg) scale(1.12); } 100% { transform: translate(-5%, 8%) rotate(-6deg) scale(1.04); } }
+.payment-mesh { position: absolute; z-index: -1; inset: 0; background: linear-gradient(135deg, var(--color-brand-soft), var(--color-gradient-peach), var(--color-brand-primary)); }
 .payment-illustration { width: 100%; max-width: 420px; border: 1px solid #FFFFFFB3; border-radius: 24px; padding: 28px; background: var(--color-surface-primary); box-shadow: 0 24px 64px #20344D1A; }
 .payment-illustration-brand { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
 .payment-illustration-title { padding-top: 28px; font-family: var(--font-sora), sans-serif; font-weight: 600; font-size: 22px; line-height: 30px; letter-spacing: -.025em; }
@@ -111,23 +110,19 @@
 @media (max-width: 639px) { .payment-hero-visual { min-height: 560px; padding: 32px 20px; border-radius: 24px; } .payment-illustration { padding: 20px; } .payment-illustration-title { font-size: 20px; line-height: 28px; } .payment-view-labels { font-size: 12px; } .entry-payment-visual { padding: 24px 16px; min-height: 320px; } .entry-window-body { padding: 20px; } .entry-currency { font-size: 22px; line-height: 30px; } .entry-route { font-size: 12px; gap: 8px; } }
 @media (prefers-reduced-motion: reduce) { .payment-mesh { animation: none; transform: none; will-change: auto; } }
 
-/* Independent light mesh layers make the motion visible without moving the card. */
-.payment-mesh::before, .payment-mesh::after { content: ""; position: absolute; inset: 5%; border-radius: 45%; pointer-events: none; }
-.payment-mesh::before { background: radial-gradient(ellipse at 25% 35%, #E22366C0, transparent 58%); animation: payment-mesh-orbit 9s ease-in-out infinite alternate; }
-.payment-mesh::after { background: radial-gradient(ellipse at 75% 70%, #FF8A3DE6, transparent 55%); animation: payment-mesh-orbit 11s ease-in-out -5s infinite alternate-reverse; }
-@keyframes payment-mesh-orbit { from { transform: translate(-14%, 12%) rotate(-20deg) scale(.9); } to { transform: translate(16%, -14%) rotate(25deg) scale(1.15); } }
+/* The hero uses Paper MeshGradient; entry cards only lift on interaction. */
 .payment-view-labels > button { cursor: pointer; font: inherit; color: var(--color-text-secondary); transition: background-color 400ms ease, color 400ms ease; }
 .payment-view-labels > button[aria-pressed="true"] { color: var(--color-text-inverse); }
 .payment-sensitive { display: inline-block; filter: blur(6px); opacity: .55; user-select: none; transition: filter 850ms ease, opacity 850ms ease; }
 [data-authorized="true"] .payment-sensitive { filter: blur(0); opacity: 1; user-select: text; }
 .payment-privacy-note { min-height: 44px; }
 .entry-payment-visual { perspective: 1000px; }
-.entry-payment-window { transform: translateY(0) rotate(0) scale(1); transition: transform 650ms cubic-bezier(.2,.8,.2,1), box-shadow 650ms ease; }
+.entry-payment-window { transform: translateY(0); transition: transform 650ms cubic-bezier(.2,.8,.2,1), box-shadow 650ms ease; }
 .entry-route-arrow, .entry-currency-chips span { transition: transform 650ms cubic-bezier(.2,.8,.2,1); }
-.group:focus-visible .entry-payment-window { transform: translateY(-8px) scale(1.02); box-shadow: 0 26px 54px #20344D20; }
+.group:focus-visible .entry-payment-window { transform: translateY(-8px); box-shadow: 0 26px 54px #20344D20; }
 @media (hover: hover) and (pointer: fine) {
-  .group:hover .entry-payment-visual--ramp .entry-payment-window { transform: translateY(-10px) rotate(-1.2deg) scale(1.025); box-shadow: 0 28px 60px #20344D24; }
-  .group:hover .entry-payment-visual--direct .entry-payment-window { transform: translateY(-10px) rotate(1.2deg) scale(1.025); box-shadow: 0 28px 60px #20344D24; }
+  .group:hover .entry-payment-visual--ramp .entry-payment-window { transform: translateY(-10px); box-shadow: 0 28px 60px #20344D24; }
+  .group:hover .entry-payment-visual--direct .entry-payment-window { transform: translateY(-10px); box-shadow: 0 28px 60px #20344D24; }
   .group:hover .entry-route-arrow { transform: translateX(6px); }
   .group:hover .entry-currency-chips span:first-child { transform: translateY(-3px); }
 }
