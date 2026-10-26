@@ -217,6 +217,18 @@ pub struct PoolError {
     pub retryable: bool,
 }
 
+impl PoolError {
+    /// Code of a transient ASP membership sync: the intake's SDK wallet is a
+    /// few ledgers behind the chain and catches up by itself.
+    pub const SYNC_REQUIRED: &'static str = "sync_required";
+
+    /// Whether this failure only means "wait for the wallet to sync".
+    #[must_use]
+    pub fn is_sync_wait(&self) -> bool {
+        self.code == Self::SYNC_REQUIRED
+    }
+}
+
 /// Pool operations as Shield's intake account (the SPP prover, out of
 /// process: see `apps/pool-cli`).
 #[async_trait]

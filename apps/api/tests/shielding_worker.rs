@@ -304,6 +304,28 @@ async fn prepare_failures_back_off_and_recover(db: PgPool) -> TestResult {
 }
 
 #[sqlx::test]
+async fn a_wallet_behind_the_chain_is_waited_for_without_spending_attempts(
+    db: PgPool,
+) -> TestResult {
+    let (h, intent) = harness(db).await?;
+    // More sync waits than MAX_ATTEMPTS: counting them would end in `error`.
+    let waits = usize::try_from(MAX_ATTEMPTS)? * 2;
+    h.pool.set_sync_required(waits);
+    h.rounds(waits, secs(5)).await?;
+    let attempts: i32 = sqlx::query_scalar("SELECT attempts FROM intents WHERE id = $1")
+        .bind(intent.id)
+        .fetch_one(&h.db)
+        .await?;
+    assert_eq!(attempts, 0, "sync waits are not attempts");
+    assert_eq!(h.status(&intent).await?, IntentStatus::FundsReceived);
+
+    h.rounds(4, secs(60)).await?;
+    assert_eq!(h.status(&intent).await?, IntentStatus::Completed);
+    h.assert_paid_exactly_once();
+    Ok(())
+}
+
+#[sqlx::test]
 async fn gives_up_after_bounded_attempts_and_flags_for_review(db: PgPool) -> TestResult {
     let (h, intent) = harness(db).await?;
     h.pool.set_prepare_fails(Some(false));
