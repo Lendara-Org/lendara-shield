@@ -4,23 +4,27 @@
 //! Usage: `shield-api` serves the API (applying pending migrations first);
 //! `shield-api migrate` only applies migrations and exits.
 
-use std::{net::SocketAddr, process::ExitCode};
-
-use std::sync::Arc;
+use std::{net::SocketAddr, process::ExitCode, sync::Arc};
 
 use shield_api::{
     HttpOptions,
     adapters::{
+        account_of,
         anchor::{Sep24AnchorClient, Sep24AnchorConfig},
+        horizon::HorizonLedger,
         soroban::{DEFAULT_VALIDITY, SorobanAspConfig, SorobanAspContract},
     },
     asp::service::AspService,
+    background::{self, Background},
     build_app,
     config::Config,
     db,
     deployment::PoolDeployment,
     http::InfoResponse,
-    intent::service::IntentService,
+    intent::{
+        anchor_sync::AnchorSync, matching::ExpectedAsset, service::IntentService,
+        watcher::IntakeWatcher,
+    },
     ports::{
         AnchorClient, AspContract, Clock, SystemClock, UnconfiguredAnchorClient,
         UnconfiguredAspContract,
@@ -29,6 +33,7 @@ use shield_api::{
     telemetry,
 };
 use tokio::net::TcpListener;
+use tokio_util::sync::CancellationToken;
 
 type BoxError = Box<dyn std::error::Error + Send + Sync>;
 
@@ -83,6 +88,7 @@ async fn run() -> Result<(), BoxError> {
     let clock: Arc<dyn Clock> = Arc::new(SystemClock);
     let asp_contract = asp_contract(&config, &deployment, clock.clone())?;
     let anchor = anchor_client(&config, &deployment, clock.clone())?;
+    let background = background_loop(&config, &deployment, &pool, anchor.as_ref(), &clock)?;
 
     let app = build_app(
         AppState {
@@ -91,7 +97,7 @@ async fn run() -> Result<(), BoxError> {
                 &deployment,
                 config.ramp_anchor_home_domain,
             )),
-            asp: AspService::new(pool.clone(), asp_contract, clock),
+            asp: AspService::new(pool.clone(), asp_contract, clock.clone()),
             intents: IntentService::new(pool.clone(), anchor, deployment.asset.code.clone()),
             admin_token: Arc::new(config.admin_token),
         },
@@ -103,10 +109,24 @@ async fn run() -> Result<(), BoxError> {
     let listener = TcpListener::bind(addr).await?;
     tracing::info!(%addr, "shield-api listening");
 
+    let shutdown = CancellationToken::new();
+    let background = background.map(|b| tokio::spawn(b.run(background::TICK, shutdown.clone())));
+
+    let stop = shutdown.clone();
     axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown_signal())
+        .with_graceful_shutdown(async move {
+            shutdown_signal().await;
+            stop.cancel();
+        })
         .await?;
 
+    shutdown.cancel();
+    if let Some(handle) = background {
+        // Lets the current round finish its database transaction.
+        if let Err(err) = handle.await {
+            tracing::error!(error = %err, "background loop panicked");
+        }
+    }
     pool.close().await;
     tracing::info!("shield-api stopped");
     Ok(())
@@ -136,6 +156,31 @@ fn asp_contract(
     )?;
     tracing::info!(operator = %contract.operator_address(), "ASP writes signed by the operator");
     Ok(Arc::new(contract))
+}
+
+/// The ramp's background loop (intake watcher + anchor sync), when ramp
+/// mode talks to a real anchor.
+fn background_loop(
+    config: &Config,
+    deployment: &PoolDeployment,
+    pool: &sqlx::PgPool,
+    anchor: Option<&Arc<dyn AnchorClient>>,
+    clock: &Arc<dyn Clock>,
+) -> Result<Option<Background>, BoxError> {
+    let (Some(anchor), Some(secret)) = (anchor, config.intake_secret.as_ref()) else {
+        return Ok(None);
+    };
+    let intake = account_of(secret).ok_or("SHIELD_INTAKE_SECRET is not a valid secret seed")?;
+    let ledger = HorizonLedger::new(&format!("{}/", config.horizon_url), intake)?;
+    let asset = ExpectedAsset {
+        code: deployment.asset.code.clone(),
+        issuer: deployment.asset.issuer.as_str().to_owned(),
+    };
+    tracing::info!("intake watcher and anchor sync enabled");
+    Ok(Some(Background {
+        watcher: IntakeWatcher::new(pool.clone(), Arc::new(ledger), asset),
+        anchor_sync: AnchorSync::new(pool.clone(), anchor.clone(), clock.clone()),
+    }))
 }
 
 /// The SEP-24 anchor client when ramp mode is configured; `None` disables

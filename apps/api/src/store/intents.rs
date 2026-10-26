@@ -224,6 +224,66 @@ pub async fn transition(
     Ok(intent)
 }
 
+/// Locks the intent with this SEP-24 memo until the transaction ends.
+pub async fn lock_by_memo(
+    conn: &mut PgConnection,
+    memo: i64,
+) -> Result<Option<Intent>, StoreError> {
+    let row: Option<Row> = sqlx::query_as(concat!(
+        "SELECT ",
+        columns!(),
+        " FROM intents WHERE memo = $1 FOR UPDATE"
+    ))
+    .bind(memo)
+    .fetch_optional(&mut *conn)
+    .await?;
+    row.map(TryInto::try_into).transpose()
+}
+
+/// Intents waiting for the anchor whose next check is due, with the user's
+/// customer memo (to authenticate as them with the anchor).
+pub async fn due_awaiting_anchor(
+    db: impl PgExecutor<'_>,
+    now: DateTime<Utc>,
+    limit: i64,
+) -> Result<Vec<(Intent, i64)>, StoreError> {
+    #[derive(FromRow)]
+    struct DueRow {
+        #[sqlx(flatten)]
+        intent: Row,
+        customer_memo: i64,
+    }
+    let rows: Vec<DueRow> = sqlx::query_as(concat!(
+        "SELECT ",
+        columns!(),
+        ", (SELECT sep10_memo FROM shield_users u WHERE u.id = intents.user_id) AS customer_memo \
+         FROM intents WHERE status = 'awaiting_anchor' \
+         AND (next_attempt_at IS NULL OR next_attempt_at <= $1) \
+         ORDER BY next_attempt_at NULLS FIRST, created_at LIMIT $2"
+    ))
+    .bind(now)
+    .bind(limit)
+    .fetch_all(db)
+    .await?;
+    rows.into_iter()
+        .map(|row| Ok((row.intent.try_into()?, row.customer_memo)))
+        .collect()
+}
+
+/// Sets when the intent is next looked at.
+pub async fn schedule(
+    db: impl PgExecutor<'_>,
+    id: Uuid,
+    at: DateTime<Utc>,
+) -> Result<(), StoreError> {
+    sqlx::query("UPDATE intents SET next_attempt_at = $2 WHERE id = $1")
+        .bind(id)
+        .bind(at)
+        .execute(db)
+        .await?;
+    Ok(())
+}
+
 /// Status history, oldest first: `(from, to)`.
 pub async fn events(
     db: impl PgExecutor<'_>,

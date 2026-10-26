@@ -13,8 +13,9 @@ use crate::{
     asp::AspAction,
     domain::{PoolField, TxHash},
     ports::{
-        AnchorClient, AnchorDeposit, AnchorError, AspContract, AspKeys, ChainError, Clock,
-        PreparedTx, StartDeposit, TxStatus,
+        AnchorClient, AnchorDeposit, AnchorError, AnchorStatus, AspContract, AspKeys, ChainError,
+        Clock, IncomingPayment, IntakeLedger, LedgerError, PaymentPage, PreparedTx, StartDeposit,
+        TxStatus,
     },
 };
 
@@ -208,6 +209,8 @@ pub enum AnchorBehaviour {
 pub struct FakeAnchor {
     behaviour: Mutex<AnchorBehaviour>,
     requests: Mutex<Vec<StartDeposit>>,
+    statuses: Mutex<std::collections::HashMap<String, AnchorStatus>>,
+    status_queries: Mutex<Vec<(i64, String)>>,
 }
 
 impl Default for FakeAnchor {
@@ -215,6 +218,8 @@ impl Default for FakeAnchor {
         Self {
             behaviour: Mutex::new(AnchorBehaviour::Healthy),
             requests: Mutex::new(Vec::new()),
+            statuses: Mutex::new(std::collections::HashMap::new()),
+            status_queries: Mutex::new(Vec::new()),
         }
     }
 }
@@ -229,6 +234,17 @@ impl FakeAnchor {
     #[must_use]
     pub fn requests(&self) -> Vec<StartDeposit> {
         lock(&self.requests).clone()
+    }
+
+    /// Sets the status the anchor reports for a deposit (default: pending).
+    pub fn set_status(&self, anchor_tx_id: &str, status: AnchorStatus) {
+        lock(&self.statuses).insert(anchor_tx_id.to_owned(), status);
+    }
+
+    /// `(customer_memo, anchor_tx_id)` of every status query.
+    #[must_use]
+    pub fn status_queries(&self) -> Vec<(i64, String)> {
+        lock(&self.status_queries).clone()
     }
 }
 
@@ -252,6 +268,65 @@ impl AnchorClient for FakeAnchor {
             AnchorBehaviour::Down => Err(AnchorError::Unavailable("connection refused".into())),
             AnchorBehaviour::Refuses => Err(AnchorError::Refused("asset not supported".into())),
         }
+    }
+
+    async fn deposit_status(
+        &self,
+        customer_memo: i64,
+        anchor_tx_id: &str,
+    ) -> Result<AnchorStatus, AnchorError> {
+        lock(&self.status_queries).push((customer_memo, anchor_tx_id.to_owned()));
+        if *lock(&self.behaviour) == AnchorBehaviour::Down {
+            return Err(AnchorError::Unavailable("connection refused".into()));
+        }
+        Ok(lock(&self.statuses)
+            .get(anchor_tx_id)
+            .cloned()
+            .unwrap_or(AnchorStatus::Pending))
+    }
+}
+
+/// In-memory Horizon: a list of the intake's payments, paged by cursor.
+#[derive(Debug, Default)]
+pub struct FakeLedger {
+    payments: Mutex<Vec<IncomingPayment>>,
+    down: Mutex<bool>,
+}
+
+impl FakeLedger {
+    pub fn push(&self, payment: IncomingPayment) {
+        lock(&self.payments).push(payment);
+    }
+
+    pub fn set_down(&self, down: bool) {
+        *lock(&self.down) = down;
+    }
+}
+
+#[async_trait]
+impl IntakeLedger for FakeLedger {
+    async fn payments_after(
+        &self,
+        cursor: Option<&str>,
+        limit: u32,
+    ) -> Result<PaymentPage, LedgerError> {
+        if *lock(&self.down) {
+            return Err(LedgerError("horizon is down".into()));
+        }
+        // The cursor is the index of the next payment, as a string.
+        let start: usize = cursor.and_then(|c| c.parse().ok()).unwrap_or(0);
+        let all = lock(&self.payments);
+        let page: Vec<IncomingPayment> = all
+            .iter()
+            .skip(start)
+            .take(usize::try_from(limit).unwrap_or(usize::MAX))
+            .cloned()
+            .collect();
+        let next_cursor = (!page.is_empty()).then(|| (start + page.len()).to_string());
+        Ok(PaymentPage {
+            payments: page,
+            next_cursor,
+        })
     }
 }
 

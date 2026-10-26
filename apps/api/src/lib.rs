@@ -4,6 +4,7 @@
 
 pub mod adapters;
 pub mod asp;
+pub mod background;
 pub mod config;
 pub mod db;
 pub mod deployment;

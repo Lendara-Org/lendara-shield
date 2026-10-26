@@ -9,7 +9,7 @@ use chrono::{DateTime, Utc};
 
 use crate::{
     asp::AspAction,
-    domain::{PoolField, TxHash},
+    domain::{AccountId, DecimalAmount, PoolField, TxHash},
 };
 
 /// The public values an ASP update writes on-chain for one user.
@@ -101,6 +101,21 @@ pub enum AnchorError {
     Refused(String),
 }
 
+/// Where a SEP-24 deposit stands at the anchor, reduced to what Shield
+/// acts on.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AnchorStatus {
+    /// Waiting for the user or the anchor (`incomplete`, `pending_*`).
+    Pending,
+    /// The anchor sent the funds; the watcher sees the payment on-chain.
+    Completed,
+    /// The user never paid (`expired`).
+    Expired,
+    /// The anchor gave up (`error`, `refunded`, `no_market`, `too_small`,
+    /// `too_large`), with the anchor's message if any.
+    Failed(String),
+}
+
 /// An anchor spoken to only through SEP-1, SEP-10 and SEP-24.
 #[async_trait]
 pub trait AnchorClient: Send + Sync + Debug {
@@ -108,6 +123,51 @@ pub trait AnchorClient: Send + Sync + Debug {
     fn home_domain(&self) -> &str;
     /// Starts an interactive SEP-24 deposit to Shield's intake account.
     async fn start_deposit(&self, request: &StartDeposit) -> Result<AnchorDeposit, AnchorError>;
+    /// Status of a deposit, authenticating as the user's customer memo.
+    async fn deposit_status(
+        &self,
+        customer_memo: i64,
+        anchor_tx_id: &str,
+    ) -> Result<AnchorStatus, AnchorError>;
+}
+
+/// A payment received by the intake account.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IncomingPayment {
+    /// Ledger operation id (unique per payment).
+    pub operation_id: String,
+    pub tx_hash: TxHash,
+    pub from: AccountId,
+    pub asset_code: String,
+    pub asset_issuer: String,
+    pub amount: DecimalAmount,
+    /// `id` memo of the transaction, if it has one.
+    pub memo: Option<u64>,
+}
+
+/// One page of the intake's operations, oldest first.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct PaymentPage {
+    /// Incoming payments only (outgoing and other operations are skipped).
+    pub payments: Vec<IncomingPayment>,
+    /// Resume point after this page (covers skipped operations too); `None`
+    /// when the page is empty.
+    pub next_cursor: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("ledger unavailable: {0}")]
+pub struct LedgerError(pub String);
+
+/// Read access to the intake account's payments (Horizon).
+#[async_trait]
+pub trait IntakeLedger: Send + Sync + Debug {
+    /// Operations after `cursor` (from the start when `None`), at most `limit`.
+    async fn payments_after(
+        &self,
+        cursor: Option<&str>,
+        limit: u32,
+    ) -> Result<PaymentPage, LedgerError>;
 }
 
 /// Placeholder used until the SEP-24 client is configured (H6a2): every
@@ -123,6 +183,11 @@ impl AnchorClient for UnconfiguredAnchorClient {
         &self.home_domain
     }
     async fn start_deposit(&self, _: &StartDeposit) -> Result<AnchorDeposit, AnchorError> {
+        Err(AnchorError::Unavailable(
+            "SEP-24 client not configured".into(),
+        ))
+    }
+    async fn deposit_status(&self, _: i64, _: &str) -> Result<AnchorStatus, AnchorError> {
         Err(AnchorError::Unavailable(
             "SEP-24 client not configured".into(),
         ))

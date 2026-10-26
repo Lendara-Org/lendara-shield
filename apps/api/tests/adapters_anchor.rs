@@ -234,6 +234,37 @@ async fn starts_an_interactive_deposit_to_the_intake() -> TestResult {
 }
 
 #[tokio::test]
+async fn reads_the_deposit_status_as_the_customer() -> TestResult {
+    let server = anchor(7).await?;
+    Mock::given(method("GET"))
+        .and(path("/sep24/transaction"))
+        .and(wiremock::matchers::query_param("id", "anchor-tx-1"))
+        .and(header("authorization", format!("Bearer {TOKEN}").as_str()))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "transaction": {"id": "anchor-tx-1", "status": "error", "message": "KYC rejected (sandbox scenario)."}
+        })))
+        .mount(&server)
+        .await;
+
+    let status = client(&server)?.deposit_status(7, "anchor-tx-1").await?;
+    assert_eq!(
+        status,
+        shield_api::ports::AnchorStatus::Failed("KYC rejected (sandbox scenario).".into())
+    );
+    let [challenge] = requests_to(&server, "GET", "/auth")
+        .await
+        .try_into()
+        .map_err(|_| "one login")?;
+    assert!(
+        challenge
+            .url
+            .query_pairs()
+            .any(|(k, v)| k == "memo" && v == "7")
+    );
+    Ok(())
+}
+
+#[tokio::test]
 async fn discovers_the_anchor_once() -> TestResult {
     let server = anchor(7).await?;
     mount_deposit(&server, interactive()).await;

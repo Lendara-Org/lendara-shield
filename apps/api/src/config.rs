@@ -10,6 +10,7 @@ use secrecy::SecretString;
 
 const DEFAULT_API_PORT: u16 = 8080;
 const DEFAULT_SOROBAN_RPC_URL: &str = "https://soroban-testnet.stellar.org";
+const DEFAULT_HORIZON_URL: &str = "https://horizon-testnet.stellar.org";
 /// Shortest accepted admin token, so it cannot be guessed.
 const MIN_ADMIN_TOKEN_LEN: usize = 32;
 
@@ -32,6 +33,8 @@ pub struct Config {
     pub admin_token: Option<SecretString>,
     /// Stellar RPC used for Soroban calls.
     pub soroban_rpc_url: String,
+    /// Horizon, to read the intake's payments.
+    pub horizon_url: String,
     /// ASP admin (operator) seed. `None` leaves on-chain ASP writes off.
     pub operator_secret: Option<SecretString>,
     /// Intake (omnibus) account seed: SEP-10 with the anchor, pool deposits.
@@ -98,6 +101,10 @@ impl Config {
             .map(|raw| parse_url("SOROBAN_RPC_URL", raw.trim()))
             .transpose()?
             .unwrap_or_else(|| DEFAULT_SOROBAN_RPC_URL.to_owned());
+        let horizon_url = get("HORIZON_URL")
+            .map(|raw| parse_url("HORIZON_URL", raw.trim()))
+            .transpose()?
+            .unwrap_or_else(|| DEFAULT_HORIZON_URL.to_owned());
         let operator_secret =
             get("SHIELD_OPERATOR_SECRET").map(|raw| SecretString::from(raw.trim().to_owned()));
         let intake_secret =
@@ -115,6 +122,7 @@ impl Config {
             ramp_anchor_home_domain,
             admin_token,
             soroban_rpc_url,
+            horizon_url,
             operator_secret,
             intake_secret,
         })
@@ -340,6 +348,7 @@ mod tests {
             config.soroban_rpc_url,
             "https://soroban-testnet.stellar.org"
         );
+        assert_eq!(config.horizon_url, "https://horizon-testnet.stellar.org");
         assert!(config.operator_secret.is_none());
 
         let seed = "test-operator-secret-not-a-real-seed";
