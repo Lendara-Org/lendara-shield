@@ -12,8 +12,8 @@ import { usePoll } from "@/lib/hooks/use-poll";
 import { type StepState, intentSteps } from "@/lib/intent-steps";
 
 const MARK: Record<StepState, string> = {
-  done: "bg-ink text-paper",
-  current: "border-2 border-crimson text-crimson",
+  done: "bg-success-subtle text-success",
+  current: "border-2 border-action-primary text-action-primary",
   pending: "border border-line text-gray",
   failed: "bg-error text-paper",
 };

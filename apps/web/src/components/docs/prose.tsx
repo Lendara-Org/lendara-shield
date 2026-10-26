@@ -51,7 +51,7 @@ export function Callout({ title, children, tone = "info" }: { title: string; chi
   return (
     <aside
       className={`mt-6 rounded-lg border-l-2 bg-paper px-4 py-3 text-sm leading-relaxed ${
-        tone === "warning" ? "border-wine" : "border-ink"
+        tone === "warning" ? "border-warning-accent" : "border-info-accent"
       }`}
     >
       <p className="font-semibold text-ink">{title}</p>
@@ -62,12 +62,12 @@ export function Callout({ title, children, tone = "info" }: { title: string; chi
 
 export function CodeBlock({ code, title, copy }: { code: string; title?: string; copy: [label: string, copied: string] }) {
   return (
-    <figure className="mt-5 overflow-hidden rounded-lg border border-white/10 bg-ink shadow-lg">
+    <figure className="mt-5 overflow-hidden rounded-lg border border-white/10 bg-ink">
       <figcaption className="flex items-center justify-between border-b border-white/10 px-4 py-1.5">
-        <span className="font-mono text-xs text-paper/60">{title ?? ""}</span>
+        <span className="font-mono text-xs text-paper/80">{title ?? ""}</span>
         <CopyCode code={code} label={copy[0]} copied={copy[1]} />
       </figcaption>
-      <pre className="overflow-x-auto p-4 font-mono text-[13px] leading-relaxed text-paper">
+      <pre className="overflow-x-auto p-4 font-mono text-[13px] leading-[23px] text-paper">
         <code>{code}</code>
       </pre>
     </figure>

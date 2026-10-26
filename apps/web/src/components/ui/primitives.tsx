@@ -7,14 +7,14 @@ type ButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> & { busy?: bool
 export function Button({ busy = false, variant = "primary", className = "", children, disabled, ...props }: ButtonProps) {
   const look =
     variant === "primary"
-      ? "bg-ink text-paper hover:bg-ink/85"
-      : "border border-line bg-surface text-ink hover:border-ink/40";
+      ? "bg-action-primary text-text-inverse enabled:hover:bg-action-primary-hover enabled:active:bg-action-primary-pressed"
+      : "border border-border-control bg-action-secondary text-ink enabled:hover:bg-action-secondary-hover enabled:active:bg-action-secondary-pressed";
   return (
     <button
       {...props}
       disabled={disabled === true || busy}
       aria-busy={busy}
-      className={`inline-flex items-center justify-center gap-2 rounded-md px-4 py-2.5 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${look} ${className}`}
+      className={`inline-flex items-center justify-center gap-2 min-h-12 rounded-control px-5 py-3 text-base font-semibold transition-colors disabled:cursor-not-allowed disabled:border-transparent disabled:bg-action-disabled disabled:text-action-disabled-text ${look} ${className}`}
     >
       {busy && <span aria-hidden className="size-3 animate-spin rounded-full border-2 border-current border-r-transparent" />}
       {children}
@@ -24,7 +24,7 @@ export function Button({ busy = false, variant = "primary", className = "", chil
 
 export function Card({ title, children, className = "" }: { title?: string; children: React.ReactNode; className?: string }) {
   return (
-    <section className={`animate-step-in rounded-lg border border-line bg-surface p-6 ${className}`}>
+    <section className={`animate-step-in rounded-2xl border border-line bg-surface p-5 sm:p-6 ${className}`}>
       {title && <h2 className="mb-4 text-base font-semibold">{title}</h2>}
       {children}
     </section>
@@ -49,13 +49,13 @@ export function Field({
   const id = useId();
   const hintId = `${id}-hint`;
   return (
-    <div className="space-y-1.5 text-sm">
+    <div className="space-y-2 text-sm">
       <label htmlFor={id} className="block font-medium">
         {label}
       </label>
       {children(hint ? { id, "aria-describedby": hintId } : { id })}
       {hint && (
-        <p id={hintId} className="text-xs text-gray">
+        <p id={hintId} className="text-sm leading-[22px] text-gray">
           {hint}
         </p>
       )}
@@ -64,18 +64,18 @@ export function Field({
 }
 
 export const inputClass =
-  "w-full rounded-md border border-line bg-paper px-3 py-2 font-mono text-sm outline-none focus:border-ink/50";
+  "min-h-12 w-full rounded-control border border-border-control bg-surface px-3 py-2.5 font-sans text-base focus:border-ink aria-invalid:border-error disabled:bg-action-disabled disabled:text-action-disabled-text read-only:bg-paper";
 
 const TONES = {
-  info: "border-line bg-paper text-ink",
-  warn: "border-warn/30 bg-warn/5 text-warn",
-  error: "border-error/30 bg-error/5 text-error",
-  ok: "border-ok/30 bg-ok/5 text-ok",
+  info: "border-info-accent bg-surface text-info",
+  warn: "border-warning-accent bg-surface text-warning",
+  error: "border-error-accent bg-surface text-error",
+  ok: "border-success-accent bg-surface text-success",
 } as const;
 
 export function Notice({ tone = "info", children }: { tone?: keyof typeof TONES; children: React.ReactNode }) {
   return (
-    <div role={tone === "error" ? "alert" : "status"} className={`rounded-md border px-3 py-2 text-sm ${TONES[tone]}`}>
+    <div role={tone === "error" ? "alert" : "status"} className={`rounded-xl border border-l-4 px-4 py-3 text-sm leading-relaxed ${TONES[tone]}`}>
       {children}
     </div>
   );

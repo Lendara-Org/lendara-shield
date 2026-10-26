@@ -91,3 +91,20 @@ test("switches language and reads the docs", async ({ page }) => {
   await page.goto("/onboard");
   await expect(page).toHaveURL(/\/en\/onboard$/);
 });
+
+test("the visual identity stays readable and usable across viewport widths", async ({ page }) => {
+  for (const width of [375, 768, 1280]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto("/es");
+    await page.evaluate(() => document.fonts.ready);
+    await expect(page.getByRole("heading", { level: 1 })).toHaveCSS("font-weight", "600");
+    await expect(page.getByRole("link", { name: "Empezar: registro" })).toHaveCSS("background-color", "rgb(194, 24, 82)");
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await page.getByRole("link", { name: "Empezar: registro" }).click();
+    const connect = page.getByRole("button", { name: "Conectar Freighter" });
+    await expect(connect).toBeVisible();
+    await expect(connect).toHaveCSS("min-height", "48px");
+    await expect(connect).toHaveCSS("border-radius", "10px");
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  }
+});

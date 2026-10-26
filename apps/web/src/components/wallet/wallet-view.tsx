@@ -53,7 +53,7 @@ function Wallet({ wallet }: { wallet: ShieldWallet }) {
     <div className="space-y-6">
       <Card title={t.wallet.balanceTitle}>
         <div className="flex items-end justify-between gap-4">
-          <p className="font-mono text-4xl" aria-live="polite">
+          <p className="font-sans text-4xl tabular-nums" aria-live="polite">
             {balance === null ? "—" : formatAmount(balance)} <span className="text-base text-gray">{asset}</span>
           </p>
           <Button variant="quiet" onClick={() => void refresh()} busy={syncing}>

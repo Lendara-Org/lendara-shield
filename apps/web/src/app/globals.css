@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "./design-tokens.css";
 
 /* Lendara brand tokens (same as the sandbox web). Light mode only. */
 :root {
@@ -6,18 +7,15 @@
 }
 
 @theme {
-  --color-ink: #121621;
-  --color-paper: #f6f4f4;
-  --color-gray: #686868;
-  /* Accent only: active step, focus. Never a large surface or small text. */
-  --color-crimson: #e22366;
-  --color-wine: #7a1b3d;
-  /* Kept apart from crimson so an error never looks like a brand accent. */
-  --color-error: #d7473a;
-  --color-ok: #1f7a4d;
-  --color-warn: #8a5a00;
-  --color-surface: #ffffff;
-  --color-line: color-mix(in srgb, #121621 12%, transparent);
+  --color-ink: var(--color-text-primary);
+  --color-paper: var(--color-surface-subtle);
+  --color-gray: var(--color-text-secondary);
+  --color-crimson: var(--color-brand-primary);
+  --color-wine: var(--color-action-primary);
+  --color-ok: var(--color-success);
+  --color-warn: var(--color-warning);
+  --color-surface: var(--color-surface-primary);
+  --color-line: var(--color-border-default);
 
   --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
   --default-transition-duration: 200ms;
@@ -35,13 +33,21 @@
 
 @theme inline {
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
-  --font-mono: var(--font-jetbrains-mono), ui-monospace, monospace;
-  --font-display: var(--font-bebas-neue), var(--font-inter), sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+  --font-display: var(--font-sora), var(--font-inter), sans-serif;
 }
 
 @layer base {
   body {
-    @apply bg-paper font-sans text-ink antialiased;
+    @apply bg-surface font-sans text-ink antialiased;
+    line-height: 1.5;
+  }
+
+  h1, h2, h3 {
+    font-family: var(--font-sora), ui-sans-serif, sans-serif;
+    font-weight: 600;
+    letter-spacing: -0.025em;
+    overflow-wrap: anywhere;
   }
 
   /* Amounts and IDs must not shift width while they update. */
@@ -50,7 +56,8 @@
   }
 
   :focus-visible {
-    @apply outline-2 outline-offset-2 outline-crimson;
+    outline: 2px solid var(--color-focus-ring);
+    outline-offset: 3px;
   }
 }
 

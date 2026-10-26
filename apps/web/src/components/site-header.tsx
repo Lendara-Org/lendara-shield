@@ -23,9 +23,9 @@ export function SiteHeader() {
   ];
   return (
     <header className="border-b border-line bg-surface">
-      <nav aria-label={t.nav.main} className="mx-auto flex max-w-5xl flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3">
-        <Link href={href("/")} className="flex items-center gap-2 font-semibold">
-          <Isotipo className="h-6 w-auto" />
+      <nav aria-label={t.nav.main} className="mx-auto flex max-w-5xl flex-wrap items-center gap-x-6 gap-y-2 px-5 py-4">
+        <Link href={href("/")} className="flex items-center gap-2.5 font-display font-semibold tracking-normal">
+          <Isotipo className="h-8 w-auto text-crimson" />
           Lendara Shield
         </Link>
         <ul className="flex flex-wrap gap-4 text-sm">
