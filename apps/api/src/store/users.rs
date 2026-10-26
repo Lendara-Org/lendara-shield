@@ -153,6 +153,20 @@ pub async fn find_by_account(
     row.map(TryInto::try_into).transpose()
 }
 
+/// Reads the user and locks the row until the transaction ends, so ASP
+/// decisions for one user never interleave.
+pub async fn lock_by_id(db: impl PgExecutor<'_>, id: Uuid) -> Result<ShieldUser, StoreError> {
+    let row: Row = sqlx::query_as(concat!(
+        "SELECT ",
+        columns!(),
+        " FROM shield_users WHERE id = $1 FOR UPDATE"
+    ))
+    .bind(id)
+    .fetch_one(db)
+    .await?;
+    row.try_into()
+}
+
 pub async fn set_asp_status(
     db: impl PgExecutor<'_>,
     id: Uuid,

@@ -81,6 +81,8 @@ impl From<sqlx::Error> for AspServiceError {
 /// Outcome of driving one on-chain update.
 enum Drive {
     Confirmed,
+    /// Another request already did it: nothing was sent.
+    NotNeeded,
     /// Still pending, or the chain is unavailable: try again later.
     Unsettled,
     /// Will never land; a new transaction is needed.
@@ -227,7 +229,7 @@ impl AspService {
         loop {
             if let Some(event) = asp_events::find_submitted(&self.db, user.id).await? {
                 match self.wait_for(user, &event).await? {
-                    Drive::Confirmed | Drive::Failed => continue,
+                    Drive::Confirmed | Drive::NotNeeded | Drive::Failed => continue,
                     Drive::Unsettled => return Ok(()),
                 }
             }
@@ -243,7 +245,7 @@ impl AspService {
             }
             attempts += 1;
             match self.run(user, next).await {
-                Ok(Drive::Confirmed | Drive::Failed) => {}
+                Ok(Drive::Confirmed | Drive::NotNeeded | Drive::Failed) => {}
                 Ok(Drive::Unsettled) | Err(AspServiceError::InFlight) => return Ok(()),
                 Err(err) => return Err(err),
             }
@@ -260,9 +262,22 @@ impl AspService {
             }
         };
 
-        // Persist the hash before sending (§0.6).
+        // Decide and persist the hash atomically, with the user's row locked:
+        // a concurrent request may have done this action meanwhile. If so,
+        // the prepared transaction is dropped unsent (§0.6).
+        let mut db_tx = self.db.begin().await?;
+        let current = users::lock_by_id(&mut *db_tx, user.id).await?;
+        if asp_events::find_submitted(&mut *db_tx, user.id)
+            .await?
+            .is_some()
+        {
+            return Err(AspServiceError::InFlight);
+        }
+        if !Self::is_owed(&mut db_tx, &current, action).await? {
+            return Ok(Drive::NotNeeded);
+        }
         let event = asp_events::record_submitted(
-            &self.db,
+            &mut *db_tx,
             user.id,
             action,
             &prepared.hash,
@@ -273,6 +288,7 @@ impl AspService {
             RecordError::InFlight => AspServiceError::InFlight,
             RecordError::Store(err) => err.into(),
         })?;
+        db_tx.commit().await?;
         tracing::info!(user_id = %user.id, %action, tx_hash = %prepared.hash, "ASP update submitted");
 
         match self.chain.submit(&prepared).await {
@@ -290,6 +306,23 @@ impl AspService {
         }
 
         self.wait_for(user, &event).await
+    }
+
+    /// Whether `action` is still needed for the locked `current` row:
+    /// onboarding owes it next, or an admin action is valid from a settled
+    /// status.
+    async fn is_owed(
+        db_tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        current: &ShieldUser,
+        action: AspAction,
+    ) -> Result<bool, AspServiceError> {
+        if current.asp_status == AspStatus::Pending {
+            let confirmed = asp_events::confirmed_actions(&mut **db_tx, current.id).await?;
+            let remaining = rules::remaining_onboarding_actions(current.kyc_scenario, &confirmed);
+            Ok(remaining.first() == Some(&action))
+        } else {
+            Ok(rules::check_transition(current.asp_status, action).is_ok())
+        }
     }
 
     /// Polls the network until the event settles or the request budget runs out.
@@ -347,12 +380,13 @@ impl AspService {
         event: &SubmittedEvent,
     ) -> Result<(), AspServiceError> {
         let mut tx = self.db.begin().await?;
+        let current = users::lock_by_id(&mut *tx, user.id).await?;
         asp_events::mark_confirmed(&mut *tx, event.id).await?;
         // Onboarding may owe more actions (blocked scenario: allow, then
         // block); admin actions on a settled user owe none.
-        let remaining = if user.asp_status == AspStatus::Pending {
+        let remaining = if current.asp_status == AspStatus::Pending {
             let confirmed = asp_events::confirmed_actions(&mut *tx, user.id).await?;
-            rules::remaining_onboarding_actions(user.kyc_scenario, &confirmed).len()
+            rules::remaining_onboarding_actions(current.kyc_scenario, &confirmed).len()
         } else {
             0
         };
