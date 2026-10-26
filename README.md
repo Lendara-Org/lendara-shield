@@ -8,6 +8,18 @@ Lendara Shield is the reference implementation of the **Shield Protocol**: a com
 
 Built for **HackMeridian 2026** (Genesis track).
 
+## Live on testnet
+
+| | |
+|---|---|
+| Web app (English / Spanish) | <https://lendara-shield.duckdns.org/en> · <https://lendara-shield.duckdns.org/es> |
+| Developer docs | <https://lendara-shield.duckdns.org/en/docs> |
+| API reference (from `openapi.yaml`) | <https://lendara-shield.duckdns.org/api-reference.html> |
+| API | <https://lendara-shield.duckdns.org/v1/info> · health: <https://lendara-shield.duckdns.org/health> |
+| SEP-24 anchor used by ramp mode | Lendara sandbox, home domain `lendara-monorepo-fixh.vercel.app` |
+
+Both modes are enabled: ramp (through the sandbox anchor) and direct. Use [Freighter](https://www.freighter.app/) set to **Testnet**.
+
 ## The problem
 
 Stellar now has privacy tools in developer preview, but privacy breaks at the **fiat edge**:
@@ -51,34 +63,40 @@ Ramp mode talks to the anchor **only through SEPs 1, 10 and 24**, so it works wi
 
 ## Proof on testnet
 
-All of these are real transactions on Stellar testnet.
+All of these are real transactions on Stellar testnet, made from the live web app on 2026-10-26 with fresh accounts funded by friendbot.
 
-**Ramp mode, user _bob_.** Completed in 69 s with no manual step after the anchor's widget. Bob's address appears **0 times** in the anchor payment, the deposit and the transfer.
-
-| Step | Transaction |
-|---|---|
-| ASP adds bob's leaf to the allow-list | [`17c28f2e…`](https://stellar.expert/explorer/testnet/tx/17c28f2ee8b39b29e9cb7d0c621dec9c2aa64786354f364e4242b3e0f7095b97) |
-| Anchor pays Shield's omnibus account (memo) | [`2fc56647…`](https://stellar.expert/explorer/testnet/tx/2fc56647467d4dc46f9bd3f3316439a32688c7a003739c62fb354b36b9df4c6b) |
-| Shield deposits into the pool, `ext_amount > 0` | [`d43d5727…`](https://stellar.expert/explorer/testnet/tx/d43d57271210ef8990de31788c853edd0601e4543117864ff406db452b1153a7) |
-| Private transfer to bob's keys, `ext_amount = 0` | [`5dd9bb09…`](https://stellar.expert/explorer/testnet/tx/5dd9bb0949b10d5820765645acacf48830264b3183a7b9a1bf054d5489f52853) |
-
-**Direct mode from the browser, user _carol_.** Uses the real SDK in Chromium: keys are derived and proofs generated client-side.
+**Ramp mode, user _dana_ (CRC 5,000 → 9.3039215 USDC).** Completed 60 s after the intent was created, 40 s after the anchor's payment, with no manual step after the anchor's widget. Dana's address appears **0 times** in the anchor payment, the deposit and the transfer (checked on Horizon: transactions, operations and effects).
 
 | Step | Transaction |
 |---|---|
-| Onboarding (allow-list) | [`76eb95da…`](https://stellar.expert/explorer/testnet/tx/76eb95dae6f3a86b692152db545c55e11154badf906eaf70090b35cd9982d125) |
-| Deposit 2 USDC | [`a907e81e…`](https://stellar.expert/explorer/testnet/tx/a907e81ed27284dc8621c8eb21c9b5c3ffc48d1d3f24556e877b979b2f646d46) |
-| Private transfer of 0.5 to bob | [`363a4174…`](https://stellar.expert/explorer/testnet/tx/363a4174ae63cd9668397bddc45901642d5ef53ad3f4d2114cdb214cc21d528f) |
-| Withdraw 0.5 | [`e0d1a751…`](https://stellar.expert/explorer/testnet/tx/e0d1a751b7bd34d9b3f49cbcf709c90876558006bfe4209f3161e43e29b1f877) |
+| ASP adds dana's leaf to the allow-list | [`a09ac52f…`](https://stellar.expert/explorer/testnet/tx/a09ac52f164725a64985871e58b5c2d577980154dfd3a82c23927c9af187f958) |
+| Anchor pays Shield's omnibus account (memo) | [`bad64913…`](https://stellar.expert/explorer/testnet/tx/bad649134d3ca5e796ba29dc8aebcbde923d573aa532e07af0faf2e1f105a358) |
+| Shield deposits into the pool, `ext_amount > 0` | [`57756b31…`](https://stellar.expert/explorer/testnet/tx/57756b312631f526779dcbbf555833b72e95f0f3c0be3f153f0fc33d986026e1) |
+| Private transfer to dana's keys, `ext_amount = 0` | [`86edced9…`](https://stellar.expert/explorer/testnet/tx/86edced9f47e3f8582272b74ddcc998af18fd22e5b6cdaf76f6e399dad046420) |
 
-**Testnet deployment** (SPP `sdk-v0.2.1`, policy `allowlist-blocklist` + `gvk-traceable`):
+The private balance then shows `9.3039215 USDC` on `/en/wallet`, and `/en/audit` lists the deposit and the transfer decrypted with the Global View Key.
 
-| Contract | Address |
+**Direct mode from the browser, user _kira_.** The real SDK in Chromium: keys are derived and Groth16 proofs generated client-side.
+
+| Step | Transaction |
 |---|---|
-| Privacy pool (USDC) | [`CCUJRW6V…K4HF`](https://stellar.expert/explorer/testnet/contract/CCUJRW6VOQBFT5EWSKTYF24WHLFQFTO6SH33VFWAGOJFFSYGXPWXK4HF) |
+| Onboarding (allow-list) | [`325b3073…`](https://stellar.expert/explorer/testnet/tx/325b3073396df98e2aff2fdfb9cda78784eed743add81ce98a43fe891799bc0c) |
+| Deposit 2 USDC (kira's address is visible, by design) | [`af38931b…`](https://stellar.expert/explorer/testnet/tx/af38931b4f4e6d6350bebda0cb800dbe48dc40e602d5e663e76e4bbb8285df9c) |
+| Private transfer of 0.5 USDC to _leo_, `ext_amount = 0` | [`84c898a0…`](https://stellar.expert/explorer/testnet/tx/84c898a0ce46c0005a1eb476a5e71b3e500c53949b33a96978bc3a62f5ceca41) |
+| Withdraw 0.5 USDC | [`2832394e…`](https://stellar.expert/explorer/testnet/tx/2832394ecce52efbd06fbbd58e8b8cf6b27b08a9ff0e06dce229c739ea94e225) |
+
+Kira's public USDC balance went from 9.3039215 to 7.8039215 (−2 deposited, +0.5 withdrawn).
+
+**Testnet deployment** (SPP `sdk-v0.2.1`, policy `allowlist-blocklist` + `gvk-traceable`, deployed at ledger 5,395,126):
+
+| Contract or account | Address |
+|---|---|
+| Privacy pool (USDC) | [`CDD66GL3…C7OF`](https://stellar.expert/explorer/testnet/contract/CDD66GL3HT5JLRIB5BHAV36XFSEAGRXMGRJJ4VK747ODBXEJ77YAC7OF) |
 | USDC (SAC of the sandbox anchor's asset) | [`CAE6WLIM…R4QX`](https://stellar.expert/explorer/testnet/contract/CAE6WLIMEMDSRSZZW7H3O7DJS2DRDV5NTR2FHE53TKGJMJOHWGKSR4QX) |
-| ASP allow-list (membership) | [`CDUJHXHC…VYD6`](https://stellar.expert/explorer/testnet/contract/CDUJHXHC2DXXOXKBIK5E5QDKD6C3WUSMDIUFF6QTCECBNI4S2656VYD6) |
-| ASP block-list (non-membership) | [`CA46MJAI…D463`](https://stellar.expert/explorer/testnet/contract/CA46MJAIJTYJ5CO4OLRYRRTRJ4MVGO55LB6RQA6756FUNZPU2UTRD463) |
+| ASP allow-list (membership) | [`CCETAQAR…26GB`](https://stellar.expert/explorer/testnet/contract/CCETAQARCUMNMCLJKQM6UNY2QJDOJZYGI54MXA3FMPJY4VJDMN2L26GB) |
+| ASP block-list (non-membership) | [`CCWU7V5H…NLKT`](https://stellar.expert/explorer/testnet/contract/CCWU7V5HXV6NKPJ3UEZMTGFWK3V35YO42AQTPSXPN2GSDK3RXLICNLKT) |
+| Operator (pool and ASP admin) | [`GCCWXZJT…2GTE`](https://stellar.expert/explorer/testnet/account/GCCWXZJTF7XMEISC2CXLO6SWETJHE4YBBNVXSMRYOWH7RUOEN2YGGVTE) |
+| Shield's omnibus account (intake) | [`GC5VXVUO…EHPQ`](https://stellar.expert/explorer/testnet/account/GC5VXVUOU6OHZVZ3KZNFK5CJNOEDQUMOOZI32VHYHYV64GBHVCPTEHPQ) |
 
 ## Architecture
 
@@ -144,7 +162,12 @@ The web app has developer docs in English and Spanish at `/en/docs` and `/es/doc
 
 ## Team
 
-Anouk, Karu and Elisa — [Lendara](https://github.com/Lendara-Org), built for HackMeridian 2026.
+[Lendara](https://github.com/Lendara-Org), built for HackMeridian 2026:
+
+- **Anouk Rímola** — [LinkedIn](https://www.linkedin.com/in/anouk-r%C3%ADmola-b9915a223/)
+- **Bárbara Olivera** — [LinkedIn](https://www.linkedin.com/in/barbaraolivera/)
+- **María Elisa Araya** — [LinkedIn](https://www.linkedin.com/in/arayamariaelisa/)
+- **Karen Giannetto** — [LinkedIn](https://www.linkedin.com/in/karen-giannetto/)
 
 ## License
 
