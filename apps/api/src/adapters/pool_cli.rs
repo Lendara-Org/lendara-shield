@@ -12,9 +12,9 @@ use serde::Deserialize;
 use serde_json::Value;
 use tokio::{process::Command, sync::Mutex};
 
-use super::soroban::rpc::SorobanRpc;
+use super::soroban::{allow_list, rpc::SorobanRpc};
 use crate::{
-    domain::{PoolField, TxHash},
+    domain::{ContractId, PoolField, TxHash},
     ports::{AuditedNote, AuditedTx, PoolAuditor, PoolClient, PoolError, PoolTx, TxStatus},
 };
 
@@ -144,6 +144,29 @@ impl CliPoolClient {
         })
     }
 
+    /// Makes sure the intake can use the pool: `pool-cli keys` derives its
+    /// privacy keys into the wallet if they are missing (idempotent), then
+    /// its ASP leaf is looked up in the allow-list `membership` from
+    /// `from_ledger` (the pool's deployment ledger).
+    pub async fn check_intake(
+        &self,
+        membership: &ContractId,
+        from_ledger: u32,
+    ) -> Result<IntakeCheck, PoolError> {
+        let value = self.run(&["keys"]).await?;
+        let keys: Keys = serde_json::from_value(value)
+            .map_err(|e| failure("cli_protocol", format!("unexpected keys output: {e}"), true))?;
+        let allow_listed =
+            allow_list::contains_leaf(&self.rpc, membership, from_ledger, &keys.asp_leaf)
+                .await
+                .map_err(|e| failure("chain", e.to_string(), true))?;
+        Ok(IntakeCheck {
+            asp_leaf: keys.asp_leaf,
+            note_public_key: keys.note_public_key,
+            allow_listed,
+        })
+    }
+
     async fn prepare(&self, args: &[&str]) -> Result<PoolTx, PoolError> {
         let value = self.run(args).await?;
         let prepared: Prepared = serde_json::from_value(value).map_err(|e| {
@@ -243,6 +266,23 @@ fn failure(code: &str, message: String, retryable: bool) -> PoolError {
         message,
         retryable,
     }
+}
+
+/// What [`CliPoolClient::check_intake`] found.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IntakeCheck {
+    /// The intake's ASP leaf and note public key (both public).
+    pub asp_leaf: PoolField,
+    pub note_public_key: PoolField,
+    /// Whether that leaf is in the allow-list: without it every pool
+    /// deposit from the intake fails with `not_allowed`.
+    pub allow_listed: bool,
+}
+
+#[derive(Deserialize)]
+struct Keys {
+    asp_leaf: PoolField,
+    note_public_key: PoolField,
 }
 
 #[derive(Deserialize)]

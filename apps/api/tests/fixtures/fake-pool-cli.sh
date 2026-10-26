@@ -20,6 +20,12 @@ case "$1" in
     leaked=${ADMIN_TOKEN:-none}
     echo "{\"hash\":\"$hash\",\"envelope_xdr\":\"$1:$3:$leaked\",\"valid_until\":null,\"sequence\":42}"
     ;;
+  keys)
+    # "unlisted" answers a leaf that is not in the recorded allow-list events.
+    leaf=0x2e20c54a6631dec2c7a35dfcca7f15907a81bac53c6b7a959bb21521a10b20b7
+    [[ "$mode" == unlisted ]] && leaf=0x$(printf '11%.0s' $(seq 32))
+    echo "{\"account\":\"GA\",\"note_public_key\":\"0x$(printf '22%.0s' $(seq 32))\",\"encryption_public_key\":\"0x$(printf '33%.0s' $(seq 32))\",\"asp_leaf\":\"$leaf\"}"
+    ;;
   submit) echo "{\"hash\":\"$hash\"}" ;;
   status) echo '{"status":"failed","result_xdr":"AAAA"}' ;;
   audit)

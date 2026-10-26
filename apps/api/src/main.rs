@@ -2,7 +2,9 @@
 //! graceful shutdown. No business logic lives here.
 //!
 //! Usage: `shield-api` serves the API (applying pending migrations first);
-//! `shield-api migrate` only applies migrations and exits.
+//! `shield-api migrate` only applies migrations and exits;
+//! `shield-api init-intake` derives the intake's pool keys and allow-lists
+//! it if needed (see `shield_api::intake`), then exits.
 
 use std::{net::SocketAddr, process::ExitCode, sync::Arc};
 
@@ -24,6 +26,7 @@ use shield_api::{
     db,
     deployment::PoolDeployment,
     http::InfoResponse,
+    intake::{self, IntakeInit},
     intent::{
         anchor_sync::AnchorSync, matching::ExpectedAsset, service::IntentService,
         shielding::ShieldingWorker, watcher::IntakeWatcher,
@@ -46,6 +49,7 @@ const TESTNET_PASSPHRASE: &str = "Test SDF Network ; September 2015";
 enum Command {
     Serve,
     Migrate,
+    InitIntake,
 }
 
 #[tokio::main]
@@ -68,18 +72,26 @@ async fn run() -> Result<(), BoxError> {
     let command = match std::env::args().nth(1).as_deref() {
         None | Some("serve") => Command::Serve,
         Some("migrate") => Command::Migrate,
+        Some("init-intake") => Command::InitIntake,
         Some(other) => {
-            return Err(format!("unknown command `{other}` (expected serve or migrate)").into());
+            return Err(format!(
+                "unknown command `{other}` (expected serve, migrate or init-intake)"
+            )
+            .into());
         }
     };
 
     let config = Config::from_env()?;
     telemetry::init(config.log_format)?;
+    let deployment = PoolDeployment::load(&config.deployment_file)?;
+    tracing::info!(pool = %deployment.pool, asset = %deployment.asset.code, "pool deployment loaded");
+
+    if command == Command::InitIntake {
+        return init_intake(&config, &deployment).await;
+    }
     if config.admin_token.is_none() {
         tracing::warn!("ADMIN_TOKEN is not set: /v1/asp/* answers 401");
     }
-    let deployment = PoolDeployment::load(&config.deployment_file)?;
-    tracing::info!(pool = %deployment.pool, asset = %deployment.asset.code, "pool deployment loaded");
 
     let pool = db::connect(&config.database_url).await?;
     db::MIGRATOR.run(&pool).await?;
@@ -200,7 +212,7 @@ fn background_loop(
         issuer: deployment.asset.issuer.as_str().to_owned(),
     };
     tracing::info!("intake watcher and anchor sync enabled");
-    let shielding = shielding_worker(config, pool, &intake, clock, wallet)?;
+    let shielding = shielding_worker(config, deployment, pool, &intake, clock, wallet)?;
     Ok(Some(Background {
         watcher: IntakeWatcher::new(pool.clone(), Arc::new(ledger), asset),
         anchor_sync: AnchorSync::new(pool.clone(), anchor.clone(), clock.clone()),
@@ -211,6 +223,7 @@ fn background_loop(
 /// The shielding worker over `apps/pool-cli`, when `POOL_CLI_PATH` is set.
 fn shielding_worker(
     config: &Config,
+    deployment: &PoolDeployment,
     pool: &sqlx::PgPool,
     intake: &shield_api::domain::AccountId,
     clock: &Arc<dyn Clock>,
@@ -229,11 +242,75 @@ fn shielding_worker(
     )
     .sharing_wallet(wallet.clone());
     tracing::info!(binary = %binary.display(), "shielding worker enabled");
+    tokio::spawn(check_intake(pool_client.clone(), deployment.clone()));
     Ok(Some(ShieldingWorker::new(
         pool.clone(),
         Arc::new(pool_client),
         clock.clone(),
     )))
+}
+
+/// Derives the intake's pool keys if missing and checks it is allow-listed:
+/// without either, every funded intent fails to shield and ends in `error`.
+/// Logs only; `scripts/init-intake.sh` fixes both.
+async fn check_intake(client: CliPoolClient, deployment: PoolDeployment) {
+    match client
+        .check_intake(&deployment.asp_membership, deployment.deployment_ledger)
+        .await
+    {
+        Ok(check) if check.allow_listed => {
+            tracing::info!(asp_leaf = %check.asp_leaf, "intake ready: pool keys derived and allow-listed");
+        }
+        Ok(check) => tracing::error!(
+            asp_leaf = %check.asp_leaf,
+            "the intake is NOT in the allow-list: pool deposits will fail; run scripts/init-intake.sh"
+        ),
+        Err(err) => tracing::error!(
+            code = %err.code,
+            message = %err.message,
+            "cannot check the intake (pool keys / allow-list)"
+        ),
+    }
+}
+
+/// `shield-api init-intake`: needs `POOL_CLI_PATH`, the intake and the
+/// operator (who signs `insert_leaf`). No database.
+async fn init_intake(config: &Config, deployment: &PoolDeployment) -> Result<(), BoxError> {
+    let (Some(binary), Some(secret)) =
+        (config.pool_cli_path.clone(), config.intake_secret.as_ref())
+    else {
+        return Err("init-intake needs POOL_CLI_PATH and SHIELD_INTAKE_SECRET".into());
+    };
+    if config.operator_secret.is_none() {
+        return Err("init-intake needs SHIELD_OPERATOR_SECRET (it signs insert_leaf)".into());
+    }
+    let intake = account_of(secret).ok_or("SHIELD_INTAKE_SECRET is not a valid secret seed")?;
+    let client = CliPoolClient::new(
+        binary,
+        CliPoolClient::forwarded_env(),
+        pool_cli::DEFAULT_TIMEOUT,
+        SorobanRpc::new(config.soroban_rpc_url.clone())?,
+        stellar_strkey::ed25519::PublicKey::from_string(intake.as_str())?.0,
+    );
+    let clock: Arc<dyn Clock> = Arc::new(SystemClock);
+    let asp = asp_contract(config, deployment, clock)?;
+    match intake::init_intake(
+        &client,
+        asp.as_ref(),
+        &deployment.asp_membership,
+        deployment.deployment_ledger,
+        intake::Confirmation::default(),
+    )
+    .await?
+    {
+        IntakeInit::AlreadyAllowListed { asp_leaf } => {
+            tracing::info!(%intake, %asp_leaf, "intake ready: pool keys derived, already allow-listed");
+        }
+        IntakeInit::Inserted { asp_leaf, tx_hash } => {
+            tracing::info!(%intake, %asp_leaf, %tx_hash, "intake ready: pool keys derived, leaf inserted into the allow-list");
+        }
+    }
+    Ok(())
 }
 
 /// The auditor's view (`pool-cli audit`, needs `POOL_CLI_PATH`, the intake

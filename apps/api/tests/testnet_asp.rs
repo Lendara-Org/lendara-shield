@@ -50,3 +50,52 @@ async fn testnet_prepares_an_allow_list_insert_without_sending_it() -> TestResul
     assert_eq!(adapter.status(&prepared.hash).await?, TxStatus::NotFound);
     Ok(())
 }
+
+#[tokio::test]
+#[ignore = "talks to Stellar testnet; run with `make test-testnet`"]
+async fn testnet_the_intake_is_initialised() -> TestResult {
+    use shield_api::adapters::{
+        account_of,
+        pool_cli::{self, CliPoolClient},
+        soroban::{allow_list, rpc::SorobanRpc},
+    };
+
+    let deployment = PoolDeployment::load(Path::new(&env("SHIELD_DEPLOYMENT_FILE")?))?;
+    let rpc = SorobanRpc::new(
+        std::env::var("SOROBAN_RPC_URL")
+            .unwrap_or_else(|_| "https://soroban-testnet.stellar.org".into()),
+    )?;
+    // The real event history decodes, and a leaf nobody inserted is absent.
+    let nobody = PoolField::parse(&format!("0x{}", "11".repeat(32)))?;
+    assert!(
+        !allow_list::contains_leaf(
+            &rpc,
+            &deployment.asp_membership,
+            deployment.deployment_ledger,
+            &nobody
+        )
+        .await?
+    );
+
+    // Derives the intake's keys into its local wallet if missing (no
+    // transaction) and checks its leaf is allow-listed.
+    let intake = account_of(&SecretString::from(env("SHIELD_INTAKE_SECRET")?))
+        .ok_or("SHIELD_INTAKE_SECRET is not a valid secret seed")?;
+    let client = CliPoolClient::new(
+        env("POOL_CLI_PATH")?.into(),
+        CliPoolClient::forwarded_env(),
+        pool_cli::DEFAULT_TIMEOUT,
+        rpc,
+        stellar_strkey::ed25519::PublicKey::from_string(intake.as_str())?.0,
+    );
+    let check = client
+        .check_intake(&deployment.asp_membership, deployment.deployment_ledger)
+        .await
+        .map_err(|e| format!("{}: {}", e.code, e.message))?;
+    assert!(
+        check.allow_listed,
+        "intake leaf {} is not allow-listed: run scripts/init-intake.sh",
+        check.asp_leaf
+    );
+    Ok(())
+}

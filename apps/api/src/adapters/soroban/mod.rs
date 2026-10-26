@@ -4,6 +4,7 @@
 //! The SPP Rust SDK is not used here: its `rusqlite` and `sqlx` link
 //! incompatible versions of the native SQLite library (see AGENTS.md §9).
 
+pub mod allow_list;
 mod asp;
 pub mod rpc;
 pub mod tx;

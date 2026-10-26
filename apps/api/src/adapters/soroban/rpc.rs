@@ -1,4 +1,4 @@
-//! Minimal Stellar RPC (JSON-RPC 2.0) client: only the four methods Shield
+//! Minimal Stellar RPC (JSON-RPC 2.0) client: only the methods Shield
 //! needs. Spec: <https://developers.stellar.org/docs/data/apis/rpc/api-reference/methods>.
 
 use std::time::Duration;
@@ -6,7 +6,7 @@ use std::time::Duration;
 use serde::{Deserialize, de::DeserializeOwned};
 use serde_json::{Value, json};
 use stellar_xdr::{
-    AccountId, LedgerEntryData, LedgerKey, LedgerKeyAccount, Limits, PublicKey, ReadXdr,
+    AccountId, LedgerEntryData, LedgerKey, LedgerKeyAccount, Limits, PublicKey, ReadXdr, ScVal,
     SorobanAuthorizationEntry, SorobanTransactionData, TransactionEnvelope, Uint256, WriteXdr,
 };
 
@@ -49,6 +49,22 @@ pub enum GetStatus {
     Success,
     Failed(String),
     NotFound,
+}
+
+/// One event emitted by a contract.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ContractEvent {
+    pub ledger: u32,
+    pub topic: Vec<ScVal>,
+    pub value: ScVal,
+}
+
+/// One page of `getEvents`, oldest first.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct EventsPage {
+    pub events: Vec<ContractEvent>,
+    /// Where the next page starts.
+    pub cursor: Option<String>,
 }
 
 /// Outcome of `simulateTransaction`.
@@ -151,6 +167,50 @@ impl SorobanRpc {
         })
     }
 
+    /// Events of `contract`, from `start_ledger` (first page) or after
+    /// `cursor` (next pages). A start ledger older than the RPC's history
+    /// window is an [`RpcError::Rpc`].
+    pub async fn contract_events(
+        &self,
+        contract: &str,
+        start_ledger: u32,
+        cursor: Option<&str>,
+        limit: u32,
+    ) -> Result<EventsPage, RpcError> {
+        let filters = json!([{ "type": "contract", "contractIds": [contract] }]);
+        let params = match cursor {
+            Some(cursor) => json!({
+                "filters": filters,
+                "pagination": { "cursor": cursor, "limit": limit },
+            }),
+            None => json!({
+                "startLedger": start_ledger,
+                "filters": filters,
+                "pagination": { "limit": limit },
+            }),
+        };
+        let raw: RawEvents = self.call("getEvents", params).await?;
+        let events = raw
+            .events
+            .into_iter()
+            .map(|event| {
+                Ok(ContractEvent {
+                    ledger: event.ledger,
+                    topic: event
+                        .topic
+                        .iter()
+                        .map(|t| decode::<ScVal>(t))
+                        .collect::<Result<_, _>>()?,
+                    value: decode::<ScVal>(&event.value)?,
+                })
+            })
+            .collect::<Result<_, RpcError>>()?;
+        Ok(EventsPage {
+            events,
+            cursor: raw.cursor.filter(|c| !c.is_empty()),
+        })
+    }
+
     pub async fn get_transaction(&self, hash: &str) -> Result<GetStatus, RpcError> {
         let raw: RawGet = self.call("getTransaction", json!({ "hash": hash })).await?;
         Ok(match raw.status.as_str() {
@@ -212,6 +272,21 @@ struct JsonRpcResponse<T> {
 struct JsonRpcError {
     code: i64,
     message: String,
+}
+
+#[derive(Deserialize)]
+struct RawEvents {
+    #[serde(default)]
+    events: Vec<RawEvent>,
+    cursor: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct RawEvent {
+    ledger: u32,
+    #[serde(default)]
+    topic: Vec<String>,
+    value: String,
 }
 
 #[derive(Deserialize)]

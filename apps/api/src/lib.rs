@@ -12,6 +12,7 @@ pub mod deployment;
 pub mod domain;
 pub mod error;
 pub mod http;
+pub mod intake;
 pub mod intent;
 pub mod ports;
 pub mod state;
