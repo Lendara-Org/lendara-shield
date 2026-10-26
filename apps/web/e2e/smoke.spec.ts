@@ -123,3 +123,38 @@ test("the illustrative mesh honors reduced motion without changing entry links",
   await page.emulateMedia({ reducedMotion: "no-preference" });
   await expect(page.getByTestId("payment-mesh")).toHaveCSS("animation-name", "payment-mesh-drift");
 });
+
+test("public payment details reveal on selection and stay under manual control", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto("/es");
+  const publicView = page.getByRole("button", { name: "Vista pública", exact: true });
+  const authorizedView = page.getByRole("button", { name: "Vista autorizada", exact: true });
+  const details = page.locator(".payment-sensitive").first();
+  await expect(publicView).toHaveAttribute("aria-pressed", "true");
+  await expect(details).toHaveCSS("filter", "blur(6px)");
+  await expect(details).toHaveAttribute("aria-hidden", "true");
+  await authorizedView.click();
+  await expect(authorizedView).toHaveAttribute("aria-pressed", "true");
+  await expect(details).toHaveCSS("filter", "blur(0px)");
+  await expect(details).toHaveAttribute("aria-hidden", "false");
+  await expect(details).toHaveText("María G.");
+  await publicView.click();
+  await expect(details).toHaveCSS("filter", "blur(6px)");
+  await expect(page.getByText("Ejemplo ilustrativo", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("Lendara Shield · Testnet de Stellar", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("Oculto para el público", { exact: true })).toHaveCount(0);
+});
+
+test("the preview cycles automatically until a visitor chooses a view", async ({ page }) => {
+  await page.clock.install();
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await page.goto("/en");
+  const illustration = page.locator(".payment-hero-visual");
+  await expect(illustration).toHaveAttribute("data-authorized", "false");
+  await page.clock.fastForward(4100);
+  await expect(illustration).toHaveAttribute("data-authorized", "true");
+  await page.getByRole("button", { name: "Public view", exact: true }).click();
+  await page.mouse.move(0, 0);
+  await page.clock.fastForward(8500);
+  await expect(illustration).toHaveAttribute("data-authorized", "false");
+});
