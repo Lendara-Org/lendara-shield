@@ -21,7 +21,7 @@ export const en = {
     title: "KYC once. Pay privately. Disclose selectively.",
     intro:
       "Lendara Shield is a compliant privacy layer for Stellar. Shield runs the KYC and the pool's allow-list, connects any SEP-24 anchor to a private pool, and keeps an auditor's view key, so payments are private to the public and accountable to the regulator.",
-    start: "Start: onboard",
+    start: "Try the demo",
     readDocs: "Read the docs",
     visual: {
       viewLabel: "Payment visibility",

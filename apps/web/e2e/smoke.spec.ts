@@ -12,7 +12,7 @@ test("landing → onboard → deposit, and a clear message without Freighter", a
   await page.goto("/");
   await expect(page.getByRole("heading", { level: 1 })).toContainText("KYC once");
 
-  await page.getByRole("link", { name: "Start: onboard" }).click();
+  await page.getByRole("main").getByRole("link", { name: "Try the demo" }).click();
   await expect(page).toHaveURL(/\/onboard$/);
   await page.getByRole("button", { name: "Connect Freighter" }).click();
   await expect(page.getByRole("main").getByRole("alert")).toContainText("Freighter is not installed");
@@ -103,10 +103,22 @@ test("the visual identity stays readable and usable across viewport widths", asy
       await expect(page.getByRole("main")).toHaveCSS("max-width", "1440px");
       await expect(page.getByRole("heading", { level: 1 })).toHaveCSS("font-size", "64px");
     }
+    const nav = page.getByRole("navigation", { name: "Principal" });
+    const demo = nav.getByRole("link", { name: "Probar la demo" });
+    if (width >= 640) await expect(demo).toBeVisible();
+    else await expect(demo).toBeHidden();
+    if (width >= 1280) {
+      const brand = await nav.getByRole("link", { name: "Lendara Shield" }).boundingBox();
+      const action = await demo.boundingBox();
+      expect(brand).not.toBeNull();
+      expect(action).not.toBeNull();
+      expect(Math.abs(brand!.y + brand!.height / 2 - action!.y - action!.height / 2)).toBeLessThan(2);
+    }
+    if (width === 1920) await page.screenshot({ path: "test-results/navbar-desktop.png" });
     await expect(page.getByRole("heading", { level: 1 })).toHaveCSS("font-weight", "600");
-    await expect(page.getByRole("link", { name: "Empezar: registro" })).toHaveCSS("background-color", "rgb(194, 24, 82)");
+    await expect(page.getByRole("main").getByRole("link", { name: "Probar la demo" })).toHaveCSS("background-color", "rgb(194, 24, 82)");
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-    await page.getByRole("link", { name: "Empezar: registro" }).click();
+    await page.getByRole("main").getByRole("link", { name: "Probar la demo" }).click();
     const connect = page.getByRole("button", { name: "Conectar Freighter" });
     await expect(connect).toBeVisible();
     await expect(connect).toHaveCSS("min-height", "48px");

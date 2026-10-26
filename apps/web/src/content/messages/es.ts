@@ -23,7 +23,7 @@ export const es: Messages = {
     title: "KYC una vez. Paga en privado. Revela solo lo necesario.",
     intro:
       "Lendara Shield es una capa de privacidad con cumplimiento para Stellar. Shield hace el KYC y administra la allow-list del pool, conecta cualquier anchor SEP-24 con un pool privado y guarda la llave de vista del auditor: los pagos son privados para el público y auditables para el regulador.",
-    start: "Empezar: registro",
+    start: "Probar la demo",
     readDocs: "Leer los docs",
     visual: {
       viewLabel: "Visibilidad del pago",
