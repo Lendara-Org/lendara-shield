@@ -12,6 +12,7 @@ const LINKS = [
   { href: "/onboard", label: "Onboard" },
   { href: "/deposit", label: "Deposit" },
   { href: "/wallet", label: "Wallet" },
+  { href: "/audit", label: "Audit" },
 ] as const;
 
 export function SiteHeader() {
