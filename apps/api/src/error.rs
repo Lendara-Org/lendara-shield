@@ -29,6 +29,9 @@ pub enum ApiError {
     /// The request conflicts with the current state.
     #[error("{message}")]
     Conflict { code: &'static str, message: String },
+    /// An upstream we call (the anchor) failed.
+    #[error("{message}")]
+    BadGateway { code: &'static str, message: String },
     /// A dependency (database, Stellar RPC, anchor) is unavailable.
     #[error("service unavailable: {0}")]
     Unavailable(String),
@@ -52,7 +55,8 @@ impl ApiError {
             Self::NotFound => "not_found",
             Self::Missing { code, .. }
             | Self::BadRequest { code, .. }
-            | Self::Conflict { code, .. } => code,
+            | Self::Conflict { code, .. }
+            | Self::BadGateway { code, .. } => code,
             Self::Unauthorized => "unauthorized",
             Self::Unavailable(_) => "service_unavailable",
             Self::Internal(_) => "internal_error",
@@ -66,6 +70,7 @@ impl ApiError {
             Self::BadRequest { .. } => StatusCode::BAD_REQUEST,
             Self::Unauthorized => StatusCode::UNAUTHORIZED,
             Self::Conflict { .. } => StatusCode::CONFLICT,
+            Self::BadGateway { .. } => StatusCode::BAD_GATEWAY,
             Self::Unavailable(_) => StatusCode::SERVICE_UNAVAILABLE,
             Self::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
@@ -77,7 +82,8 @@ impl ApiError {
             Self::NotFound => "The requested resource does not exist.".to_owned(),
             Self::Missing { message, .. }
             | Self::BadRequest { message, .. }
-            | Self::Conflict { message, .. } => message.clone(),
+            | Self::Conflict { message, .. }
+            | Self::BadGateway { message, .. } => message.clone(),
             Self::Unauthorized => "Missing or invalid bearer token.".to_owned(),
             Self::Unavailable(_) => "A dependency is temporarily unavailable.".to_owned(),
             Self::Internal(_) => "An unexpected error occurred.".to_owned(),
@@ -165,6 +171,14 @@ mod tests {
                 ApiError::Unauthorized,
                 StatusCode::UNAUTHORIZED,
                 "unauthorized",
+            ),
+            (
+                ApiError::BadGateway {
+                    code: "anchor_unavailable",
+                    message: "no".into(),
+                },
+                StatusCode::BAD_GATEWAY,
+                "anchor_unavailable",
             ),
         ];
         for (err, expected_status, expected_code) in cases {

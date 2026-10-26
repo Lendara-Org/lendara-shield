@@ -5,7 +5,7 @@ use std::sync::Arc;
 use secrecy::SecretString;
 use sqlx::PgPool;
 
-use crate::{asp::service::AspService, http::InfoResponse};
+use crate::{asp::service::AspService, http::InfoResponse, intent::service::IntentService};
 
 /// Cheap to clone: every field is reference-counted.
 #[derive(Debug, Clone)]
@@ -14,6 +14,7 @@ pub struct AppState {
     /// Public configuration, computed once at startup.
     pub info: Arc<InfoResponse>,
     pub asp: AspService,
+    pub intents: IntentService,
     /// Bearer token for the admin endpoints; `None` disables them.
     pub admin_token: Arc<Option<SecretString>>,
 }

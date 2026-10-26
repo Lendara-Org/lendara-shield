@@ -17,7 +17,11 @@ use shield_api::{
     db,
     deployment::PoolDeployment,
     http::InfoResponse,
-    ports::{AspContract, Clock, SystemClock, UnconfiguredAspContract},
+    intent::service::IntentService,
+    ports::{
+        AnchorClient, AspContract, Clock, SystemClock, UnconfiguredAnchorClient,
+        UnconfiguredAspContract,
+    },
     state::AppState,
     telemetry,
 };
@@ -75,6 +79,13 @@ async fn run() -> Result<(), BoxError> {
 
     let clock: Arc<dyn Clock> = Arc::new(SystemClock);
     let asp_contract = asp_contract(&config, &deployment, clock.clone())?;
+    // The SEP-24 client lands in H6a2; until then ramp intents end in `error`.
+    let anchor = config.ramp_anchor_home_domain.clone().map(|home_domain| {
+        Arc::new(UnconfiguredAnchorClient { home_domain }) as Arc<dyn AnchorClient>
+    });
+    if anchor.is_none() {
+        tracing::info!("RAMP_ANCHOR_HOME_DOMAIN is not set: ramp mode is disabled");
+    }
 
     let app = build_app(
         AppState {
@@ -84,6 +95,7 @@ async fn run() -> Result<(), BoxError> {
                 config.ramp_anchor_home_domain,
             )),
             asp: AspService::new(pool.clone(), asp_contract, clock),
+            intents: IntentService::new(pool.clone(), anchor, deployment.asset.code.clone()),
             admin_token: Arc::new(config.admin_token),
         },
         HttpOptions {
