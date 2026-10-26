@@ -28,6 +28,8 @@ die() { printf 'error: %s\n' "$*" >&2; exit 1; }
   # `export "NAME=value"` takes each line literally, and secrets never reach
   # a command line.
   while IFS= read -r line || [[ -n $line ]]; do
+    # The whole `NAME=value` line is exported on purpose.
+    # shellcheck disable=SC2163
     [[ $line =~ ^[A-Za-z_][A-Za-z0-9_]*= ]] && export "$line"
   done <"$ENV_FILE"
   export POOL_CLI_PATH=${POOL_CLI_PATH:-$ROOT/apps/pool-cli/target/release/pool-cli}
