@@ -1,31 +1,25 @@
 /** Wording of the side-by-side audit comparison. Pure, so it is tested. */
 import type { AuditNote, AuditTransaction, PublicTransaction } from "@lendara/shield-api-types";
 
+import type { Messages } from "@/content/messages";
+
 import { formatAmount, parseAmount } from "./amount";
 import { shorten } from "./explorer";
 
-const KIND: Record<AuditTransaction["kind"], string> = {
-  deposit: "Deposit",
-  transfer: "Private transfer",
-  withdraw: "Withdraw",
-};
-
-export function kindLabel(kind: AuditTransaction["kind"]): string {
-  return KIND[kind];
-}
+type AuditCopy = Messages["audit"];
 
 /** The public amount as the explorer shows it. */
-export function publicAmount(ext: string | null, asset: string): string {
-  if (ext === null) return "Not a pool transaction";
-  if (ext === "0") return "Nothing: amount hidden";
-  return ext.startsWith("-") ? `${ext.slice(1)} ${asset} out of the pool` : `${ext} ${asset} into the pool`;
+export function publicAmount(t: AuditCopy, ext: string | null, asset: string): string {
+  if (ext === null) return t.notPool;
+  if (ext === "0") return t.amountHidden;
+  return ext.startsWith("-") ? t.amountOut(ext.slice(1), asset) : t.amountIn(ext, asset);
 }
 
 /** Who a note belongs to, for the auditor. */
-export function owner(note: AuditNote): string {
+export function owner(t: AuditCopy, note: AuditNote): string {
   return note.owner_stellar_account
     ? shorten(note.owner_stellar_account, 6, 4)
-    : `Unknown key ${shorten(note.owner_note_public_key, 8, 4)}`;
+    : t.unknownKey(shorten(note.owner_note_public_key, 8, 4));
 }
 
 /** Accounts the explorer shows besides the signer (e.g. an asset issuer). */

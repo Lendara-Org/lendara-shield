@@ -2,12 +2,14 @@
 
 import { useState } from "react";
 
+import { useI18n } from "@/components/i18n";
 import { message } from "@/components/session";
 import { Button, Card, Field, Notice, TxList, inputClass } from "@/components/ui/primitives";
 import { parseAmount } from "@/lib/amount";
 import type { PoolResult, ShieldWallet } from "@/lib/pool/types";
 
 export function DirectDeposit({ wallet, assetCode }: { wallet: ShieldWallet; assetCode: string }) {
+  const { t } = useI18n();
   const [amount, setAmount] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -30,15 +32,12 @@ export function DirectDeposit({ wallet, assetCode }: { wallet: ShieldWallet; ass
   }
 
   return (
-    <Card title={`Deposit ${assetCode} from your wallet`}>
+    <Card title={t.deposit.directTitle(assetCode)}>
       <div className="mb-4">
-        <Notice tone="warn">
-          Your address is visible on-chain for this deposit (you sign it). Transfers after it are private. To keep your
-          address out entirely, deposit with a ramp.
-        </Notice>
+        <Notice tone="warn">{t.deposit.directWarning}</Notice>
       </div>
       <form onSubmit={(e) => void deposit(e)} className="space-y-4">
-        <Field label={`Amount (${assetCode})`} hint="Proving takes a few seconds; Freighter asks you to sign.">
+        <Field label={t.deposit.directAmount(assetCode)} hint={t.deposit.directHint}>
           {(control) => (
             <input
               {...control}
@@ -51,12 +50,12 @@ export function DirectDeposit({ wallet, assetCode }: { wallet: ShieldWallet; ass
           )}
         </Field>
         <Button type="submit" busy={busy} disabled={stroops === null}>
-          Deposit into the pool
+          {t.deposit.depositButton}
         </Button>
         {error && <Notice tone="error">{error}</Notice>}
         {result && (
           <Notice tone="ok">
-            <p className="mb-1">Deposited. Pool transaction (ext_amount &gt; 0):</p>
+            <p className="mb-1">{t.deposit.deposited}</p>
             <TxList hashes={result.hashes} />
           </Notice>
         )}

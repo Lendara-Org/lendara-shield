@@ -66,7 +66,7 @@ describe("DepositFlow with a ramp", () => {
     await ui.type(await screen.findByLabelText("Amount"), "5000");
     await ui.click(screen.getByRole("button", { name: "Continue to the anchor" }));
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("Deposit error: The anchor rejected the KYC.");
+    expect(await screen.findByRole("alert")).toHaveTextContent("Deposit failed: The anchor rejected the KYC.");
     expect(screen.getAllByRole("listitem")[0]?.dataset.state).toBe("failed");
   });
 

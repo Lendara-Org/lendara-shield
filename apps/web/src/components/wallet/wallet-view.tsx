@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { ConnectGate } from "@/components/connect-gate";
+import { useI18n } from "@/components/i18n";
 import { message, useSession } from "@/components/session";
 import { Button, Card, Field, Notice, TxList, inputClass } from "@/components/ui/primitives";
 import { formatAmount, parseAmount } from "@/lib/amount";
@@ -15,6 +16,7 @@ export function WalletView() {
 
 function Wallet({ wallet }: { wallet: ShieldWallet }) {
   const { info } = useSession();
+  const { t } = useI18n();
   const asset = info?.pool.asset.code ?? "USDC";
   const [balance, setBalance] = useState<bigint | null>(null);
   const [syncing, setSyncing] = useState(true);
@@ -49,16 +51,16 @@ function Wallet({ wallet }: { wallet: ShieldWallet }) {
 
   return (
     <div className="space-y-6">
-      <Card title="Private balance">
+      <Card title={t.wallet.balanceTitle}>
         <div className="flex items-end justify-between gap-4">
           <p className="font-mono text-4xl" aria-live="polite">
             {balance === null ? "—" : formatAmount(balance)} <span className="text-base text-gray">{asset}</span>
           </p>
           <Button variant="quiet" onClick={() => void refresh()} busy={syncing}>
-            Sync
+            {t.wallet.sync}
           </Button>
         </div>
-        <p className="mt-2 text-xs text-gray">Only you (and the auditor&apos;s view key) can see this balance.</p>
+        <p className="mt-2 text-xs text-gray">{t.wallet.balanceNote}</p>
         {balanceError && (
           <div className="mt-3">
             <Notice tone="error">{balanceError}</Notice>
@@ -70,19 +72,19 @@ function Wallet({ wallet }: { wallet: ShieldWallet }) {
 
       <div className="grid gap-6 sm:grid-cols-2">
         <SpendForm
-          title="Send privately"
-          action="Send"
+          title={t.wallet.sendTitle}
+          action={t.wallet.send}
           asset={asset}
           withRecipient
-          note="ext_amount = 0: amount and recipient stay hidden. You sign it, so your account shows as the sender (a relayer removes that later)."
+          note={t.wallet.sendNote}
           run={(amount, to) => (to ? wallet.transfer(to, amount) : Promise.reject(new Error("Missing recipient")))}
           onDone={refresh}
         />
         <SpendForm
-          title="Withdraw to my wallet"
-          action="Withdraw"
+          title={t.wallet.withdrawTitle}
+          action={t.wallet.withdraw}
           asset={asset}
-          note="ext_amount < 0: the amount and your address become public."
+          note={t.wallet.withdrawNote}
           run={(amount) => wallet.withdraw(amount)}
           onDone={refresh}
         />
@@ -92,6 +94,7 @@ function Wallet({ wallet }: { wallet: ShieldWallet }) {
 }
 
 function ReceiveCard({ wallet }: { wallet: ShieldWallet }) {
+  const { t } = useI18n();
   const [address, setAddress] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -112,20 +115,18 @@ function ReceiveCard({ wallet }: { wallet: ShieldWallet }) {
   }
 
   return (
-    <Card title="Receive privately">
-      <p className="mb-3 text-sm text-gray">
-        Share your private address off-chain. It holds only public keys and is not linked to your account on-chain.
-      </p>
+    <Card title={t.wallet.receiveTitle}>
+      <p className="mb-3 text-sm text-gray">{t.wallet.receiveIntro}</p>
       {address ? (
         <div className="flex items-start gap-2">
           <code className="block flex-1 break-all rounded-md bg-paper p-3 font-mono text-xs">{address}</code>
           <Button variant="quiet" onClick={() => void copy()}>
-            {copied ? "Copied" : "Copy"}
+            {copied ? t.wallet.copied : t.wallet.copy}
           </Button>
         </div>
       ) : (
         <Button variant="quiet" onClick={() => void reveal()}>
-          Show my private address
+          {t.wallet.reveal}
         </Button>
       )}
       {error && <Notice tone="error">{error}</Notice>}
@@ -150,6 +151,7 @@ function SpendForm({
   run: (amount: bigint, to: ReturnType<typeof decodeRecipient>) => Promise<PoolResult>;
   onDone: () => Promise<void>;
 }) {
+  const { t } = useI18n();
   const [recipient, setRecipient] = useState("");
   const [amount, setAmount] = useState("");
   const [busy, setBusy] = useState(false);
@@ -181,7 +183,7 @@ function SpendForm({
     <Card title={title}>
       <form onSubmit={(e) => void submit(e)} className="space-y-4">
         {withRecipient && (
-          <Field label="Recipient's private address" hint="shield:0x…:0x…">
+          <Field label={t.wallet.recipient} hint="shield:0x…:0x…">
             {(control) => (
               <input
                 {...control}
@@ -193,7 +195,7 @@ function SpendForm({
             )}
           </Field>
         )}
-        <Field label={`Amount (${asset})`} hint={note}>
+        <Field label={t.wallet.amount(asset)} hint={note}>
           {(control) => (
             <input
               {...control}
@@ -210,7 +212,7 @@ function SpendForm({
         {error && <Notice tone="error">{error}</Notice>}
         {result && (
           <Notice tone="ok">
-            <p className="mb-1">Done:</p>
+            <p className="mb-1">{t.wallet.done}</p>
             <TxList hashes={result.hashes} />
           </Notice>
         )}

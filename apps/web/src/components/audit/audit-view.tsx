@@ -3,16 +3,19 @@
 import type { AuditTransaction } from "@lendara/shield-api-types";
 import { useState } from "react";
 
+import { useI18n } from "@/components/i18n";
 import { message, useSession } from "@/components/session";
 import { Button, Card, Field, Notice, inputClass } from "@/components/ui/primitives";
 import { ApiRequestError, api } from "@/lib/api";
-import { kindLabel, movedAmount } from "@/lib/audit";
+import { movedAmount } from "@/lib/audit";
 import { shorten } from "@/lib/explorer";
 
 import { Comparison } from "./comparison";
 
 export function AuditView() {
   const { info } = useSession();
+  const { t } = useI18n();
+  const a = t.audit;
   const asset = info?.pool.asset.code ?? "USDC";
   const [token, setToken] = useState("");
   const [busy, setBusy] = useState(false);
@@ -29,7 +32,7 @@ export function AuditView() {
       setTxs(transactions);
       setSelected(0);
     } catch (err) {
-      setError(err instanceof ApiRequestError && err.status === 401 ? "That auditor token is not valid." : message(err));
+      setError(err instanceof ApiRequestError && err.status === 401 ? a.badToken : message(err));
     } finally {
       setBusy(false);
     }
@@ -37,9 +40,9 @@ export function AuditView() {
 
   if (!txs) {
     return (
-      <Card title="Auditor access">
+      <Card title={a.accessTitle}>
         <form onSubmit={(e) => void unlock(e)} className="space-y-4">
-          <Field label="Auditor token" hint="Shield's AUDITOR_TOKEN. It is only sent to Shield's API.">
+          <Field label={a.token} hint={a.tokenHint}>
             {(control) => (
               <input
                 {...control}
@@ -52,7 +55,7 @@ export function AuditView() {
             )}
           </Field>
           <Button type="submit" busy={busy} disabled={token.trim() === ""}>
-            Open the audit
+            {a.open}
           </Button>
           {error && <Notice tone="error">{error}</Notice>}
         </form>
@@ -63,8 +66,8 @@ export function AuditView() {
   const current = txs[selected];
   return (
     <div className="space-y-6">
-      {current ? <Comparison tx={current} asset={asset} /> : <Notice>The pool has no transactions yet.</Notice>}
-      <Card title="Pool activity">
+      {current ? <Comparison tx={current} asset={asset} /> : <Notice>{a.empty}</Notice>}
+      <Card title={a.activity}>
         <ul className="divide-y divide-line">
           {txs.map((tx, i) => (
             <li key={`${tx.ledger}:${tx.tx_hash ?? i}`}>
@@ -74,8 +77,8 @@ export function AuditView() {
                 aria-current={i === selected}
                 className="grid w-full grid-cols-[9rem_1fr_auto] gap-3 py-2 text-left text-sm hover:bg-paper aria-[current=true]:font-semibold"
               >
-                <span>{kindLabel(tx.kind)}</span>
-                <span className="font-mono text-gray">{tx.tx_hash ? shorten(tx.tx_hash) : `ledger ${tx.ledger}`}</span>
+                <span>{a.kinds[tx.kind]}</span>
+                <span className="font-mono text-gray">{tx.tx_hash ? shorten(tx.tx_hash) : a.ledger(tx.ledger)}</span>
                 <span className="font-mono">
                   {movedAmount(tx)} {asset}
                 </span>

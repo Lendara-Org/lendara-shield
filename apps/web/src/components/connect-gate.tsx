@@ -4,6 +4,7 @@ import Link from "next/link";
 
 import type { ShieldWallet } from "@/lib/pool/types";
 
+import { useI18n } from "./i18n";
 import { useSession } from "./session";
 import { Button, Card, Notice } from "./ui/primitives";
 
@@ -16,17 +17,16 @@ export function ConnectGate({
   children: (wallet: ShieldWallet) => React.ReactNode;
 }) {
   const { info, infoError, wallet, user, connect, connecting, connectError } = useSession();
+  const { t, href } = useI18n();
 
   if (infoError) return <Notice tone="error">{infoError}</Notice>;
   if (!wallet) {
     return (
-      <Card title="Connect your wallet">
-        <p className="mb-4 text-sm text-gray">
-          Shield uses Freighter on Testnet. Your pool keys are derived in this browser and never leave it.
-        </p>
+      <Card title={t.connect.title}>
+        <p className="mb-4 text-sm text-gray">{t.connect.intro}</p>
         <div className="space-y-3">
           <Button onClick={() => void connect()} busy={connecting} disabled={!info}>
-            Connect Freighter
+            {t.connect.button}
           </Button>
           {connectError && <Notice tone="error">{connectError}</Notice>}
         </div>
@@ -36,9 +36,9 @@ export function ConnectGate({
   if (requireAllowed && user?.asp_status !== "allowed") {
     return (
       <Notice tone="warn">
-        {user ? `Your key is ${user.asp_status.replace("_", " ")} in Shield's allow-list.` : "You have not onboarded yet."}{" "}
-        <Link href="/onboard" className="font-medium underline">
-          Go to onboarding
+        {user ? t.connect.keyStatus(t.aspStatus[user.asp_status]) : t.connect.notOnboarded}{" "}
+        <Link href={href("/onboard")} className="font-medium underline">
+          {t.connect.goOnboard}
         </Link>
       </Notice>
     );

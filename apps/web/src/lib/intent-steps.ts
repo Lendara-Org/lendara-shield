@@ -8,9 +8,8 @@ import type { Intent, IntentStatus } from "@lendara/shield-api-types";
 export type StepState = "done" | "current" | "pending" | "failed";
 
 export interface Step {
+  /** Which step; its copy lives in the messages (`progress.steps`). */
   key: "anchor" | "received" | "deposit" | "transfer";
-  label: string;
-  detail: string;
   state: StepState;
   hash: string | null;
 }
@@ -35,26 +34,18 @@ export function intentSteps(intent: Intent): Step[] {
   const steps: Omit<Step, "state">[] = [
     {
       key: "anchor",
-      label: "Pay at the anchor",
-      detail: "Complete the anchor's form in local currency.",
       hash: null,
     },
     {
       key: "received",
-      label: "Anchor paid Shield",
-      detail: "USDC arrives at Shield's omnibus account, matched by memo.",
       hash: tx.intake_payment,
     },
     {
       key: "deposit",
-      label: "Shield deposited into the pool",
-      detail: "From Shield's account, ext_amount > 0. Your address is not in it.",
       hash: tx.pool_deposit,
     },
     {
       key: "transfer",
-      label: "Private transfer to your keys",
-      detail: "ext_amount = 0: amount and recipient are hidden.",
       hash: tx.pool_transfer,
     },
   ];

@@ -1,6 +1,11 @@
 import type { AuditTransaction } from "@lendara/shield-api-types";
 
-import { isChange, kindLabel, movedAmount, otherVisible, owner, publicAmount } from "./audit";
+import { messages } from "@/content/messages";
+
+import { isChange, movedAmount, otherVisible, owner, publicAmount } from "./audit";
+
+const en = messages.en.audit;
+const es = messages.es.audit;
 
 const CAROL = `0x${"c0".repeat(32)}`;
 const BOB = `0x${"b0".repeat(32)}`;
@@ -16,20 +21,23 @@ const tx = (kind: AuditTransaction["kind"], ext: string, inputs: ReturnType<type
 
 describe("audit wording", () => {
   it("describes the public amount", () => {
-    expect(publicAmount("2", "USDC")).toBe("2 USDC into the pool");
-    expect(publicAmount("-0.5", "USDC")).toBe("0.5 USDC out of the pool");
-    expect(publicAmount("0", "USDC")).toBe("Nothing: amount hidden");
-    expect(publicAmount(null, "USDC")).toBe("Not a pool transaction");
+    expect(publicAmount(en, "2", "USDC")).toBe("2 USDC into the pool");
+    expect(publicAmount(en, "-0.5", "USDC")).toBe("0.5 USDC out of the pool");
+    expect(publicAmount(en, "0", "USDC")).toBe("Nothing: amount hidden");
+    expect(publicAmount(en, null, "USDC")).toBe("Not a pool transaction");
   });
 
-  it("names kinds", () => {
-    expect(kindLabel("transfer")).toBe("Private transfer");
+  it("speaks Spanish too", () => {
+    expect(publicAmount(es, "-0.5", "USDC")).toBe("0.5 USDC salen del pool");
+    expect(publicAmount(es, "0", "USDC")).toBe("Nada: monto oculto");
+    expect(es.kinds.transfer).toBe("Transferencia privada");
   });
 
   it("names owners by account, or flags keys Shield does not know", () => {
     const key = `0x${"a2".repeat(32)}`;
-    expect(owner({ owner_note_public_key: key, owner_stellar_account: "GBJ3H74T4LB23V3WKE46BSWMZVOH4YWX2P5ZLQTY4EZXH3YAZZUCPFWY", amount: "1" })).toBe("GBJ3H7…PFWY");
-    expect(owner({ owner_note_public_key: key, owner_stellar_account: null, amount: "1" })).toBe("Unknown key 0xa2a2a2…a2a2");
+    expect(owner(en, { owner_note_public_key: key, owner_stellar_account: "GBJ3H74T4LB23V3WKE46BSWMZVOH4YWX2P5ZLQTY4EZXH3YAZZUCPFWY", amount: "1" })).toBe("GBJ3H7…PFWY");
+    expect(owner(en, { owner_note_public_key: key, owner_stellar_account: null, amount: "1" })).toBe("Unknown key 0xa2a2a2…a2a2");
+    expect(owner(es, { owner_note_public_key: key, owner_stellar_account: null, amount: "1" })).toBe("Llave desconocida 0xa2a2a2…a2a2");
   });
 
   it("lists visible accounts besides the signer", () => {
