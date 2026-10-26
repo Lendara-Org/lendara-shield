@@ -12,7 +12,8 @@ use shield_api::{
         account_of,
         anchor::{Sep24AnchorClient, Sep24AnchorConfig},
         horizon::HorizonLedger,
-        soroban::{DEFAULT_VALIDITY, SorobanAspConfig, SorobanAspContract},
+        pool_cli::{self, CliPoolClient},
+        soroban::{DEFAULT_VALIDITY, SorobanAspConfig, SorobanAspContract, rpc::SorobanRpc},
     },
     asp::service::AspService,
     background::{self, Background},
@@ -23,7 +24,7 @@ use shield_api::{
     http::InfoResponse,
     intent::{
         anchor_sync::AnchorSync, matching::ExpectedAsset, service::IntentService,
-        watcher::IntakeWatcher,
+        shielding::ShieldingWorker, watcher::IntakeWatcher,
     },
     ports::{
         AnchorClient, AspContract, Clock, SystemClock, UnconfiguredAnchorClient,
@@ -171,16 +172,44 @@ fn background_loop(
         return Ok(None);
     };
     let intake = account_of(secret).ok_or("SHIELD_INTAKE_SECRET is not a valid secret seed")?;
-    let ledger = HorizonLedger::new(&format!("{}/", config.horizon_url), intake)?;
+    let ledger = HorizonLedger::new(&format!("{}/", config.horizon_url), intake.clone())?;
     let asset = ExpectedAsset {
         code: deployment.asset.code.clone(),
         issuer: deployment.asset.issuer.as_str().to_owned(),
     };
     tracing::info!("intake watcher and anchor sync enabled");
+    let shielding = shielding_worker(config, pool, &intake, clock)?;
     Ok(Some(Background {
         watcher: IntakeWatcher::new(pool.clone(), Arc::new(ledger), asset),
         anchor_sync: AnchorSync::new(pool.clone(), anchor.clone(), clock.clone()),
+        shielding,
     }))
+}
+
+/// The shielding worker over `apps/pool-cli`, when `POOL_CLI_PATH` is set.
+fn shielding_worker(
+    config: &Config,
+    pool: &sqlx::PgPool,
+    intake: &shield_api::domain::AccountId,
+    clock: &Arc<dyn Clock>,
+) -> Result<Option<ShieldingWorker>, BoxError> {
+    let Some(binary) = config.pool_cli_path.clone() else {
+        tracing::warn!("POOL_CLI_PATH is not set: funded intents will not be shielded");
+        return Ok(None);
+    };
+    let pool_client = CliPoolClient::new(
+        binary.clone(),
+        CliPoolClient::forwarded_env(),
+        pool_cli::DEFAULT_TIMEOUT,
+        SorobanRpc::new(config.soroban_rpc_url.clone())?,
+        stellar_strkey::ed25519::PublicKey::from_string(intake.as_str())?.0,
+    );
+    tracing::info!(binary = %binary.display(), "shielding worker enabled");
+    Ok(Some(ShieldingWorker::new(
+        pool.clone(),
+        Arc::new(pool_client),
+        clock.clone(),
+    )))
 }
 
 /// The SEP-24 anchor client when ramp mode is configured; `None` disables
