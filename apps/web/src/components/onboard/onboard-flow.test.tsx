@@ -6,6 +6,8 @@ import { ACCOUNT, ENC_KEY, LEAF, NOTE_KEY, user } from "@/test/fixtures";
 import { renderConnected } from "@/test/render";
 import { apiError, server, url } from "@/test/server";
 
+import { onboardingMessage } from "@/lib/onboarding";
+
 import { OnboardFlow } from "./onboard-flow";
 
 vi.mock("@/lib/config", async (original) => ({ ...(await original<object>()), INTENT_POLL_MS: 10 }));
@@ -29,11 +31,15 @@ describe("OnboardFlow", () => {
     await ui.selectOptions(await screen.findByLabelText("KYC scenario"), "blocked");
     await ui.click(screen.getByRole("button", { name: "Derive keys and register" }));
 
+    expect(wallet.signMessage).toHaveBeenCalledWith(
+      onboardingMessage(ACCOUNT, { notePublicKey: NOTE_KEY, encryptionPublicKey: ENC_KEY, aspLeaf: LEAF }),
+    );
     expect(body).toEqual({
       stellar_account: ACCOUNT,
       note_public_key: NOTE_KEY,
       encryption_public_key: ENC_KEY,
       asp_leaf: LEAF,
+      signature: "c2lnbmVkLWJ5LXRoZS1hY2NvdW50",
       scenario: "blocked",
     });
     expect(await screen.findByText(/Updating the pool's allow-list/)).toBeInTheDocument();
@@ -65,6 +71,18 @@ describe("OnboardFlow", () => {
     await ui.click(await screen.findByRole("button", { name: "Derive keys and register" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("registered with other keys");
     expect(screen.getByRole("button", { name: "Derive keys and register" })).toBeEnabled();
+  });
+
+  it("does not call Shield when the user declines to prove the account", async () => {
+    newUser();
+    const onboard = vi.fn();
+    server.use(http.post(url("/v1/onboarding"), onboard));
+    const wallet = fakeWallet({ signMessage: () => Promise.reject(new Error("User declined access")) });
+    const { user: ui } = await renderConnected(<OnboardFlow />, wallet);
+
+    await ui.click(await screen.findByRole("button", { name: "Derive keys and register" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("User declined access");
+    expect(onboard).not.toHaveBeenCalled();
   });
 
   it("does not call Shield when the wallet declines to derive keys", async () => {

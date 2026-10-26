@@ -67,7 +67,8 @@ export function sppConnector(networkPassphrase: string): WalletConnector {
     async connect(): Promise<ShieldWallet> {
       const address = await connectFreighter(networkPassphrase);
       const { client, poolContract } = await sppRuntime();
-      const account = await client.account({ networkPassphrase, userAddress: address }, new FreighterSigner());
+      const signer = new FreighterSigner();
+      const account = await client.account({ networkPassphrase, userAddress: address }, signer);
       // The SDK only finds this user's notes once their keys are derived in
       // this browser's storage (idempotent: Freighter signs once per browser).
       let keys: Promise<Spp.UserPublicKeys> | null = null;
@@ -91,6 +92,10 @@ export function sppConnector(networkPassphrase: string): WalletConnector {
             encryptionPublicKey: derived.encryptionPublicKey,
             aspLeaf: await account.deriveAspUserLeaf(),
           };
+        },
+        async signMessage(message: string) {
+          const { signedMessage } = await signer.signMessage(message, { address, networkPassphrase });
+          return signedMessage;
         },
         async balance() {
           const opened = await openPool();

@@ -11,6 +11,7 @@ export function fakeWallet(overrides: Partial<ShieldWallet> = {}): ShieldWallet 
   return {
     address: ACCOUNT,
     keys: vi.fn(() => Promise.resolve({ notePublicKey: NOTE_KEY, encryptionPublicKey: ENC_KEY, aspLeaf: LEAF })),
+    signMessage: vi.fn(() => Promise.resolve("c2lnbmVkLWJ5LXRoZS1hY2NvdW50")),
     balance: vi.fn(() => Promise.resolve(93_039_215n)),
     deposit: vi.fn(() => ok("dd")),
     transfer: vi.fn(() => ok("ee")),

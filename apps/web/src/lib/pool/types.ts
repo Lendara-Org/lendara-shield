@@ -26,6 +26,8 @@ export interface ShieldWallet {
   readonly address: string;
   /** Derives the pool keys; the wallet asks for a signature the first time. */
   keys(): Promise<PrivacyKeys>;
+  /** SEP-53 signature of `message` by the account, base64 (Freighter's `signMessage`). */
+  signMessage(message: string): Promise<string>;
   /** Private balance in stroops, after syncing the pool. */
   balance(): Promise<bigint>;
   /** Direct deposit from the connected account (its address is visible). */
