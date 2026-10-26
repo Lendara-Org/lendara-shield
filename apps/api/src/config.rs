@@ -34,6 +34,8 @@ pub struct Config {
     pub soroban_rpc_url: String,
     /// ASP admin (operator) seed. `None` leaves on-chain ASP writes off.
     pub operator_secret: Option<SecretString>,
+    /// Intake (omnibus) account seed: SEP-10 with the anchor, pool deposits.
+    pub intake_secret: Option<SecretString>,
 }
 
 /// Log output format.
@@ -98,6 +100,8 @@ impl Config {
             .unwrap_or_else(|| DEFAULT_SOROBAN_RPC_URL.to_owned());
         let operator_secret =
             get("SHIELD_OPERATOR_SECRET").map(|raw| SecretString::from(raw.trim().to_owned()));
+        let intake_secret =
+            get("SHIELD_INTAKE_SECRET").map(|raw| SecretString::from(raw.trim().to_owned()));
         let admin_token = get("ADMIN_TOKEN")
             .map(|raw| parse_admin_token(&raw))
             .transpose()?;
@@ -112,6 +116,7 @@ impl Config {
             admin_token,
             soroban_rpc_url,
             operator_secret,
+            intake_secret,
         })
     }
 }

@@ -538,7 +538,7 @@ Cada PR deja el repo funcionando. Marcar ✅ al completar.
 | H3 ✅ | Contrato OpenAPI | `feat/repo-openapi` | `openapi.yaml` (sección 7.8), `packages/api-types` con `openapi-typescript`, `make codegen` | Codegen corre sin errores; los tipos compilan |
 | H4 ✅ | Setup testnet + pool | `feat/api-testnet-setup` | `make setup-testnet` (sección 7.1), despliegue del SAC del USDC del sandbox (plan A), pool según el plan A o B, `GET /v1/info` | El script es idempotente; `/v1/info` devuelve el contrato del pool |
 | H5 | Onboarding y ASP | `feat/api-asp-onboarding` | `shield_users`, `asp_events`, KYC simulado con escenarios, allow-list y block-list (o simulación en plan B), tests | `approved` agrega la llave; `rejected` no; `blocked` congela; hashes reales |
-| H6a1 ✅ / H6a2 | Intents y cliente del anchor (dividido) | `feat/api-ramp-intents` | Tabla `intents`, máquina de estados con tests, cliente SEP-1/SEP-10/SEP-24, `POST /v1/intents`, `GET /v1/intents/{id}`, modo ramp opcional por config | Se crea un intent `awaiting_anchor` con la URL interactiva real del sandbox |
+| H6a1 ✅ / H6a2 ✅ | Intents y cliente del anchor (dividido) | `feat/api-ramp-intents` | Tabla `intents`, máquina de estados con tests, cliente SEP-1/SEP-10/SEP-24, `POST /v1/intents`, `GET /v1/intents/{id}`, modo ramp opcional por config | Se crea un intent `awaiting_anchor` con la URL interactiva real del sandbox |
 | H6b | Watcher y worker de shielding | `feat/api-shielding-worker` | Watcher de pagos a la intake (Horizon, por memo), worker idempotente: depósito al pool + transferencia privada, seguimiento del estado del anchor | Un intent llega a `completed` con los hashes de depósito (`ext_amount > 0`) y transferencia (`ext_amount = 0`) |
 | H7 | Web: onboarding, depósito y wallet | `feat/web-shield-flow` | Next.js, Freighter, SDK web del pool, rutas `/onboard`, `/deposit` (ambos modos), `/wallet` | Depósito de punta a punta en los dos modos desde la web |
 | H8 | Auditoría | `feat/audit-panel` | `GET /v1/audit/*` en el API y la ruta `/audit` en la web | La comparación se entiende en 5 segundos |
@@ -607,7 +607,8 @@ Cada una tiene una recomendación. Si Anouk no responde y el PR no puede esperar
 - H6a dividido en H6a1 y H6a2 (26-oct, decisión de Anouk).
 - H6a1 (intents sin red) ✅ en `feat/api-ramp-intents` (26-oct): migración `intents` + `intent_events` (memo SEP-24 por secuencia, montos `numeric` leídos como texto, hash del pago del anchor único), máquina de estados pura con tests exhaustivos, `DecimalAmount`/`FiatCurrency`, puerto `AnchorClient` + fake, transiciones atómicas (`WHERE status = from`) con evento en la misma transacción, `POST/GET /v1/intents`.
 - **Decisión H6b (26-oct, Anouk):** el prover vive en un CLI aparte, `apps/pool-cli` (crate propio con el SDK de SPP, sin estado, JSON por stdin/stdout: `prepare-deposit`, `prepare-transfer`, `submit`, `status`). El API lo invoca como subproceso detrás de un puerto `PoolClient`; la máquina de estados y la idempotencia quedan en el API.
-- Siguiente: H6a2 (cliente SEP-1/SEP-10/SEP-24 real + intent real contra el sandbox). H7 (web) puede arrancar en paralelo.
+- H6a2 (cliente del anchor) ✅ en `feat/api-anchor-client` (26-oct): SEP-1 (parser mínimo de `stellar.toml`, en caché), SEP-10 (verificación completa del challenge antes de firmar: fuente, secuencia 0, límites de tiempo, memo, `<home_domain> auth`, nonce, `web_auth_domain`, firma del `SIGNING_KEY` en la red correcta) y SEP-24 (depósito interactivo a la intake con memo `id`). Solo HTTPS (salvo localhost). **Contra el sandbox real:** intent `awaiting_anchor` con la URL del widget en 1,2 s.
+- Siguiente: H6b (pool-cli + watcher + worker de shielding). H7 (web) puede arrancar en paralelo.
 
 ### Riesgos identificados (25-oct)
 1. **Tiempo:** 12 PRs en ~1 día. ~~Plan B del backend~~ descartado en H1.
@@ -638,6 +639,7 @@ Cada una tiene una recomendación. Si Anouk no responde y el PR no puede esperar
 - TypeScript fijado en 5.9.3: `openapi-typescript` 7.13 exige `^5` (TS 7.0 ya salió, pero no es compatible todavía). Mismo que el sandbox.
 - Tests de TS sin dependencias: `node --test` (Node 24 ejecuta `.ts` nativo). Los tests de tipos van en `*.typetest.ts` y los corre `tsc` con `@ts-expect-error`.
 - `stellar-strkey` oculta las llaves privadas por diseño: para codificar una (solo en tests) usar `PrivateKey(..).as_unredacted().to_string()`.
+- Sandbox: `stellar.toml` en `lendara-monorepo-fixh.vercel.app`, pero `WEB_AUTH_ENDPOINT` y `TRANSFER_SERVER_SEP0024` en `lendaraweb-production.up.railway.app`: el `web_auth_domain` del challenge es el host del endpoint, no el home domain.
 - La intake ya está en la allow-list del pool de USDC (hoja `0x1df0…08d3`, tx `ad5627d8…`); su wallet del SDK está en `SHIELD_INTAKE_WALLET_PATH`. No borrar.
 - No hacer `source .env` en bash: `STELLAR_NETWORK_PASSPHRASE` tiene espacios y `;`. El `Makefile` lo carga bien (`-include .env`); para correr algo a mano, usar `make` o exportar la variable entre comillas.
 - `make lint/test/build` corren Rust + JS; el CI usa los targets separados (`-api`, `-js`).
