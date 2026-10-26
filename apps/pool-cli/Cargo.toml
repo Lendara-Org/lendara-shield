@@ -1,0 +1,34 @@
+[package]
+name = "pool-cli"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.98"
+license = "Apache-2.0"
+publish = false
+description = "Stateless JSON CLI around the Stellar Private Payments SDK, used by the Shield API for pool deposits and private transfers"
+
+# Standalone crate: the SPP SDK (rusqlite) cannot share a binary with sqlx.
+[workspace]
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_debug_implementations = "warn"
+
+[lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+module_name_repetitions = "allow"
+missing_errors_doc = "allow"
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+dbg_macro = "deny"
+todo = "deny"
+print_stderr = "deny"
+
+[dependencies]
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+sha2 = "0.10"
+stellar-private-payments = "=0.2.1"
+stellar-xdr = { version = "=28.0.0", default-features = false, features = ["std", "base64"] }
+tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros"] }
