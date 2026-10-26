@@ -1,6 +1,6 @@
 //! Tracing setup.
 //!
-//! Log hygiene (CLAUDE.md §0.5): never log view keys, notes, note secrets or
+//! Log hygiene (AGENTS.md §5.2): never log view keys, notes, note secrets or
 //! the pair "user address + amount". Log the intent id instead.
 
 use tracing_subscriber::{EnvFilter, fmt, prelude::*};

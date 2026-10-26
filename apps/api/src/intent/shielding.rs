@@ -1,7 +1,7 @@
 //! The shielding worker: moves a funded intent into the pool and on to the
 //! user, `funds_received → shielding → transferring → completed`.
 //!
-//! Money integrity (CLAUDE.md §0.6), for both the deposit and the transfer:
+//! Money integrity (AGENTS.md §5.3), for both the deposit and the transfer:
 //! 1. Prepare (prove + sign) without sending; the hash is known.
 //! 2. Store the transaction in the same DB write as the status change.
 //! 3. Send. Any outcome is fine: the stored hash decides.

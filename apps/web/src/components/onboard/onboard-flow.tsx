@@ -10,6 +10,7 @@ import { Button, Card, Field, Notice, TxLink, inputClass } from "@/components/ui
 import { api } from "@/lib/api";
 import { INTENT_POLL_MS } from "@/lib/config";
 import { usePoll } from "@/lib/hooks/use-poll";
+import { onboardingMessage } from "@/lib/onboarding";
 import type { ShieldWallet } from "@/lib/pool/types";
 
 const SCENARIOS: { value: KycScenario; label: string }[] = [
@@ -44,12 +45,15 @@ function Onboarding({ wallet }: { wallet: ShieldWallet }) {
     setError(null);
     try {
       const keys = await wallet.keys();
+      // Proves the account is ours: nobody can attach keys to someone else's.
+      const signature = await wallet.signMessage(onboardingMessage(wallet.address, keys));
       setUser(
         await api.onboard({
           stellar_account: wallet.address,
-          note_public_key: keys.notePublicKey,
-          encryption_public_key: keys.encryptionPublicKey,
-          asp_leaf: keys.aspLeaf,
+          note_public_key: keys.notePublicKey.toLowerCase(),
+          encryption_public_key: keys.encryptionPublicKey.toLowerCase(),
+          asp_leaf: keys.aspLeaf.toLowerCase(),
+          signature,
           scenario,
         }),
       );
@@ -92,6 +96,7 @@ function Onboarding({ wallet }: { wallet: ShieldWallet }) {
     <Card title="Register with Shield">
       <ol className="mb-5 list-decimal space-y-1 pl-5 text-sm text-gray">
         <li>Freighter signs a message to derive your pool keys, here in the browser.</li>
+        <li>Freighter signs once more to prove this account is yours.</li>
         <li>Shield receives only your public keys and your allow-list leaf.</li>
         <li>After the (simulated) KYC, Shield, as the pool&apos;s ASP, adds your leaf on-chain.</li>
       </ol>

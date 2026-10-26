@@ -22,6 +22,8 @@ What Lendara Shield hides, from whom, and the limits we know about. This is a ha
 | Omnibus (intake) key and its pool wallet | Server environment and an SQLite wallet outside the repo | Separate key; `pool-cli` runs with an empty environment plus only what it needs |
 | Funds in custody | The omnibus account, between the anchor's payment and the private transfer | Idempotent worker (hash stored before sending, never re-prepared while it may have landed); repeated failures stop in `error` for manual review |
 | The user ↔ key relation | Shield's database | Never in logs: logs carry intent ids and route templates, never "address + amount" |
+| An account's onboarding | `POST /v1/onboarding` | The request carries the account's SEP-53 signature (Freighter `signMessage`) over the exact keys and leaf, so nobody can attach their keys to someone else's account |
+| Funding an intent | The watcher and the anchor sync | Intent memos are random (63 bits). A payment with an intent's memo only funds it if the anchor reports that very transaction (`stellar_transaction_id`); anything else waits for review, so dust sent with someone's memo cannot hijack their deposit |
 
 ## Known limits (said before anyone asks)
 
@@ -33,7 +35,8 @@ What Lendara Shield hides, from whom, and the limits we know about. This is a ha
 6. **Shield and the auditor are trusted parties.** Shield knows which account owns which keys (it is the ASP); the auditor can decrypt everything. That is the compliance trade-off of a permissioned pool. Splitting the roles across independent parties is future work.
 7. **Unaudited, developer-preview contracts.** Stellar Private Payments `sdk-v0.2.1`. The pool admin is a single key (no multisig) on testnet.
 8. **History window.** Proving needs the pool's full event history; the public RPC keeps about 7 days. Without SPP's bootnode, a pool deployed on 26 October can be used until about 2 November.
-9. **Browser trust.** The circuit lock is pinned when the web app is built, so circuit artifacts served next to it are checked against it, but users still trust the app and whoever serves it.
+9. **`GET /v1/users/{account}` is public.** It tells anyone whether an account onboarded with Shield, its KYC and allow-list status, and the hash of its allow-list insertion: the same "this address uses the pool" signal we avoided by not using SPP's public key registry. Fix (not built yet): require the account's signature (or a session from it) to read its status.
+10. **Browser trust.** The circuit lock is pinned when the web app is built, so circuit artifacts served next to it are checked against it, but users still trust the app and whoever serves it.
 
 ## Out of scope for the hackathon
 

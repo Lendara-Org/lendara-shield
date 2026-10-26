@@ -6,7 +6,7 @@
 //! to `error` if the anchor could not start the deposit.
 //!
 //! Logs carry the intent id only, never the user's account with the amount
-//! (CLAUDE.md §0.5).
+//! (AGENTS.md §5.2).
 
 use std::sync::Arc;
 

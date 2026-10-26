@@ -318,6 +318,15 @@ pub async fn due_awaiting_anchor(
         .collect()
 }
 
+/// Makes the intent due now (e.g. a payment with its memo just arrived).
+pub async fn check_now(db: impl PgExecutor<'_>, id: Uuid) -> Result<(), StoreError> {
+    sqlx::query("UPDATE intents SET next_attempt_at = NULL WHERE id = $1")
+        .bind(id)
+        .execute(db)
+        .await?;
+    Ok(())
+}
+
 /// Sets when the intent is next looked at.
 pub async fn schedule(
     db: impl PgExecutor<'_>,

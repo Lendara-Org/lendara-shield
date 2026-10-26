@@ -1,5 +1,8 @@
-//! Watches the intake account for the anchor's payments and moves the
-//! matching intent from `awaiting_anchor` to `funds_received`.
+//! Watches the intake account and records every incoming payment. A payment
+//! with an intent's memo does **not** fund it on its own: anyone can send
+//! the asset with a memo. It is recorded as unconfirmed and the intent is
+//! checked with the anchor right away; [`super::anchor_sync`] funds the
+//! intent only with the payment the anchor reports as its own.
 //!
 //! Each page is processed in one database transaction together with the
 //! cursor, so a crash never skips a payment or applies one twice; payments
@@ -9,15 +12,12 @@ use std::sync::Arc;
 
 use sqlx::PgPool;
 
-use super::{
-    matching::{self, ExpectedAsset},
-    state::IntentStatus,
-};
+use super::matching::{self, ExpectedAsset};
 use crate::{
     ports::{IncomingPayment, IntakeLedger, LedgerError},
     store::{
         StoreError, intake_payments,
-        intents::{self, Changes, TransitionError},
+        intents::{self, TransitionError},
     },
 };
 
@@ -29,8 +29,9 @@ const PAGE_SIZE: u32 = 100;
 pub struct WatchReport {
     /// New payments recorded in this poll.
     pub recorded: usize,
-    /// Of those, payments that funded an intent.
-    pub funded: usize,
+    /// Of those, payments that carry the memo of an intent waiting for the
+    /// anchor (funded once the anchor confirms them).
+    pub matched: usize,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -77,9 +78,9 @@ impl IntakeWatcher {
 
             let mut tx = self.db.begin().await?;
             for payment in &page.payments {
-                if let Some(funded) = self.apply(&mut tx, payment).await? {
+                if let Some(matched) = self.apply(&mut tx, payment).await? {
                     report.recorded += 1;
-                    report.funded += usize::from(funded);
+                    report.matched += usize::from(matched);
                 }
             }
             intake_payments::set_cursor(&mut tx, CURSOR, &next_cursor).await?;
@@ -87,8 +88,8 @@ impl IntakeWatcher {
         }
     }
 
-    /// Records one payment and, if it matches, funds its intent. Returns
-    /// `None` if the payment was already recorded, else whether it funded.
+    /// Records one payment. Returns `None` if it was already recorded, else
+    /// whether it matched an intent waiting for the anchor.
     async fn apply(
         &self,
         conn: &mut sqlx::PgConnection,
@@ -107,20 +108,10 @@ impl IntakeWatcher {
                 let Some(intent) = intent else {
                     return Ok(Some(false));
                 };
-                let funded = intents::transition(
-                    conn,
-                    intent.id,
-                    IntentStatus::AwaitingAnchor,
-                    IntentStatus::FundsReceived,
-                    Changes {
-                        amount_asset: Some(payment.amount.clone()),
-                        intake_payment_tx_hash: Some(payment.tx_hash.clone()),
-                        ..Changes::default()
-                    },
-                )
-                .await?;
-                intake_payments::record(conn, payment, Some(funded.id), None).await?;
-                tracing::info!(intent_id = %funded.id, tx_hash = %payment.tx_hash, "anchor payment received");
+                intake_payments::record(conn, payment, None, Some(intake_payments::UNCONFIRMED))
+                    .await?;
+                intents::check_now(&mut *conn, intent.id).await?;
+                tracing::info!(intent_id = %intent.id, tx_hash = %payment.tx_hash, "payment with an intent memo; asking the anchor");
                 Ok(Some(true))
             }
             Err(unmatched) => {

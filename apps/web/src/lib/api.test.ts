@@ -23,6 +23,7 @@ describe("api", () => {
       note_public_key: NOTE_KEY,
       encryption_public_key: ENC_KEY,
       asp_leaf: LEAF,
+      signature: "c2lnbmF0dXJl",
       scenario: "approved" as const,
     };
     expect((await api.onboard(request)).asp_status).toBe("pending");

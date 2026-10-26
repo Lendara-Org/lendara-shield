@@ -22,7 +22,7 @@ pub struct AspKeys {
 }
 
 /// A signed transaction ready to send. Its hash is known before sending, so
-/// the caller can persist it first (CLAUDE.md §0.6).
+/// the caller can persist it first (AGENTS.md §5.3).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PreparedTx {
     pub hash: TxHash,
@@ -107,8 +107,9 @@ pub enum AnchorError {
 pub enum AnchorStatus {
     /// Waiting for the user or the anchor (`incomplete`, `pending_*`).
     Pending,
-    /// The anchor sent the funds; the watcher sees the payment on-chain.
-    Completed,
+    /// The anchor sent the funds, in this Stellar transaction if it says
+    /// (`stellar_transaction_id`). Only that payment can fund the intent.
+    Completed(Option<TxHash>),
     /// The user never paid (`expired`).
     Expired,
     /// The anchor gave up (`error`, `refunded`, `no_market`, `too_small`,

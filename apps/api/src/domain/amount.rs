@@ -1,5 +1,5 @@
 //! Positive decimal amounts with Stellar precision (7 decimals), kept as
-//! text end to end: never `f64` (CLAUDE.md §0.6).
+//! text end to end: never `f64` (AGENTS.md §5.3).
 
 use std::fmt;
 

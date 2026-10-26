@@ -11,7 +11,7 @@ use serde::Deserialize;
 
 use crate::domain::{AccountId, ContractId};
 
-/// The only network Shield runs on (CLAUDE.md §0.5).
+/// The only network Shield runs on (AGENTS.md §5.2).
 pub const TESTNET: &str = "testnet";
 
 /// Validated deployment.

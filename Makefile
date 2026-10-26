@@ -4,11 +4,6 @@ export
 API_DIR := apps/api
 POOL_CLI_DIR := apps/pool-cli
 
-# Prints a notice for targets whose code lands in a later PR of the plan.
-define pending
-	@echo "make $@: not available yet (arrives in $(1), see CLAUDE.md section 11)"
-endef
-
 .PHONY: help install dev dev-api dev-web stage-web-sdk db-up db-down migrate setup-testnet \
 	fmt fmt-check lint lint-api lint-pool-cli lint-js lint-openapi typecheck test test-api test-pool-cli \
 	test-js test-web-e2e test-testnet coverage deny codegen build build-api build-pool-cli build-js

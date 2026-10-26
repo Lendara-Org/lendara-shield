@@ -116,8 +116,31 @@ fn memo(intent: &Intent) -> Option<u64> {
     u64::try_from(intent.memo).ok()
 }
 
+impl Harness {
+    /// The anchor reports the deposit completed in transaction `op`.
+    fn anchor_paid(&self, intent: &Intent, op: u8) {
+        self.anchor.set_status(
+            &intent.anchor_tx_id.clone().unwrap_or_default(),
+            AnchorStatus::Completed(Some(TxHash::from_bytes([op; 32]))),
+        );
+    }
+
+    async fn status(&self, intent: &Intent) -> Result<IntentStatus, Box<dyn std::error::Error>> {
+        Ok(self.intents.get(intent.id).await?.status)
+    }
+}
+
+/// A payment with the right asset and memo from someone who is not the anchor.
+fn dust(op: u8, memo: Option<u64>) -> Result<IncomingPayment, Box<dyn std::error::Error>> {
+    Ok(IncomingPayment {
+        from: AccountId::parse(ALICE)?,
+        amount: DecimalAmount::parse("0.0000001")?,
+        ..payment(op, memo, "USDC", ISSUER)?
+    })
+}
+
 #[sqlx::test]
-async fn the_anchor_payment_funds_its_intent(db: PgPool) -> TestResult {
+async fn the_payment_the_anchor_confirms_funds_its_intent(db: PgPool) -> TestResult {
     let h = harness(db).await?;
     let intent = h.intent().await?;
     h.ledger.push(payment(1, memo(&intent), "USDC", ISSUER)?);
@@ -126,8 +149,20 @@ async fn the_anchor_payment_funds_its_intent(db: PgPool) -> TestResult {
         h.watcher.poll().await?,
         WatchReport {
             recorded: 1,
-            funded: 1
+            matched: 1
         }
+    );
+    assert_eq!(
+        h.status(&intent).await?,
+        IntentStatus::AwaitingAnchor,
+        "a memo alone funds nothing"
+    );
+
+    h.anchor_paid(&intent, 1);
+    assert_eq!(
+        h.sync.check_due().await?,
+        1,
+        "checked right away, not in 20 s"
     );
 
     let funded = h.intents.get(intent.id).await?;
@@ -173,16 +208,18 @@ async fn unmatched_payments_are_kept_for_review(db: PgPool) -> TestResult {
         .push(payment(1, memo(&intent), "USDC", ANCHOR_ACCOUNT)?); // fake USDC
     h.ledger.push(payment(2, None, "USDC", ISSUER)?); // no memo
     h.ledger.push(payment(3, Some(999_999), "USDC", ISSUER)?); // unknown intent
-    h.ledger.push(payment(4, memo(&intent), "USDC", ISSUER)?); // funds it
-    h.ledger.push(payment(5, memo(&intent), "USDC", ISSUER)?); // second payment
+    h.ledger.push(payment(4, memo(&intent), "USDC", ISSUER)?); // the anchor's
+    h.ledger.push(payment(5, memo(&intent), "USDC", ISSUER)?); // someone else's
 
     assert_eq!(
         h.watcher.poll().await?,
         WatchReport {
             recorded: 5,
-            funded: 1
+            matched: 2
         }
     );
+    h.anchor_paid(&intent, 4);
+    h.sync.check_due().await?;
     assert_eq!(
         h.intents.get(intent.id).await?.intake_payment_tx_hash,
         Some(TxHash::from_bytes([4; 32]))
@@ -199,7 +236,7 @@ async fn unmatched_payments_are_kept_for_review(db: PgPool) -> TestResult {
             "wrong asset",
             "no id memo",
             "no intent with this memo",
-            "intent is funds_received"
+            intake_payments::UNCONFIRMED,
         ]
     );
     Ok(())
@@ -230,7 +267,7 @@ async fn a_ledger_outage_is_reported_and_retried(db: PgPool) -> TestResult {
     assert!(h.watcher.poll().await.is_err());
 
     h.ledger.set_down(false);
-    assert_eq!(h.watcher.poll().await?.funded, 1);
+    assert_eq!(h.watcher.poll().await?.matched, 1);
     Ok(())
 }
 
@@ -246,7 +283,10 @@ async fn the_anchor_can_expire_or_fail_a_deposit(db: PgPool) -> TestResult {
         &id(&failed),
         AnchorStatus::Failed("KYC rejected (sandbox scenario).".into()),
     );
-    h.anchor.set_status(&id(&waiting), AnchorStatus::Completed);
+    h.anchor.set_status(
+        &id(&waiting),
+        AnchorStatus::Completed(Some(TxHash::from_bytes([9; 32]))),
+    );
 
     assert_eq!(h.sync.check_due().await?, 2);
 
@@ -263,7 +303,7 @@ async fn the_anchor_can_expire_or_fail_a_deposit(db: PgPool) -> TestResult {
     assert_eq!(
         h.intents.get(waiting.id).await?.status,
         IntentStatus::AwaitingAnchor,
-        "completed still waits for the payment"
+        "completed still waits until Shield reads that payment"
     );
 
     // It authenticates as each user's customer at the anchor.
@@ -309,11 +349,13 @@ async fn an_anchor_outage_keeps_the_intent_waiting(db: PgPool) -> TestResult {
 }
 
 #[sqlx::test]
-async fn a_payment_wins_over_a_late_expiry(db: PgPool) -> TestResult {
+async fn a_funded_intent_ignores_a_late_expiry(db: PgPool) -> TestResult {
     let h = harness(db).await?;
     let intent = h.intent().await?;
     h.ledger.push(payment(1, memo(&intent), "USDC", ISSUER)?);
     h.watcher.poll().await?;
+    h.anchor_paid(&intent, 1);
+    h.sync.check_due().await?;
 
     // The anchor flips to expired afterwards: the funded intent is untouched.
     h.anchor.set_status(
@@ -344,7 +386,7 @@ async fn a_payment_after_expiry_needs_review(db: PgPool) -> TestResult {
         h.watcher.poll().await?,
         WatchReport {
             recorded: 1,
-            funded: 0
+            matched: 0
         }
     );
     assert_eq!(
@@ -361,12 +403,8 @@ async fn a_background_round_funds_paid_intents_and_ends_expired_ones(db: PgPool)
     let paid = h.intent().await?;
     let unpaid = h.intent().await?;
     h.ledger.push(payment(1, memo(&paid), "USDC", ISSUER)?);
-    // The anchor already reports both as done; payments are read first, so
-    // the paid one is funded, not expired.
-    h.anchor.set_status(
-        &paid.anchor_tx_id.clone().unwrap_or_default(),
-        AnchorStatus::Expired,
-    );
+    // One round reads the payment and confirms it with the anchor.
+    h.anchor_paid(&paid, 1);
     h.anchor.set_status(
         &unpaid.anchor_tx_id.clone().unwrap_or_default(),
         AnchorStatus::Expired,
@@ -397,6 +435,7 @@ async fn the_loop_keeps_running_through_failures_and_stops_on_shutdown(db: PgPoo
     let intent = h.intent().await?;
     h.ledger.set_down(true);
     h.ledger.push(payment(1, memo(&intent), "USDC", ISSUER)?);
+    h.anchor_paid(&intent, 1);
     let shutdown = tokio_util::sync::CancellationToken::new();
     let task = tokio::spawn(
         Background {
@@ -423,5 +462,88 @@ async fn the_loop_keeps_running_through_failures_and_stops_on_shutdown(db: PgPoo
 
     shutdown.cancel();
     tokio::time::timeout(std::time::Duration::from_secs(2), task).await??;
+    Ok(())
+}
+
+#[sqlx::test]
+async fn dust_with_the_memo_cannot_hijack_a_deposit(db: PgPool) -> TestResult {
+    let h = harness(db).await?;
+    let intent = h.intent().await?;
+    // An attacker front-runs the anchor with the intent's memo.
+    h.ledger.push(dust(7, memo(&intent))?);
+    h.ledger.push(payment(8, memo(&intent), "USDC", ISSUER)?);
+    h.watcher.poll().await?;
+    h.anchor_paid(&intent, 8);
+    h.sync.check_due().await?;
+
+    let funded = h.intents.get(intent.id).await?;
+    assert_eq!(funded.status, IntentStatus::FundsReceived);
+    assert_eq!(
+        funded.amount_asset.map(String::from).as_deref(),
+        Some("9.3039215")
+    );
+    assert_eq!(
+        funded.intake_payment_tx_hash,
+        Some(TxHash::from_bytes([8; 32]))
+    );
+    assert_eq!(
+        intake_payments::unmatched_count(&h.db).await?,
+        1,
+        "the dust waits for review"
+    );
+    Ok(())
+}
+
+#[sqlx::test]
+async fn a_payment_the_anchor_never_claims_funds_nothing(db: PgPool) -> TestResult {
+    let h = harness(db).await?;
+    let intent = h.intent().await?;
+    h.ledger.push(dust(7, memo(&intent))?);
+    h.watcher.poll().await?;
+    h.sync.check_due().await?; // the anchor still says pending
+
+    // Completed without naming its transaction: nothing can be confirmed.
+    h.anchor.set_status(
+        &intent.anchor_tx_id.clone().unwrap_or_default(),
+        AnchorStatus::Completed(None),
+    );
+    h.clock.advance(chrono::Duration::minutes(1));
+    h.sync.check_due().await?;
+    assert_eq!(h.status(&intent).await?, IntentStatus::AwaitingAnchor);
+    Ok(())
+}
+
+#[sqlx::test]
+async fn an_anchor_report_ahead_of_horizon_waits_for_the_payment(db: PgPool) -> TestResult {
+    let h = harness(db).await?;
+    let intent = h.intent().await?;
+    h.anchor_paid(&intent, 3);
+    assert_eq!(
+        h.sync.check_due().await?,
+        0,
+        "Shield has not read the payment yet"
+    );
+
+    h.ledger.push(payment(3, memo(&intent), "USDC", ISSUER)?);
+    h.watcher.poll().await?;
+    h.clock.advance(chrono::Duration::seconds(5));
+    assert_eq!(h.sync.check_due().await?, 1);
+    assert_eq!(h.status(&intent).await?, IntentStatus::FundsReceived);
+    Ok(())
+}
+
+#[sqlx::test]
+async fn intent_memos_are_not_guessable(db: PgPool) -> TestResult {
+    let h = harness(db).await?;
+    let (a, b) = (h.intent().await?, h.intent().await?);
+    // A sequence would give 1 and 2; random 63-bit memos are almost never
+    // below 2^40 (probability 2^-23 each).
+    assert!(
+        a.memo > 1 << 40 && b.memo > 1 << 40,
+        "{} {}",
+        a.memo,
+        b.memo
+    );
+    assert_ne!(b.memo, a.memo + 1);
     Ok(())
 }
