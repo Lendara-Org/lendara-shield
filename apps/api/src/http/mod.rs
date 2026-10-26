@@ -2,6 +2,7 @@
 //! delegate business logic to services.
 
 mod health;
+mod info;
 
 use std::time::Duration;
 
@@ -17,6 +18,8 @@ use tower_http::{
     trace::{DefaultOnResponse, TraceLayer},
 };
 use tracing::Level;
+
+pub use info::InfoResponse;
 
 use crate::{error::ApiError, state::AppState};
 
@@ -43,6 +46,7 @@ pub fn build_app(state: AppState, options: HttpOptions) -> Router {
     // the outermost: CORS, then request id, then tracing, then the timeout.
     Router::new()
         .route("/health", get(health::health))
+        .route("/v1/info", get(info::info))
         .fallback(not_found)
         .with_state(state)
         .layer(TimeoutLayer::with_status_code(

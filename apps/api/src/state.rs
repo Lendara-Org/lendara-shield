@@ -1,9 +1,15 @@
 //! Shared state handed to every handler.
 
+use std::sync::Arc;
+
 use sqlx::PgPool;
+
+use crate::http::InfoResponse;
 
 /// Cheap to clone: every field is reference-counted.
 #[derive(Debug, Clone)]
 pub struct AppState {
     pub db: PgPool,
+    /// Public configuration, computed once at startup.
+    pub info: Arc<InfoResponse>,
 }
