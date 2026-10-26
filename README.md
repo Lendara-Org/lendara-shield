@@ -95,6 +95,7 @@ lendara-shield/
 └── docs/            Protocol draft, threat model, scenarios, SPP spike, demo script.
 ```
 
+- **Only the anchor's payment funds an intent.** Memos are random, and a payment with an intent's memo funds it only if the anchor reports that very transaction (SEP-24 `stellar_transaction_id`). Onboarding requires the account's SEP-53 signature over its keys.
 - **Money integrity.** Every intent moves through one state machine: `created → awaiting_anchor → funds_received → shielding → transferring → completed`. Each pool transaction is proved, signed and **stored before it is sent**. On retry the worker checks the stored hash and resends the same envelope; it never builds a second payment. The tests run against a fake chain that enforces Stellar's sequence rule, including ambiguous submits, dropped and refused transactions, RPC indexing lag and a chaotic mix. Every one of them asserts **exactly one deposit and one transfer**.
 - **Keys stay where they belong.** Spending keys never leave the user's browser. Shield's operator key (ASP), omnibus key (intake) and the auditor's Global View Key are three separate keys. The view key only reaches the auditor's `pool-cli` process, never the browser or the shielding worker.
 - **Why a CLI for the prover?** The SPP Rust SDK links a SQLite version that conflicts with `sqlx`. A separate stateless binary keeps the API free of it and gives the prover its own minimal environment.
@@ -119,7 +120,7 @@ Checks: `make lint`, `make test` (Postgres needed), `make test-web-e2e`, and `ma
 
 ## 5-minute demo
 
-1. **Onboard.** Open <http://localhost:3000/onboard> and connect Freighter (Testnet). Choose the KYC scenario **Approved** and click *Derive keys and register*. Freighter signs once, the keys are derived in the browser, and Shield adds your leaf to the allow-list. The ASP transaction appears with a link.
+1. **Onboard.** Open <http://localhost:3000/onboard> and connect Freighter (Testnet). Choose the KYC scenario **Approved** and click *Derive keys and register*. Freighter signs twice: once to derive your pool keys in the browser, once to prove the account is yours. Shield then adds your leaf to the allow-list. The ASP transaction appears with a link.
 2. **Deposit with a ramp.** On `/deposit`, choose *With a ramp*, enter `CRC 5000` and continue. In the anchor's window, pay with the test card **4242 4242 4242 4242** (any future date and any CVC): it is the *Approved* outcome. Back in Shield, the timeline fills on its own: anchor paid Shield → Shield deposited into the pool → private transfer to your keys. There is a link for every step.
 3. **Check the explorer.** Open the three links: your address is in none of them. The deposit shows `ext_amount > 0` from Shield's account. The transfer shows nothing but Shield's account.
 4. **See your private balance.** On `/wallet`, the USDC is there. Only you, and the auditor, can see it.
@@ -134,6 +135,7 @@ Try the gatekeeper too: onboard another account with **Rejected** (it never ente
 - [Scenarios](docs/scenarios.md): KYC and anchor outcomes and what Shield does with each
 - [SPP spike](docs/spikes/spp.md): what we verified about Stellar Private Payments before building
 - [Demo video script](docs/demo-script.md)
+- [AGENTS.md](AGENTS.md): conventions and context for contributors and their AI assistants
 
 ## Team
 

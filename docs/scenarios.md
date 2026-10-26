@@ -7,6 +7,8 @@ Every outcome the demo can show, and what Shield does with it. There are two ind
 
 ## 1. Shield's KYC (`POST /v1/onboarding`, field `scenario`)
 
+Every onboarding request carries the account's SEP-53 signature over its keys; a missing or foreign signature answers `400` and nothing is registered.
+
 | Scenario | KYC | Allow-list (ASP) | What happens next |
 |---|---|---|---|
 | `approved` (default) | approved | Leaf inserted on-chain → `allowed` | Can deposit (both modes), transfer and withdraw |
@@ -34,6 +36,8 @@ Shield follows the anchor with `GET /sep24/transaction` (the sandbox has no webh
 
 | Case | Behaviour |
 |---|---|
+| Someone sends the asset with an intent's memo (front-running the anchor) | Recorded as "matches an intent's memo; not confirmed by the anchor"; only the payment the anchor reports funds the intent (verified on testnet: dust [`1f533b4e…`](https://stellar.expert/explorer/testnet/tx/1f533b4e04b51d2734162b4a2730d85cecbf9c796cfac47430157ba426c1f178) stayed in review, the anchor's [`3a971137…`](https://stellar.expert/explorer/testnet/tx/3a97113724334b86130aeb18d0de249f7090dc8364da2ca4cb30d1017883c3b6) completed the intent) |
+| The anchor reports `completed` before Shield has read its payment on Horizon | Waits and checks again a few seconds later |
 | A payment arrives after the intent expired, or a second payment arrives | Stored as unmatched in `intake_payments`: money in custody for manual review; it never funds anything automatically |
 | Wrong asset or wrong issuer | Not matched |
 | The pool submission times out but the transaction landed | The stored hash is checked first; it is never paid twice |
