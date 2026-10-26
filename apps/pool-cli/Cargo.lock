@@ -2267,7 +2267,7 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "stellar-private-payments",
- "stellar-xdr",
+ "stellar-xdr 30.0.0",
  "tokio",
 ]
 
@@ -3231,7 +3231,7 @@ dependencies = [
  "sha2 0.11.1",
  "sha3",
  "stellar-strkey 0.0.18",
- "stellar-xdr",
+ "stellar-xdr 28.0.1",
  "taceo-poseidon2",
  "tar",
  "thiserror",
@@ -3268,10 +3268,22 @@ dependencies = [
 ]
 
 [[package]]
-name = "stellar-xdr"
-version = "28.0.0"
+name = "stellar-strkey"
+version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f93d09ff8b9f919b084f664003c4c546ac66a76affd5429460dbe29f4b326f8e"
+checksum = "5038ed2bf4e11842210d118f65791d8ca4747622daddd222338b3d06b6051bc1"
+dependencies = [
+ "crate-git-revision 0.0.9",
+ "data-encoding",
+ "heapless",
+ "zeroize",
+]
+
+[[package]]
+name = "stellar-xdr"
+version = "28.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "52599dcc4daa661c19d912f5ad55322772515a198c0da3c985ef3922f7f40b77"
 dependencies = [
  "base64 0.22.1",
  "cfg_eval",
@@ -3283,6 +3295,21 @@ dependencies = [
  "serde_with",
  "sha2 0.10.9",
  "stellar-strkey 0.0.13",
+]
+
+[[package]]
+name = "stellar-xdr"
+version = "30.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "56f2fb2008b42fc746c0f6b46e375600068dd91f07748e9f1737c6341a2255f2"
+dependencies = [
+ "base64 0.22.1",
+ "crate-git-revision 0.0.9",
+ "escape-bytes",
+ "ethnum",
+ "hex",
+ "sha2 0.10.9",
+ "stellar-strkey 1.0.0",
 ]
 
 [[package]]
