@@ -56,6 +56,7 @@ export const en = {
       body: "Already have USDC? Deposit from your own account. Your address is visible when you deposit; everything after is private.",
     },
     devTitle: "For developers",
+    devHeadline: "Private payments. Inside your product.",
     devBody:
       "Shield works with any SEP-24 anchor through standard SEPs. Integrate it from your wallet or app with a few HTTP calls, or read the Shield Protocol draft for native shielded deposits.",
   },

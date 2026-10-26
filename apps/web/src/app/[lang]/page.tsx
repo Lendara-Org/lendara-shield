@@ -57,16 +57,23 @@ export default async function Home(props: LangParams) {
         </div>
       </section>
 
-      <section aria-labelledby="developers" className="space-y-6 border-t border-line pt-12 lg:pt-16">
-        <h2 id="developers" className="text-[30px] leading-[38px] font-semibold lg:text-[40px] lg:leading-[48px]">
-          {landing.devTitle}
-        </h2>
-        <p className="max-w-[1000px] text-lg leading-8 text-gray lg:text-xl lg:leading-8">
-          {landing.devBody}{" "}
-          <Link href={localized(lang, "/docs")} className="font-medium text-ink underline">
-            {landing.readDocs} →
-          </Link>
-        </p>
+      <section aria-labelledby="developers" className="developer-banner">
+        <div className="developer-banner-panel">
+          <p className="text-base font-medium text-wine lg:text-lg">{landing.devTitle}</p>
+          <h2 id="developers" className="max-w-[880px] text-[32px] leading-[40px] font-semibold tracking-[-0.035em] sm:text-[48px] sm:leading-[56px] lg:text-[56px] lg:leading-[64px]">
+            {landing.devHeadline}
+          </h2>
+          <p className="max-w-[780px] text-lg leading-8 text-gray lg:text-xl">{landing.devBody}</p>
+          <div className="flex flex-wrap justify-center gap-3">
+            <Link href={localized(lang, "/onboard")} className="inline-flex min-h-14 items-center justify-center rounded-full bg-action-primary px-7 py-4 text-lg font-semibold text-text-inverse transition-colors hover:bg-action-primary-hover active:bg-action-primary-pressed">
+              {landing.start}
+            </Link>
+            <Link href={localized(lang, "/docs")} className="inline-flex min-h-14 items-center justify-center rounded-full border border-border-control bg-surface px-7 py-4 text-lg font-semibold transition-colors hover:bg-action-secondary-hover active:bg-action-secondary-pressed">
+              {landing.readDocs}
+            </Link>
+          </div>
+          <span className="font-mono text-sm text-gray">SEP-1 / SEP-10 / SEP-24 · Stellar Testnet</span>
+        </div>
       </section>
     </main>
   );

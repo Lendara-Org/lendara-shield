@@ -58,6 +58,7 @@ export const es: Messages = {
       body: "¿Ya tienes USDC? Deposita desde tu propia cuenta. Tu dirección queda visible al depositar; todo lo que sigue es privado.",
     },
     devTitle: "Para developers",
+    devHeadline: "Pagos privados. Dentro de tu producto.",
     devBody:
       "Shield funciona con cualquier anchor SEP-24 a través de SEPs estándar. Intégralo desde tu wallet o app con unas pocas llamadas HTTP, o lee el borrador del Shield Protocol para depósitos privados nativos.",
   },

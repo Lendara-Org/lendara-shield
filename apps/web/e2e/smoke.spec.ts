@@ -12,7 +12,7 @@ test("landing → onboard → deposit, and a clear message without Freighter", a
   await page.goto("/");
   await expect(page.getByRole("heading", { level: 1 })).toContainText("KYC once");
 
-  await page.getByRole("main").getByRole("link", { name: "Try the demo" }).click();
+  await page.getByRole("main").getByRole("link", { name: "Try the demo" }).first().click();
   await expect(page).toHaveURL(/\/onboard$/);
   await page.getByRole("button", { name: "Connect Freighter" }).click();
   await expect(page.getByRole("main").getByRole("alert")).toContainText("Freighter is not installed");
@@ -114,11 +114,15 @@ test("the visual identity stays readable and usable across viewport widths", asy
       expect(action).not.toBeNull();
       expect(Math.abs(brand!.y + brand!.height / 2 - action!.y - action!.height / 2)).toBeLessThan(2);
     }
-    if (width === 1920) await page.screenshot({ path: "test-results/navbar-desktop.png" });
+    if (width === 1920) {
+      await page.screenshot({ path: "test-results/hero-desktop.png" });
+      await page.getByRole("heading", { name: "Pagos privados. Dentro de tu producto." }).scrollIntoViewIfNeeded();
+      await page.screenshot({ path: "test-results/developers-desktop.png" });
+    }
     await expect(page.getByRole("heading", { level: 1 })).toHaveCSS("font-weight", "600");
-    await expect(page.getByRole("main").getByRole("link", { name: "Probar la demo" })).toHaveCSS("background-color", "rgb(194, 24, 82)");
+    await expect(page.getByRole("main").getByRole("link", { name: "Probar la demo" }).first()).toHaveCSS("background-color", "rgb(194, 24, 82)");
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-    await page.getByRole("main").getByRole("link", { name: "Probar la demo" }).click();
+    await page.getByRole("main").getByRole("link", { name: "Probar la demo" }).first().click();
     const connect = page.getByRole("button", { name: "Conectar Freighter" });
     await expect(connect).toBeVisible();
     await expect(connect).toHaveCSS("min-height", "48px");
