@@ -1,0 +1,9 @@
+/** Lendara isotipo, traced from the Design System source vector (Design System / Marca / Isotipo). */
+export function Isotipo({ className }: { className?: string }) {
+  return (
+    <svg aria-hidden viewBox="0 0 272 394" fill="currentColor" className={className} xmlns="http://www.w3.org/2000/svg">
+      <path d="M 14.99 388.98 L 120.31 281.07 L 128.77 275.23 L 139.29 271.28 L 272 269.96 L 254.26 312.10 L 245.72 329.22 L 235.66 343.81 L 224.70 355.56 L 213.09 366.39 L 198.42 377.95 L 182.65 388.48 L 172.14 391.78 L 160.31 393.75 L 10.51 393.75 Z" />
+      <path d="M 0 394 L 109.06 267.33 L 118.92 252.19 L 125.38 235.90 L 128.77 221.24 L 130.39 205.78 L 130.39 0 L 107.75 10.54 L 85.41 23.05 L 63.07 40.82 L 42.63 60.23 L 30.88 73.75 L 20.06 87.83 L 11.83 105.35 L 5.02 122.97 L 0 138.03 Z" />
+    </svg>
+  );
+}
