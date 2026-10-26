@@ -11,6 +11,7 @@ use super::{StoreError, corrupt};
 use crate::{
     domain::{DecimalAmount, FiatCurrency, TxHash},
     intent::state::{self, IntentStatus, InvalidTransition},
+    ports::PoolTx,
 };
 
 const TABLE: &str = "intents";
@@ -31,8 +32,8 @@ pub struct Intent {
     pub anchor_tx_id: Option<String>,
     pub interactive_url: Option<String>,
     pub intake_payment_tx_hash: Option<TxHash>,
-    pub pool_deposit_tx_hash: Option<TxHash>,
-    pub pool_transfer_tx_hash: Option<TxHash>,
+    pub pool_deposit: Option<PoolTx>,
+    pub pool_transfer: Option<PoolTx>,
     pub message: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -55,8 +56,8 @@ pub struct Changes {
     pub interactive_url: Option<String>,
     pub amount_asset: Option<DecimalAmount>,
     pub intake_payment_tx_hash: Option<TxHash>,
-    pub pool_deposit_tx_hash: Option<TxHash>,
-    pub pool_transfer_tx_hash: Option<TxHash>,
+    pub pool_deposit: Option<PoolTx>,
+    pub pool_transfer: Option<PoolTx>,
     pub message: Option<String>,
 }
 
@@ -82,8 +83,9 @@ macro_rules! columns {
     () => {
         "id, user_id, status, fiat_currency, amount_fiat::text AS amount_fiat, asset_code, \
          amount_asset::text AS amount_asset, memo, anchor_home_domain, anchor_tx_id, \
-         interactive_url, intake_payment_tx_hash, pool_deposit_tx_hash, pool_transfer_tx_hash, \
-         message, created_at, updated_at, completed_at"
+         interactive_url, intake_payment_tx_hash, pool_deposit_tx_hash, pool_deposit_envelope, \
+         pool_deposit_sequence, pool_transfer_tx_hash, pool_transfer_envelope, \
+         pool_transfer_sequence, message, created_at, updated_at, completed_at"
     };
 }
 
@@ -102,7 +104,11 @@ struct Row {
     interactive_url: Option<String>,
     intake_payment_tx_hash: Option<String>,
     pool_deposit_tx_hash: Option<String>,
+    pool_deposit_envelope: Option<String>,
+    pool_deposit_sequence: Option<i64>,
     pool_transfer_tx_hash: Option<String>,
+    pool_transfer_envelope: Option<String>,
+    pool_transfer_sequence: Option<i64>,
     message: Option<String>,
     created_at: DateTime<Utc>,
     updated_at: DateTime<Utc>,
@@ -113,6 +119,22 @@ struct Row {
 /// canonicalises them away.
 fn amount(raw: &str) -> Result<DecimalAmount, StoreError> {
     DecimalAmount::parse(raw).map_err(|e| corrupt(TABLE, e))
+}
+
+fn pool_tx(
+    hash: Option<String>,
+    envelope: Option<String>,
+    sequence: Option<i64>,
+) -> Result<Option<PoolTx>, StoreError> {
+    match (hash, envelope, sequence) {
+        (Some(hash), Some(envelope_xdr), Some(sequence)) => Ok(Some(PoolTx {
+            hash: TxHash::parse(&hash).map_err(|e| corrupt(TABLE, e))?,
+            envelope_xdr,
+            sequence,
+        })),
+        (None, None, None) => Ok(None),
+        _ => Err(corrupt(TABLE, "incomplete pool transaction")),
+    }
 }
 
 fn hash(raw: Option<String>) -> Result<Option<TxHash>, StoreError> {
@@ -138,8 +160,16 @@ impl TryFrom<Row> for Intent {
             anchor_tx_id: row.anchor_tx_id,
             interactive_url: row.interactive_url,
             intake_payment_tx_hash: hash(row.intake_payment_tx_hash)?,
-            pool_deposit_tx_hash: hash(row.pool_deposit_tx_hash)?,
-            pool_transfer_tx_hash: hash(row.pool_transfer_tx_hash)?,
+            pool_deposit: pool_tx(
+                row.pool_deposit_tx_hash,
+                row.pool_deposit_envelope,
+                row.pool_deposit_sequence,
+            )?,
+            pool_transfer: pool_tx(
+                row.pool_transfer_tx_hash,
+                row.pool_transfer_envelope,
+                row.pool_transfer_sequence,
+            )?,
             message: row.message,
             created_at: row.created_at,
             updated_at: row.updated_at,
@@ -201,7 +231,11 @@ pub async fn transition(
          amount_asset = COALESCE($6::numeric, amount_asset), \
          intake_payment_tx_hash = COALESCE($7, intake_payment_tx_hash), \
          pool_deposit_tx_hash = COALESCE($8, pool_deposit_tx_hash), \
+         pool_deposit_envelope = COALESCE($11, pool_deposit_envelope), \
+         pool_deposit_sequence = COALESCE($12, pool_deposit_sequence), \
          pool_transfer_tx_hash = COALESCE($9, pool_transfer_tx_hash), \
+         pool_transfer_envelope = COALESCE($13, pool_transfer_envelope), \
+         pool_transfer_sequence = COALESCE($14, pool_transfer_sequence), \
          message = COALESCE($10, message), \
          completed_at = CASE WHEN $3 = 'completed' THEN now() ELSE completed_at END \
          WHERE id = $1 AND status = $2 RETURNING ",
@@ -214,9 +248,23 @@ pub async fn transition(
     .bind(changes.interactive_url)
     .bind(changes.amount_asset.as_ref().map(DecimalAmount::as_str))
     .bind(changes.intake_payment_tx_hash.as_ref().map(TxHash::as_str))
-    .bind(changes.pool_deposit_tx_hash.as_ref().map(TxHash::as_str))
-    .bind(changes.pool_transfer_tx_hash.as_ref().map(TxHash::as_str))
+    .bind(changes.pool_deposit.as_ref().map(|tx| tx.hash.as_str()))
+    .bind(changes.pool_transfer.as_ref().map(|tx| tx.hash.as_str()))
     .bind(changes.message.as_deref())
+    .bind(
+        changes
+            .pool_deposit
+            .as_ref()
+            .map(|tx| tx.envelope_xdr.as_str()),
+    )
+    .bind(changes.pool_deposit.as_ref().map(|tx| tx.sequence))
+    .bind(
+        changes
+            .pool_transfer
+            .as_ref()
+            .map(|tx| tx.envelope_xdr.as_str()),
+    )
+    .bind(changes.pool_transfer.as_ref().map(|tx| tx.sequence))
     .fetch_optional(&mut *conn)
     .await?;
     let intent: Intent = row.ok_or(TransitionError::Stale(id))?.try_into()?;
@@ -279,6 +327,132 @@ pub async fn schedule(
     sqlx::query("UPDATE intents SET next_attempt_at = $2 WHERE id = $1")
         .bind(id)
         .bind(at)
+        .execute(db)
+        .await?;
+    Ok(())
+}
+
+/// Which pool transaction of an intent.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PoolStep {
+    Deposit,
+    Transfer,
+}
+
+/// Replaces the stored pool transaction of `step` (a new transaction after
+/// the previous one can never land), only while the intent is in `status`.
+pub async fn replace_pool_tx(
+    conn: &mut PgConnection,
+    id: Uuid,
+    status: IntentStatus,
+    step: PoolStep,
+    tx: &PoolTx,
+) -> Result<(), TransitionError> {
+    let sql = match step {
+        PoolStep::Deposit => {
+            "UPDATE intents SET pool_deposit_tx_hash = $3, pool_deposit_envelope = $4, \
+             pool_deposit_sequence = $5 WHERE id = $1 AND status = $2"
+        }
+        PoolStep::Transfer => {
+            "UPDATE intents SET pool_transfer_tx_hash = $3, pool_transfer_envelope = $4, \
+             pool_transfer_sequence = $5 WHERE id = $1 AND status = $2"
+        }
+    };
+    let updated = sqlx::query(sql)
+        .bind(id)
+        .bind(status.as_str())
+        .bind(tx.hash.as_str())
+        .bind(&tx.envelope_xdr)
+        .bind(tx.sequence)
+        .execute(conn)
+        .await?
+        .rows_affected();
+    if updated == 1 {
+        Ok(())
+    } else {
+        Err(TransitionError::Stale(id))
+    }
+}
+
+/// An intent the shielding worker should advance, with the recipient's keys.
+#[derive(Debug, Clone)]
+pub struct WorkItem {
+    pub intent: Intent,
+    pub attempts: i32,
+    /// See [`set_unseen_since`].
+    pub unseen_since: Option<DateTime<Utc>>,
+    pub note_public_key: crate::domain::PoolField,
+    pub encryption_public_key: crate::domain::PoolField,
+}
+
+/// Intents in `funds_received`, `shielding` or `transferring` that are due.
+pub async fn due_for_shielding(
+    db: impl PgExecutor<'_>,
+    now: DateTime<Utc>,
+    limit: i64,
+) -> Result<Vec<WorkItem>, StoreError> {
+    #[derive(FromRow)]
+    struct WorkRow {
+        #[sqlx(flatten)]
+        intent: Row,
+        attempts: i32,
+        pool_unseen_since: Option<DateTime<Utc>>,
+        note_public_key: String,
+        encryption_public_key: String,
+    }
+    let rows: Vec<WorkRow> = sqlx::query_as(concat!(
+        "SELECT ",
+        columns!(),
+        ", attempts, pool_unseen_since, (SELECT note_public_key FROM shield_users u WHERE u.id = intents.user_id) \
+         AS note_public_key, (SELECT encryption_public_key FROM shield_users u \
+         WHERE u.id = intents.user_id) AS encryption_public_key \
+         FROM intents WHERE status IN ('funds_received', 'shielding', 'transferring') \
+         AND (next_attempt_at IS NULL OR next_attempt_at <= $1) \
+         ORDER BY next_attempt_at NULLS FIRST, created_at LIMIT $2"
+    ))
+    .bind(now)
+    .bind(limit)
+    .fetch_all(db)
+    .await?;
+    rows.into_iter()
+        .map(|row| {
+            let key =
+                |raw: &str| crate::domain::PoolField::parse(raw).map_err(|e| corrupt(TABLE, e));
+            Ok(WorkItem {
+                note_public_key: key(&row.note_public_key)?,
+                encryption_public_key: key(&row.encryption_public_key)?,
+                attempts: row.attempts,
+                unseen_since: row.pool_unseen_since,
+                intent: row.intent.try_into()?,
+            })
+        })
+        .collect()
+}
+
+/// Marks (or clears, with `None`) when the current pool transaction was
+/// first unknown with its sequence already passed.
+pub async fn set_unseen_since(
+    db: impl PgExecutor<'_>,
+    id: Uuid,
+    since: Option<DateTime<Utc>>,
+) -> Result<(), StoreError> {
+    sqlx::query("UPDATE intents SET pool_unseen_since = $2 WHERE id = $1")
+        .bind(id)
+        .bind(since)
+        .execute(db)
+        .await?;
+    Ok(())
+}
+
+/// Records a failed attempt and when to try again.
+pub async fn record_attempt(
+    db: impl PgExecutor<'_>,
+    id: Uuid,
+    next_at: DateTime<Utc>,
+) -> Result<(), StoreError> {
+    sqlx::query("UPDATE intents SET attempts = attempts + 1, next_attempt_at = $2 WHERE id = $1")
+        .bind(id)
+        .bind(next_at)
         .execute(db)
         .await?;
     Ok(())

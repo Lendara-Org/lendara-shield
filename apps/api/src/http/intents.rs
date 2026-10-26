@@ -78,8 +78,8 @@ impl From<Intent> for IntentResponse {
             amount_asset: intent.amount_asset,
             transactions: Transactions {
                 intake_payment: intent.intake_payment_tx_hash,
-                pool_deposit: intent.pool_deposit_tx_hash,
-                pool_transfer: intent.pool_transfer_tx_hash,
+                pool_deposit: intent.pool_deposit.map(|tx| tx.hash),
+                pool_transfer: intent.pool_transfer.map(|tx| tx.hash),
             },
             message: intent.message,
             created_at: intent.created_at,
