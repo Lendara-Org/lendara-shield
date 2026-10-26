@@ -6,7 +6,7 @@ use std::{path::PathBuf, time::Duration};
 use shield_api::{
     adapters::{pool_cli::CliPoolClient, soroban::rpc::SorobanRpc},
     domain::{PoolField, TxHash},
-    ports::{PoolClient, TxStatus},
+    ports::{AuditedNote, PoolAuditor, PoolClient, TxStatus},
 };
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
@@ -110,4 +110,64 @@ async fn a_missing_binary_is_reported() -> TestResult {
     assert_eq!(err.code, "cli_unavailable");
     assert!(client.intake_sequence().await.is_err(), "unreachable RPC");
     Ok(())
+}
+
+#[tokio::test]
+async fn audits_with_the_view_key_file_and_parses_notes() -> TestResult {
+    let script = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/fake-pool-cli.sh");
+    let auditor = CliPoolClient::new(
+        script,
+        vec![
+            ("SHIELD_CIRCUITS_DIR".into(), "ok".into()),
+            ("SHIELD_GVK_KEY_FILE".into(), "/gvk.json".into()),
+            ("PATH".into(), std::env::var("PATH")?),
+        ],
+        Duration::from_secs(10),
+        SorobanRpc::new("http://127.0.0.1:1")?,
+        [0; 32],
+    );
+    let txs = auditor.audit(2).await?;
+    let owner =
+        PoolField::parse("0x24382f33fe99fcea57632e6dd4ba6eca4d7053785ff10b71e90577541cd7a6a2")?;
+    assert_eq!(txs.len(), 2);
+    assert_eq!(txs[0].ledger, 5_392_292);
+    assert_eq!(
+        txs[0].inputs,
+        vec![AuditedNote {
+            owner: owner.clone(),
+            stroops: 20_000_000
+        }]
+    );
+    assert_eq!(
+        txs[0].outputs,
+        vec![AuditedNote {
+            owner,
+            stroops: 5_000_000
+        }]
+    );
+    assert!(txs[1].inputs.is_empty() && txs[1].outputs.is_empty());
+    Ok(())
+}
+
+#[tokio::test]
+async fn the_workers_instance_never_gets_the_view_key() -> TestResult {
+    // Built like the shielding worker's client: no SHIELD_GVK_KEY_FILE.
+    let err = client("ok", Duration::from_secs(10))?
+        .audit(2)
+        .await
+        .err()
+        .ok_or("expected an error")?;
+    assert_eq!(err.code, "config");
+    Ok(())
+}
+
+#[test]
+fn only_the_auditor_env_carries_the_view_key() {
+    let names = |env: Vec<(String, String)>| env.into_iter().map(|(k, _)| k).collect::<Vec<_>>();
+    assert!(!names(CliPoolClient::forwarded_env()).contains(&"SHIELD_GVK_KEY_FILE".to_owned()));
+    assert!(
+        shield_api::adapters::pool_cli::FORWARDED_ENV
+            .iter()
+            .all(|name| *name != shield_api::adapters::pool_cli::AUDITOR_ENV)
+    );
 }

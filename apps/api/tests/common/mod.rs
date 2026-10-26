@@ -15,13 +15,14 @@ use serde_json::Value;
 use shield_api::{
     HttpOptions,
     asp::service::AspService,
+    audit::AuditService,
     build_app,
     deployment::PoolDeployment,
     http::InfoResponse,
     intent::service::IntentService,
-    ports::{AnchorClient, SystemClock},
+    ports::{AnchorClient, Explorer, PoolAuditor, SystemClock},
     state::AppState,
-    testing::{FakeAnchor, FakeAspContract},
+    testing::{FakeAnchor, FakeAspContract, FakeAuditor, FakeExplorer},
 };
 use sqlx::{PgPool, postgres::PgPoolOptions};
 use tower::ServiceExt;
@@ -34,6 +35,7 @@ pub type Fakes = (Router, Arc<FakeAspContract>, Arc<FakeAnchor>);
 pub const WEB_ORIGIN: &str = "http://localhost:3000";
 pub const ANCHOR: &str = "lendara-monorepo-fixh.vercel.app";
 pub const ADMIN_TOKEN: &str = "test-admin-token-0123456789abcdef0123";
+pub const AUDITOR_TOKEN: &str = "test-auditor-token-0123456789abcdef01";
 
 /// The deployment fixture: a real SPP manifest shape with public testnet ids.
 pub fn deployment() -> Result<PoolDeployment, Box<dyn std::error::Error>> {
@@ -51,7 +53,8 @@ pub fn app_with_ramp(
     ramp_anchor_home_domain: Option<String>,
 ) -> Result<Router, Box<dyn std::error::Error>> {
     let anchor = ramp_anchor_home_domain.map(|_| Arc::new(FakeAnchor::default()));
-    app_with(db, anchor, Arc::new(FakeAspContract::default()))
+    let audit = AuditService::new(db.clone(), None, None);
+    app_with(db, anchor, Arc::new(FakeAspContract::default()), audit)
 }
 
 /// The app wired to a fake chain the test can script and inspect.
@@ -66,14 +69,34 @@ pub fn app_with_chain(
 pub fn app_with_fakes(db: PgPool) -> Result<Fakes, Box<dyn std::error::Error>> {
     let chain = Arc::new(FakeAspContract::default());
     let anchor = Arc::new(FakeAnchor::default());
-    let router = app_with(db, Some(anchor.clone()), chain.clone())?;
+    let router = app_with(
+        db.clone(),
+        Some(anchor.clone()),
+        chain.clone(),
+        AuditService::new(db, None, None),
+    )?;
     Ok((router, chain, anchor))
+}
+
+/// The app with a fake auditor (`None`: not configured) and a fake explorer.
+pub fn audit_app(
+    db: PgPool,
+    auditor: Option<Arc<FakeAuditor>>,
+    explorer: Arc<FakeExplorer>,
+) -> Result<Router, Box<dyn std::error::Error>> {
+    let audit = AuditService::new(
+        db.clone(),
+        auditor.map(|a| a as Arc<dyn PoolAuditor>),
+        Some(explorer as Arc<dyn Explorer>),
+    );
+    app_with(db, None, Arc::new(FakeAspContract::default()), audit)
 }
 
 fn app_with(
     db: PgPool,
     anchor: Option<Arc<FakeAnchor>>,
     chain: Arc<FakeAspContract>,
+    audit: AuditService,
 ) -> Result<Router, Box<dyn std::error::Error>> {
     let info = InfoResponse::new(&deployment()?, anchor.as_ref().map(|_| ANCHOR.to_owned()));
     let asp = AspService::new(db.clone(), chain, Arc::new(SystemClock))
@@ -89,7 +112,9 @@ fn app_with(
             info: Arc::new(info),
             asp,
             intents,
+            audit,
             admin_token: Arc::new(Some(SecretString::from(ADMIN_TOKEN))),
+            auditor_token: Arc::new(Some(SecretString::from(AUDITOR_TOKEN))),
         },
         HttpOptions {
             cors_allowed_origins: vec![HeaderValue::from_static(WEB_ORIGIN)],
