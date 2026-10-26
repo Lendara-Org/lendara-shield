@@ -103,6 +103,10 @@ test("the visual identity stays readable and usable across viewport widths", asy
       await expect(page.getByRole("main")).toHaveCSS("max-width", "1440px");
       await expect(page.getByRole("heading", { level: 1 })).toHaveCSS("font-size", "64px");
     }
+    const banner = await page.locator(".developer-banner").boundingBox();
+    expect(banner).not.toBeNull();
+    expect(Math.abs(banner!.x)).toBeLessThan(1);
+    expect(Math.abs(banner!.width - width)).toBeLessThan(1);
     const nav = page.getByRole("navigation", { name: "Principal" });
     const demo = nav.getByRole("link", { name: "Probar la demo" });
     if (width >= 640) await expect(demo).toBeVisible();
