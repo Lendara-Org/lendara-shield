@@ -215,8 +215,8 @@ shielded_recipient=<note_public_key>:<encryption_public_key>`, "Depósito intera
             [<C key="c">GET /v1/info</C>, "—", "Red, pool, activo y modos habilitados"],
             [<C key="c">POST /v1/onboarding</C>, "Firma SEP-53", "Registra las llaves, corre el KYC simulado y pide la allow-list"],
             [<C key="c">GET /v1/users/{"{account}"}</C>, "—", "Estado del KYC y de la allow-list"],
-            [<C key="c">POST /v1/intents</C>, "—", "Crea un intent de rampa y devuelve la URL interactiva del anchor"],
-            [<C key="c">GET /v1/intents/{"{id}"}</C>, "—", "Estado y hashes on-chain"],
+            [<C key="c">POST /v1/intents</C>, "Firma SEP-53", "Crea un intent de rampa y devuelve la URL interactiva del anchor (solo aquí)"],
+            [<C key="c">GET /v1/intents/{"{id}"}</C>, "—", "Estado y hashes on-chain (nunca la URL interactiva)"],
             [<C key="c">POST /v1/asp/block</C>, <C key="t">ADMIN_TOKEN</C>, "Bloquea una llave (block-list)"],
             [<C key="c">POST /v1/asp/unblock</C>, <C key="t">ADMIN_TOKEN</C>, "Desbloquea una llave"],
             [<C key="c">GET /v1/audit/transactions</C>, <C key="t">AUDITOR_TOKEN</C>, "Actividad del pool descifrada con la llave de vista"],
@@ -314,6 +314,7 @@ shielded_recipient=<note_public_key>:<encryption_public_key>`, "Depósito intera
         <List>
           <li>Las llaves de gasto nunca salen del navegador del usuario.</li>
           <li>El registro exige la firma SEP-53 de la cuenta sobre las llaves exactas.</li>
+          <li>Iniciar un depósito exige la firma SEP-53 de la cuenta sobre el monto, y cada solicitud firmada sirve una sola vez.</li>
           <li>Solo el pago que reporta el anchor fondea un intent; los memos de los intents son aleatorios.</li>
           <li>La llave de vista solo llega al proceso del auditor, nunca a un navegador.</li>
           <li>Operador, cuenta ómnibus y auditor son tres llaves distintas.</li>

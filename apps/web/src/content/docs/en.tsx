@@ -213,8 +213,8 @@ shielded_recipient=<note_public_key>:<encryption_public_key>`, "SEP-24 interacti
             [<C key="c">GET /v1/info</C>, "—", "Network, pool, asset and enabled modes"],
             [<C key="c">POST /v1/onboarding</C>, "SEP-53 signature", "Registers keys, runs the simulated KYC, requests the allow-list"],
             [<C key="c">GET /v1/users/{"{account}"}</C>, "—", "KYC and allow-list status"],
-            [<C key="c">POST /v1/intents</C>, "—", "Creates a ramp intent and returns the anchor's interactive URL"],
-            [<C key="c">GET /v1/intents/{"{id}"}</C>, "—", "Status and on-chain hashes"],
+            [<C key="c">POST /v1/intents</C>, "SEP-53 signature", "Creates a ramp intent and returns the anchor's interactive URL (only here)"],
+            [<C key="c">GET /v1/intents/{"{id}"}</C>, "—", "Status and on-chain hashes (never the interactive URL)"],
             [<C key="c">POST /v1/asp/block</C>, <C key="t">ADMIN_TOKEN</C>, "Blocks a key (block-list)"],
             [<C key="c">POST /v1/asp/unblock</C>, <C key="t">ADMIN_TOKEN</C>, "Unblocks a key"],
             [<C key="c">GET /v1/audit/transactions</C>, <C key="t">AUDITOR_TOKEN</C>, "Pool activity decrypted with the view key"],
@@ -312,6 +312,7 @@ shielded_recipient=<note_public_key>:<encryption_public_key>`, "SEP-24 interacti
         <List>
           <li>Spending keys never leave the user&apos;s browser.</li>
           <li>Onboarding needs the account&apos;s SEP-53 signature over the exact keys.</li>
+          <li>Starting a deposit needs the account&apos;s SEP-53 signature over the amount, and each signed request works once.</li>
           <li>Only the payment the anchor reports funds an intent; intent memos are random.</li>
           <li>The view key only reaches the auditor&apos;s process, never a browser.</li>
           <li>Operator, omnibus and auditor are three different keys.</li>

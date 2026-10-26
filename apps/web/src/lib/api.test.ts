@@ -38,7 +38,15 @@ describe("api", () => {
   it("keeps the API's error code and message", async () => {
     server.use(http.post(url("/v1/intents"), () => apiError(409, "user_not_allowed", "Not in the allow-list")));
     const err = await api
-      .createIntent({ mode: "ramp", stellar_account: ACCOUNT, fiat_currency: "CRC", amount: "5000" })
+      .createIntent({
+        mode: "ramp",
+        stellar_account: ACCOUNT,
+        fiat_currency: "CRC",
+        amount: "5000",
+        request_id: "0194f3a2-7c1e-7d3b-9a4f-2b6c8e1d5f70",
+        issued_at: 1_793_016_000,
+        signature: "c2lnbmVk",
+      })
       .catch((e: unknown) => e);
     expect(err).toBeInstanceOf(ApiRequestError);
     expect(err).toMatchObject({ status: 409, code: "user_not_allowed", message: "Not in the allow-list" });

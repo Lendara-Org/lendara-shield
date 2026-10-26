@@ -1,6 +1,7 @@
 import { screen, within } from "@testing-library/react";
 import { HttpResponse, http } from "msw";
 
+import { intentMessage } from "@/lib/intent-request";
 import { fakeWallet } from "@/test/fake-wallet";
 import { ACCOUNT, HASH, completed, info, intent, user } from "@/test/fixtures";
 import { renderConnected } from "@/test/render";
@@ -39,12 +40,23 @@ describe("DepositFlow with a ramp", () => {
       http.get(url(`/v1/intents/${completed.id}`), () => HttpResponse.json(statuses.shift() ?? completed)),
     );
     const anchor = popup();
-    const { user: ui } = await renderConnected(<DepositFlow />, fakeWallet());
+    const wallet = fakeWallet();
+    const { user: ui } = await renderConnected(<DepositFlow />, wallet);
 
     await ui.type(await screen.findByLabelText("Amount"), "5000");
     await ui.click(screen.getByRole("button", { name: "Continue to the anchor" }));
 
-    expect(body).toEqual({ mode: "ramp", stellar_account: ACCOUNT, fiat_currency: "CRC", amount: "5000" });
+    expect(body).toEqual({
+      mode: "ramp",
+      stellar_account: ACCOUNT,
+      fiat_currency: "CRC",
+      amount: "5000",
+      request_id: expect.stringMatching(/^[0-9a-f-]{36}$/),
+      issued_at: expect.any(Number),
+      signature: "c2lnbmVkLWJ5LXRoZS1hY2NvdW50",
+    });
+    const sent = body as { request_id: string; issued_at: number };
+    expect(wallet.signMessage).toHaveBeenCalledWith(intentMessage(ACCOUNT, "CRC", "5000", sent.request_id, sent.issued_at));
     expect(anchor.location.href).toBe(intent().interactive_url);
     expect(await screen.findByText(/9.3039215 USDC are now private/)).toBeInTheDocument();
     const steps = screen.getAllByRole("listitem");
@@ -52,6 +64,26 @@ describe("DepositFlow with a ramp", () => {
     for (const hash of ["2fc5", "d43d", "5dd9"]) {
       expect(within(screen.getByRole("list")).getByRole("link", { name: new RegExp(hash) })).toBeInTheDocument();
     }
+  });
+
+  it("starts nothing when the user declines to sign", async () => {
+    let posted = false;
+    server.use(
+      http.post(url("/v1/intents"), () => {
+        posted = true;
+        return HttpResponse.json(intent(), { status: 201 });
+      }),
+    );
+    const anchor = popup();
+    const wallet = fakeWallet({ signMessage: vi.fn(() => Promise.reject(new Error("User declined"))) });
+    const { user: ui } = await renderConnected(<DepositFlow />, wallet);
+
+    await ui.type(await screen.findByLabelText("Amount"), "5000");
+    await ui.click(screen.getByRole("button", { name: "Continue to the anchor" }));
+
+    expect(await screen.findByText("User declined")).toBeInTheDocument();
+    expect(posted).toBe(false);
+    expect(anchor.close).toHaveBeenCalled();
   });
 
   it("shows why the anchor step failed", async () => {

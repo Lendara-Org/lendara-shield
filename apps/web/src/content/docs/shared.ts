@@ -34,10 +34,23 @@ await fetch(\`\${SHIELD}/v1/onboarding\`, {
   }),
 });`,
 
-  intent: `const intent = await fetch(\`\${SHIELD}/v1/intents\`, {
+  intent: `// Only the account's owner can start a deposit: it signs the amount and a single-use id.
+const request = { fiat_currency: "CRC", amount: "5000", request_id: crypto.randomUUID(), issued_at: Math.floor(Date.now() / 1000) };
+const text = [
+  "Lendara Shield intent",
+  "network: testnet",
+  \`account: \${userAddress}\`,
+  \`fiat_currency: \${request.fiat_currency}\`,
+  \`amount: \${request.amount}\`,
+  \`request_id: \${request.request_id}\`,
+  \`issued_at: \${request.issued_at}\`,
+].join("\\n");
+const signed = await signMessage(text, { address: userAddress, networkPassphrase });
+
+const intent = await fetch(\`\${SHIELD}/v1/intents\`, {
   method: "POST",
   headers: { "content-type": "application/json" },
-  body: JSON.stringify({ mode: "ramp", stellar_account: userAddress, fiat_currency: "CRC", amount: "5000" }),
+  body: JSON.stringify({ mode: "ramp", stellar_account: userAddress, ...request, signature: signed.signedMessage }),
 }).then((r) => r.json());
 
 window.open(intent.interactive_url, "anchor", "popup"); // the anchor's SEP-24 widget`,
