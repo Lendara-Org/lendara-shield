@@ -9,6 +9,8 @@ use axum::http::HeaderValue;
 use secrecy::SecretString;
 
 const DEFAULT_API_PORT: u16 = 8080;
+/// Shortest accepted admin token, so it cannot be guessed.
+const MIN_ADMIN_TOKEN_LEN: usize = 32;
 
 /// Validated API configuration.
 #[derive(Debug)]
@@ -25,6 +27,8 @@ pub struct Config {
     pub deployment_file: PathBuf,
     /// SEP-1 home domain of the anchor. `None` disables ramp mode.
     pub ramp_anchor_home_domain: Option<String>,
+    /// Bearer token for `/v1/asp/*`. `None` disables the admin endpoints.
+    pub admin_token: Option<SecretString>,
 }
 
 /// Log output format.
@@ -83,6 +87,9 @@ impl Config {
         let ramp_anchor_home_domain = get("RAMP_ANCHOR_HOME_DOMAIN")
             .map(|raw| parse_home_domain(raw.trim()))
             .transpose()?;
+        let admin_token = get("ADMIN_TOKEN")
+            .map(|raw| parse_admin_token(&raw))
+            .transpose()?;
 
         Ok(Self {
             api_port,
@@ -91,6 +98,7 @@ impl Config {
             cors_allowed_origins,
             deployment_file,
             ramp_anchor_home_domain,
+            admin_token,
         })
     }
 }
@@ -128,6 +136,17 @@ fn parse_origins(raw: &str) -> Result<Vec<HeaderValue>, ConfigError> {
             })
         })
         .collect()
+}
+
+fn parse_admin_token(raw: &str) -> Result<SecretString, ConfigError> {
+    let token = raw.trim();
+    if token.len() < MIN_ADMIN_TOKEN_LEN {
+        return Err(ConfigError::Invalid {
+            name: "ADMIN_TOKEN",
+            reason: format!("must be at least {MIN_ADMIN_TOKEN_LEN} characters"),
+        });
+    }
+    Ok(SecretString::from(token.to_owned()))
 }
 
 /// A SEP-1 home domain is a bare host (`anchor.example` or `host:port`): the
@@ -257,6 +276,32 @@ mod tests {
                 "{raw}: {err:?}"
             );
         }
+    }
+
+    #[test]
+    fn admin_token_is_optional_but_must_be_long() -> Result<(), ConfigError> {
+        assert!(load(&[("DATABASE_URL", DB_URL)])?.admin_token.is_none());
+
+        let token = "x".repeat(32);
+        let config = load(&[("DATABASE_URL", DB_URL), ("ADMIN_TOKEN", &token)])?;
+        assert_eq!(
+            config.admin_token.as_ref().map(ExposeSecret::expose_secret),
+            Some(token.as_str())
+        );
+        assert!(
+            !format!("{config:?}").contains(&token),
+            "token must not leak in Debug"
+        );
+
+        let err = load(&[("DATABASE_URL", DB_URL), ("ADMIN_TOKEN", "short")]).err();
+        assert!(matches!(
+            err,
+            Some(ConfigError::Invalid {
+                name: "ADMIN_TOKEN",
+                ..
+            })
+        ));
+        Ok(())
     }
 
     #[test]

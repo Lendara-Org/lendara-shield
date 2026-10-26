@@ -9,8 +9,16 @@ use std::{net::SocketAddr, process::ExitCode};
 use std::sync::Arc;
 
 use shield_api::{
-    HttpOptions, build_app, config::Config, db, deployment::PoolDeployment, http::InfoResponse,
-    state::AppState, telemetry,
+    HttpOptions,
+    asp::service::AspService,
+    build_app,
+    config::Config,
+    db,
+    deployment::PoolDeployment,
+    http::InfoResponse,
+    ports::{SystemClock, UnconfiguredAspContract},
+    state::AppState,
+    telemetry,
 };
 use tokio::net::TcpListener;
 
@@ -49,6 +57,9 @@ async fn run() -> Result<(), BoxError> {
 
     let config = Config::from_env()?;
     telemetry::init(config.log_format)?;
+    if config.admin_token.is_none() {
+        tracing::warn!("ADMIN_TOKEN is not set: /v1/asp/* answers 401");
+    }
     let deployment = PoolDeployment::load(&config.deployment_file)?;
     tracing::info!(pool = %deployment.pool, asset = %deployment.asset.code, "pool deployment loaded");
 
@@ -66,6 +77,13 @@ async fn run() -> Result<(), BoxError> {
                 &deployment,
                 config.ramp_anchor_home_domain,
             )),
+            // The Soroban ASP adapter lands in H5b; until then users stay pending.
+            asp: AspService::new(
+                pool.clone(),
+                Arc::new(UnconfiguredAspContract),
+                Arc::new(SystemClock),
+            ),
+            admin_token: Arc::new(config.admin_token),
         },
         HttpOptions {
             cors_allowed_origins: config.cors_allowed_origins,
