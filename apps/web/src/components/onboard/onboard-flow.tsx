@@ -2,14 +2,14 @@
 
 import type { KycScenario, ShieldUser } from "@lendara/shield-api-types";
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { ConnectGate } from "@/components/connect-gate";
 import { useI18n } from "@/components/i18n";
 import { message, useSession } from "@/components/session";
 import { Button, Card, Field, Notice, TxLink, inputClass } from "@/components/ui/primitives";
 import { api } from "@/lib/api";
-import { INTENT_POLL_MS } from "@/lib/config";
+import { INTENT_POLL_MS, ONBOARDING_RETRY_AFTER_MS } from "@/lib/config";
 import { usePoll } from "@/lib/hooks/use-poll";
 import { onboardingMessage } from "@/lib/onboarding";
 import type { ShieldWallet } from "@/lib/pool/types";
@@ -37,6 +37,18 @@ function Onboarding({ wallet }: { wallet: ShieldWallet }) {
   usePoll(user?.asp_status === "pending", INTENT_POLL_MS, async () => {
     setUser(await api.user(wallet.address));
   });
+
+  // Still pending after a while: the ASP write may never have been sent.
+  const [stuck, setStuck] = useState(false);
+  const pending = user?.asp_status === "pending";
+  useEffect(() => {
+    if (!pending) return;
+    const timer = setTimeout(() => setStuck(true), ONBOARDING_RETRY_AFTER_MS);
+    return () => {
+      clearTimeout(timer);
+      setStuck(false);
+    };
+  }, [pending]);
 
   async function register() {
     setBusy(true);
@@ -80,6 +92,15 @@ function Onboarding({ wallet }: { wallet: ShieldWallet }) {
           )}
         </dl>
         <Notice tone={TONE[user.asp_status]}>{t.onboard.statusText[user.asp_status]}</Notice>
+        {pending && stuck && (
+          <div className="mt-4 space-y-3">
+            <p className="text-sm text-gray">{t.onboard.stillPending}</p>
+            <Button onClick={() => void register()} busy={busy}>
+              {t.onboard.retry}
+            </Button>
+            {error && <Notice tone="error">{error}</Notice>}
+          </div>
+        )}
         {user.asp_status === "allowed" && (
           <Link href={href("/deposit")} className="mt-4 inline-block text-sm font-medium underline">
             {t.onboard.continue}
