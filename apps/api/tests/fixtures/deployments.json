@@ -1,0 +1,34 @@
+{
+  "network": "testnet",
+  "kdf_domain": "Lendara Shield",
+  "deployer": "GAABX6R4F4UBYOHKFXFKKAWOGELDS3WFYGVQUYECOE5NTBYWY7J5WWMS",
+  "admin": "GAABX6R4F4UBYOHKFXFKKAWOGELDS3WFYGVQUYECOE5NTBYWY7J5WWMS",
+  "asp_membership": "CBXCTA27XVLULCT4O5LCE2ETKW7A6PXEOFXOKHHFP4JCPRT72T7HBQLL",
+  "added_asp_memberships": [],
+  "asp_non_membership": "CBGH7D7JZ3FRJ6ILEDRABBUWTEEV42CKBWTPQQWMHNF7H3OXWREEOAFA",
+  "verifiers": {
+    "AB_gvk_T": "CCQWHSMUF35HFOLUV5PTUVDMV55MTIZM7CD66AEC5KWPGHINGHACFC7Z"
+  },
+  "public_key_registry": "CDKEJFD2TJGJ5TL2COAA6ULRDCO55EPBCYB2LZD2QKSR4MAO6NPRRMWL",
+  "pools": [
+    {
+      "poolContractId": "CCAEA4MKORUJV3G3V47SKWLJKQZBYGGFU42JSCXNUIJIZMNN2MSDLFMO",
+      "tokenContractId": "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC",
+      "deploymentLedger": 5388674,
+      "enabled": true,
+      "policyFlags": ["allowlist", "blocklist"],
+      "asset": {
+        "kind": "classic",
+        "code": "USDC",
+        "issuer": "GBVIQ7QVTTJ4NLFTYYFPEKWYJWAMKDAOFYSR52ZGWJFSGTSVOO5H47B5"
+      },
+      "gvkMode": "traceable",
+      "gvkAuthorityPubKey": {
+        "x": "0x2c8e31fcbff6853ef70b0695025e4993181c79420227ac1a762a00e0fd4fd185",
+        "y": "0x2e6c861e84028f6837a14f960fc6e5c1ee4422115dff96b01908a0643ca7db67"
+      }
+    }
+  ],
+  "rpcUrl": "https://soroban-testnet.stellar.org/",
+  "networkPassphrase": "Test SDF Network ; September 2015"
+}
