@@ -3,7 +3,7 @@
 //! Loading validates everything up front so the process fails fast at startup
 //! instead of on the first request that needs a missing value.
 
-use std::{fmt, str::FromStr};
+use std::{fmt, path::PathBuf, str::FromStr};
 
 use axum::http::HeaderValue;
 use secrecy::SecretString;
@@ -21,6 +21,10 @@ pub struct Config {
     pub log_format: LogFormat,
     /// Origins allowed by CORS. Empty means no cross-origin access.
     pub cors_allowed_origins: Vec<HeaderValue>,
+    /// SPP `deployments.json` written by `make setup-testnet`.
+    pub deployment_file: PathBuf,
+    /// SEP-1 home domain of the anchor. `None` disables ramp mode.
+    pub ramp_anchor_home_domain: Option<String>,
 }
 
 /// Log output format.
@@ -73,12 +77,20 @@ impl Config {
             .map(|raw| parse_origins(&raw))
             .transpose()?
             .unwrap_or_default();
+        let deployment_file = get("SHIELD_DEPLOYMENT_FILE")
+            .map(PathBuf::from)
+            .ok_or(ConfigError::Missing("SHIELD_DEPLOYMENT_FILE"))?;
+        let ramp_anchor_home_domain = get("RAMP_ANCHOR_HOME_DOMAIN")
+            .map(|raw| parse_home_domain(raw.trim()))
+            .transpose()?;
 
         Ok(Self {
             api_port,
             database_url,
             log_format,
             cors_allowed_origins,
+            deployment_file,
+            ramp_anchor_home_domain,
         })
     }
 }
@@ -118,6 +130,26 @@ fn parse_origins(raw: &str) -> Result<Vec<HeaderValue>, ConfigError> {
         .collect()
 }
 
+/// A SEP-1 home domain is a bare host (`anchor.example` or `host:port`): the
+/// client builds `https://<domain>/.well-known/stellar.toml` from it.
+fn parse_home_domain(raw: &str) -> Result<String, ConfigError> {
+    let valid = !raw.is_empty()
+        && raw
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | ':'))
+        && !raw.starts_with(['.', '-', ':']);
+    if valid {
+        Ok(raw.to_ascii_lowercase())
+    } else {
+        Err(ConfigError::Invalid {
+            name: "RAMP_ANCHOR_HOME_DOMAIN",
+            reason: format!(
+                "`{raw}` must be a bare host such as anchor.example (no scheme or path)"
+            ),
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
@@ -129,8 +161,9 @@ mod tests {
     const DB_URL: &str = "postgres://shield:shield@localhost:5432/shield";
 
     fn load(vars: &[(&str, &str)]) -> Result<Config, ConfigError> {
-        let env: HashMap<String, String> = vars
+        let env: HashMap<String, String> = [("SHIELD_DEPLOYMENT_FILE", "/tmp/deployments.json")]
             .iter()
+            .chain(vars.iter())
             .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
             .collect();
         Config::from_lookup(|name| env.get(name).cloned())
@@ -169,6 +202,61 @@ mod tests {
             ]
         );
         Ok(())
+    }
+
+    #[test]
+    fn requires_the_deployment_file() {
+        let env: HashMap<&str, &str> = [("DATABASE_URL", DB_URL)].into_iter().collect();
+        let err = Config::from_lookup(|name| env.get(name).map(|v| (*v).to_owned())).err();
+        assert_eq!(err, Some(ConfigError::Missing("SHIELD_DEPLOYMENT_FILE")));
+    }
+
+    #[test]
+    fn ramp_mode_is_off_unless_an_anchor_is_configured() -> Result<(), ConfigError> {
+        assert_eq!(
+            load(&[("DATABASE_URL", DB_URL)])?.ramp_anchor_home_domain,
+            None
+        );
+        let config = load(&[
+            ("DATABASE_URL", DB_URL),
+            (
+                "RAMP_ANCHOR_HOME_DOMAIN",
+                " Lendara-Monorepo-fixh.vercel.app ",
+            ),
+        ])?;
+        assert_eq!(
+            config.ramp_anchor_home_domain.as_deref(),
+            Some("lendara-monorepo-fixh.vercel.app")
+        );
+        assert!(
+            load(&[
+                ("DATABASE_URL", DB_URL),
+                ("RAMP_ANCHOR_HOME_DOMAIN", "localhost:8000")
+            ])
+            .is_ok()
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn rejects_an_anchor_with_scheme_or_path() {
+        for raw in [
+            "https://anchor.example",
+            "anchor.example/sep24",
+            ".anchor.example",
+        ] {
+            let err = load(&[("DATABASE_URL", DB_URL), ("RAMP_ANCHOR_HOME_DOMAIN", raw)]).err();
+            assert!(
+                matches!(
+                    err,
+                    Some(ConfigError::Invalid {
+                        name: "RAMP_ANCHOR_HOME_DOMAIN",
+                        ..
+                    })
+                ),
+                "{raw}: {err:?}"
+            );
+        }
     }
 
     #[test]

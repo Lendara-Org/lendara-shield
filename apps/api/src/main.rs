@@ -6,7 +6,12 @@
 
 use std::{net::SocketAddr, process::ExitCode};
 
-use shield_api::{HttpOptions, build_app, config::Config, db, state::AppState, telemetry};
+use std::sync::Arc;
+
+use shield_api::{
+    HttpOptions, build_app, config::Config, db, deployment::PoolDeployment, http::InfoResponse,
+    state::AppState, telemetry,
+};
 use tokio::net::TcpListener;
 
 type BoxError = Box<dyn std::error::Error + Send + Sync>;
@@ -44,6 +49,8 @@ async fn run() -> Result<(), BoxError> {
 
     let config = Config::from_env()?;
     telemetry::init(config.log_format)?;
+    let deployment = PoolDeployment::load(&config.deployment_file)?;
+    tracing::info!(pool = %deployment.pool, asset = %deployment.asset.code, "pool deployment loaded");
 
     let pool = db::connect(&config.database_url).await?;
     db::MIGRATOR.run(&pool).await?;
@@ -53,7 +60,13 @@ async fn run() -> Result<(), BoxError> {
     }
 
     let app = build_app(
-        AppState { db: pool.clone() },
+        AppState {
+            db: pool.clone(),
+            info: Arc::new(InfoResponse::new(
+                &deployment,
+                config.ramp_anchor_home_domain,
+            )),
+        },
         HttpOptions {
             cors_allowed_origins: config.cors_allowed_origins,
         },

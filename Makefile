@@ -37,7 +37,7 @@ migrate: ## Apply database migrations and exit
 	cd $(API_DIR) && cargo run --quiet -- migrate
 
 setup-testnet: ## Create and fund testnet accounts, deploy the pool (idempotent)
-	$(call pending,H4)
+	scripts/setup-testnet.sh
 
 fmt: ## Format all code
 	cd $(API_DIR) && cargo fmt
@@ -67,8 +67,8 @@ test-api: ## API tests against local Postgres (DATABASE_URL)
 test-js: ## Test TS packages
 	pnpm test
 
-test-testnet: ## Run end-to-end tests against Stellar testnet (needs .env)
-	$(call pending,H4)
+test-testnet: ## Check the testnet setup on-chain, read-only (needs .env)
+	scripts/verify-testnet.sh
 
 coverage: ## API coverage summary; `main.rs` is wiring only and excluded
 	cd $(API_DIR) && cargo llvm-cov --ignore-filename-regex 'src/main\.rs' --summary-only

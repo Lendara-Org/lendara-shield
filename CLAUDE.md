@@ -302,7 +302,9 @@ Datos conocidos de SPP (del anuncio oficial; **verificar contra el repo en el sp
 - **Activo:** el USDC de prueba del sandbox de Lendara (mismo issuer, `RAMP_ASSET_ISSUER`), para que el modo ramp funcione de punta a punta. La intake necesita trustline a ese activo.
 - **SAC:** el USDC del sandbox es un activo clásico; el pool necesita un token SEP-41. `setup-testnet` despliega (o reutiliza si ya existe) su Stellar Asset Contract y guarda el contract id en `SHIELD_ASSET_CONTRACT`.
 - **Llaves del pool de la intake:** la intake es dueña de la nota intermedia (depósito) antes de transferirla al usuario. El SDK las deriva en el servidor firmando con `SHIELD_INTAKE_SECRET` y las guarda en su wallet SQLite (`SHIELD_INTAKE_WALLET_PATH`, fuera del repo). Verificado en H1.
-- **Script `make setup-testnet`** (`apps/api/src/bin/setup_testnet.rs`): crea y fondea las cuentas con Friendbot, crea la trustline de la intake, despliega o configura el pool (sección 7.2) e imprime las variables para `.env`. **Idempotente.**
+- **Script `make setup-testnet`** (`scripts/setup-testnet.sh`, bash: decidido en H4 porque el despliegue ya depende del `deploy.sh` de SPP y del `stellar` CLI): crea y fondea las identidades `shield-operator` y `shield-intake` (en la config del `stellar` CLI), crea la trustline de la intake, despliega el SAC del USDC, genera la view key global y despliega el pool (sección 7.2) con SPP fijado en `sdk-v0.2.1`. Escribe las variables en `~/.local/share/lendara-shield/testnet/testnet.env` (modo 600; hay que copiarlas al `.env`). **Idempotente.**
+- **`make test-testnet`** (`scripts/verify-testnet.sh`): chequeos de solo lectura contra testnet (saldos, trustline, SAC, configuración del pool, `verify-deployment.sh` de SPP y ventana de retención del RPC).
+- **Flags del issuer del USDC del sandbox** (25-oct): sin `AUTH_REVOCABLE` ni `AUTH_CLAWBACK_ENABLED`, pero tampoco `AUTH_IMMUTABLE`: el issuer podría activarlos después y congelar o recuperar el saldo del pool. Va al threat model.
 
 ### 7.2 Configuración del pool
 
@@ -529,7 +531,7 @@ Cada PR deja el repo funcionando. Marcar ✅ al completar.
 | H1 ✅ | Spike de SPP | `spike/spp-verification` | **Timebox: 90 minutos.** Verificar en el repo de Nethermind: (a) si se puede desplegar un pool propio para un activo SEP-41 arbitrario con allow-list y admin propio; (b) si el SDK nativo de Rust funciona del lado servidor con un signer propio (depósito + transferencia a una llave registrada); (c) cómo funciona el registro de llaves públicas; (d) el SDK web en Next.js; (e) si la intake puede derivar y guardar sus propias llaves del pool en el servidor sin Freighter; (f) en el código del sandbox (`Bitacora/lendara`), si SEP-10 acepta `memo` en el challenge y si SEP-24 acepta `memo`/`memo_type` hacia una cuenta ajena (D4). Script mínimo que hace depósito → transferencia → retiro desde el servidor. Resultado en `docs/spikes/spp.md` con la decisión de D1 y D2 | Hashes reales de las tres operaciones; decisiones D1 y D2 confirmadas con Anouk |
 | H2 ✅ | Esqueleto del API | `feat/api-skeleton` | Crate, config por env, Axum, `/health`, Postgres + migraciones, `tracing`, manejo de errores | `make dev-api` responde `/health` con la base conectada |
 | H3 ✅ | Contrato OpenAPI | `feat/repo-openapi` | `openapi.yaml` (sección 7.8), `packages/api-types` con `openapi-typescript`, `make codegen` | Codegen corre sin errores; los tipos compilan |
-| H4 | Setup testnet + pool | `feat/api-testnet-setup` | `make setup-testnet` (sección 7.1), despliegue del SAC del USDC del sandbox (plan A), pool según el plan A o B, `GET /v1/info` | El script es idempotente; `/v1/info` devuelve el contrato del pool |
+| H4 ✅ | Setup testnet + pool | `feat/api-testnet-setup` | `make setup-testnet` (sección 7.1), despliegue del SAC del USDC del sandbox (plan A), pool según el plan A o B, `GET /v1/info` | El script es idempotente; `/v1/info` devuelve el contrato del pool |
 | H5 | Onboarding y ASP | `feat/api-asp-onboarding` | `shield_users`, `asp_events`, KYC simulado con escenarios, allow-list y block-list (o simulación en plan B), tests | `approved` agrega la llave; `rejected` no; `blocked` congela; hashes reales |
 | H6a | Intents y cliente del anchor | `feat/api-ramp-intents` | Tabla `intents`, máquina de estados con tests, cliente SEP-1/SEP-10/SEP-24, `POST /v1/intents`, `GET /v1/intents/{id}`, modo ramp opcional por config | Se crea un intent `awaiting_anchor` con la URL interactiva real del sandbox |
 | H6b | Watcher y worker de shielding | `feat/api-shielding-worker` | Watcher de pagos a la intake (Horizon, por memo), worker idempotente: depósito al pool + transferencia privada, seguimiento del estado del anchor | Un intent llega a `completed` con los hashes de depósito (`ext_amount > 0`) y transferencia (`ext_amount = 0`) |
@@ -593,7 +595,8 @@ Cada una tiene una recomendación. Si Anouk no responde y el PR no puede esperar
 - H1 (spike de SPP) ✅ en `spike/spp-verification` (25-oct): depósito, transferencia privada, retiro y auditoría con GVK desde el servidor, con hashes reales. Detalle en `docs/spikes/spp.md`.
 - H2 (esqueleto del API) ✅ en `feat/api-skeleton` (25-oct): crate `shield-api`, config validada, `ApiError`, tracing JSON, `/health` (200/503), request id, CORS, timeout, apagado ordenado, migraciones embebidas, job `api` en el CI, 23 tests, cobertura 97 % de líneas (sin `main.rs`).
 - H3 (contrato OpenAPI) ✅ en `feat/repo-openapi` (25-oct): `openapi.yaml` 3.1 con todos los endpoints de la §7.8, `@lendara/shield-api-types` generado, Redocly en el CI y chequeo de codegen al día. **Fuente de verdad:** cualquier cambio de la API empieza en `openapi.yaml`.
-- Siguiente: H4 (setup testnet + pool) y, en paralelo, H7 (web) ya puede arrancar con los tipos.
+- H4 (setup testnet + pool) ✅ en `feat/api-testnet-setup` (26-oct): `make setup-testnet` y `make test-testnet` en bash, pool de USDC desplegado, `GET /v1/info` desde el manifiesto validado (`PoolDeployment`), tipos de dominio `AccountId`/`ContractId` con `stellar-strkey` 0.0.18 (misma versión que el SDK de SPP).
+- Siguiente: H5 (onboarding y ASP). H7 (web) puede arrancar en paralelo con los tipos.
 
 ### Riesgos identificados (25-oct)
 1. **Tiempo:** 12 PRs en ~1 día. ~~Plan B del backend~~ descartado en H1.
@@ -618,6 +621,7 @@ Cada una tiene una recomendación. Si Anouk no responde y el PR no puede esperar
 - API: `cargo test` necesita Postgres arriba (`make db-up`) y `DATABASE_URL`; el `Makefile` la toma del `.env`. `#[sqlx::test]` crea una base aislada por test.
 - TypeScript fijado en 5.9.3: `openapi-typescript` 7.13 exige `^5` (TS 7.0 ya salió, pero no es compatible todavía). Mismo que el sandbox.
 - Tests de TS sin dependencias: `node --test` (Node 24 ejecuta `.ts` nativo). Los tests de tipos van en `*.typetest.ts` y los corre `tsc` con `@ts-expect-error`.
+- No hacer `source .env` en bash: `STELLAR_NETWORK_PASSPHRASE` tiene espacios y `;`. El `Makefile` lo carga bien (`-include .env`); para correr algo a mano, usar `make` o exportar la variable entre comillas.
 - `make lint/test/build` corren Rust + JS; el CI usa los targets separados (`-api`, `-js`).
 - SPP: fijar el tag `sdk-v0.2.1` (contratos, crate y npm coinciden). El tag `alpha` de npm está viejo: usar `stellar-private-payments@0.2.1`.
 - SPP: compilar en `--release` (el prover en debug es muy lento). La primera ejecución descarga los artefactos de circuito (~30 s).
