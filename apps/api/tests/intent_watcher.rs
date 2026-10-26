@@ -375,6 +375,7 @@ async fn a_background_round_funds_paid_intents_and_ends_expired_ones(db: PgPool)
     Background {
         watcher: h.watcher.clone(),
         anchor_sync: h.sync.clone(),
+        shielding: None,
     }
     .round()
     .await;
@@ -401,6 +402,7 @@ async fn the_loop_keeps_running_through_failures_and_stops_on_shutdown(db: PgPoo
         Background {
             watcher: h.watcher.clone(),
             anchor_sync: h.sync.clone(),
+            shielding: None,
         }
         .run(std::time::Duration::from_millis(20), shutdown.clone()),
     );
