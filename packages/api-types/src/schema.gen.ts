@@ -58,7 +58,8 @@ export interface paths {
          *
          *     KYC is simulated and decided by `scenario`. When it is approved, Shield inserts the leaf into the
          *     allow-list on-chain; that takes a few seconds, so the response may come back with
-         *     `asp_status: pending`. Poll `GET /v1/users/{account}` until it is final.
+         *     `asp_status: pending`. Poll `GET /v1/users/{account}` until it is final; if it stays
+         *     `pending` (the network was unavailable), repeat this same request to resume.
          *
          *     Idempotent: repeating the call with the same account and keys returns the existing user with `200`.
          */
@@ -441,6 +442,19 @@ export interface components {
                 "application/json": components["schemas"]["Error"];
             };
         };
+        /**
+         * @description - `asp_transition_not_allowed`: not possible from the user's current ASP status
+         *       (e.g. blocking a user who is `pending`, `not_allowed` or already `blocked`).
+         *     - `asp_update_in_flight`: another ASP update for this user has not settled yet.
+         */
+        AspConflict: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
         /** @description `not_found`, `user_not_found` or `intent_not_found`. */
         NotFound: {
             headers: {
@@ -554,7 +568,10 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequest"];
-            /** @description `account_already_onboarded`: the account exists with different pool keys. */
+            /**
+             * @description - `account_already_onboarded`: the account exists with different pool keys.
+             *     - `pool_key_already_registered`: the pool keys or ASP leaf belong to another account.
+             */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -694,6 +711,7 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
+            409: components["responses"]["AspConflict"];
         };
     };
     unblockUser: {
@@ -721,6 +739,7 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
+            409: components["responses"]["AspConflict"];
         };
     };
     listAuditTransactions: {

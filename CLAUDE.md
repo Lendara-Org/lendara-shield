@@ -596,7 +596,9 @@ Cada una tiene una recomendación. Si Anouk no responde y el PR no puede esperar
 - H2 (esqueleto del API) ✅ en `feat/api-skeleton` (25-oct): crate `shield-api`, config validada, `ApiError`, tracing JSON, `/health` (200/503), request id, CORS, timeout, apagado ordenado, migraciones embebidas, job `api` en el CI, 23 tests, cobertura 97 % de líneas (sin `main.rs`).
 - H3 (contrato OpenAPI) ✅ en `feat/repo-openapi` (25-oct): `openapi.yaml` 3.1 con todos los endpoints de la §7.8, `@lendara/shield-api-types` generado, Redocly en el CI y chequeo de codegen al día. **Fuente de verdad:** cualquier cambio de la API empieza en `openapi.yaml`.
 - H4 (setup testnet + pool) ✅ en `feat/api-testnet-setup` (26-oct): `make setup-testnet` y `make test-testnet` en bash, pool de USDC desplegado, `GET /v1/info` desde el manifiesto validado (`PoolDeployment`), tipos de dominio `AccountId`/`ContractId` con `stellar-strkey` 0.0.18 (misma versión que el SDK de SPP).
-- Siguiente: H5 (onboarding y ASP). H7 (web) puede arrancar en paralelo con los tipos.
+- H5 dividido en H5a y H5b (26-oct, decisión de Anouk).
+- H5a (onboarding y ASP sin red) ✅ en `feat/api-onboarding` (26-oct): migración `shield_users` + `asp_events`, reglas puras del KYC/ASP, puerto `AspContract` (prepare → guardar hash → submit → status), servicio idempotente con reanudación y tope de reintentos, endpoints de onboarding, usuarios y admin (`ADMIN_TOKEN` en tiempo constante), logs con plantilla de ruta (sin direcciones). 88 tests, 96 % de líneas.
+- Siguiente: H5b (adaptador Soroban del ASP + prueba en testnet). H7 (web) puede arrancar en paralelo.
 
 ### Riesgos identificados (25-oct)
 1. **Tiempo:** 12 PRs en ~1 día. ~~Plan B del backend~~ descartado en H1.
@@ -616,6 +618,9 @@ Cada una tiene una recomendación. Si Anouk no responde y el PR no puede esperar
 - El pnpm global de la máquina de Anouk es 9.x; el repo fija `pnpm@12.10.1` en `packageManager` y corepack lo usa automáticamente dentro de la carpeta.
 - gitleaks y actionlint no están instalados localmente: correrlos con Docker usando las mismas imágenes del CI.
 - Los targets del `Makefile` cuyo código llega en un PR futuro imprimen "arrives in Hx" en vez de fallar. Cada PR los reemplaza por el comando real.
+- API: consultas SQL en tiempo de ejecución (`sqlx::query_as`, no las macros `query!`), cada una cubierta por tests `#[sqlx::test]`: evita `sqlx-cli` y el caché offline en el CI. `sqlx` 0.9 exige SQL estático: armar consultas con `concat!` y macros, nunca `format!`.
+- ASP: la block-list usa `key = value = llave pública de nota` (convención de la app de SPP). Toda escritura en la block-list invalida las pruebas construidas antes: el worker de H6b debe poder rehacer la prueba y reintentar.
+- ASP: el usuario queda `pending` si la red falla; repetir `POST /v1/onboarding` retoma desde donde quedó. `GET /v1/users/{account}` solo consulta el estado de la transacción en vuelo (nunca envía).
 - API: las migraciones van embebidas (`sqlx::migrate!`), se aplican al arrancar y con `make migrate`; no hace falta `sqlx-cli` hasta que existan consultas con `query!` (entonces: `cargo sqlx prepare` y el chequeo en el CI).
 - API: `sqlx` 0.9 (versión mayor nueva, oct-2026). La API usada (`PgPoolOptions`, `migrate!`, `#[sqlx::test]`) no cambió respecto a 0.8.
 - API: `cargo test` necesita Postgres arriba (`make db-up`) y `DATABASE_URL`; el `Makefile` la toma del `.env`. `#[sqlx::test]` crea una base aislada por test.
