@@ -109,8 +109,9 @@ Requirements: Node 24, pnpm 12, Rust stable, Docker, the [`stellar` CLI](https:/
 cp .env.example .env
 make install
 make db-up
-make setup-testnet        # funds Shield's accounts and deploys the pool (idempotent); copy the
-                          # variables from ~/.local/share/lendara-shield/testnet/testnet.env into .env
+make setup-testnet        # funds Shield's accounts, deploys the pool and initialises the intake
+                          # (idempotent); copy the variables from
+                          # ~/.local/share/lendara-shield/testnet/testnet.env into .env
 make build-pool-cli
 make dev                  # API on :8080, web on http://localhost:3000
 ```

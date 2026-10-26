@@ -21,6 +21,9 @@ pub struct PoolDeployment {
     pub asp_membership: ContractId,
     pub asp_non_membership: ContractId,
     pub pool: ContractId,
+    /// Ledger the pool was deployed in: where its on-chain history (and the
+    /// ASP trees' events) starts.
+    pub deployment_ledger: u32,
     pub asset: ClassicAsset,
     pub gvk_mode: GvkMode,
 }
@@ -106,6 +109,7 @@ impl PoolDeployment {
             asp_membership: manifest.asp_membership,
             asp_non_membership: manifest.asp_non_membership,
             pool: pool.pool_contract_id,
+            deployment_ledger: pool.deployment_ledger,
             asset: ClassicAsset {
                 code,
                 issuer,
@@ -131,6 +135,7 @@ struct Manifest {
 struct ManifestPool {
     pool_contract_id: ContractId,
     token_contract_id: ContractId,
+    deployment_ledger: u32,
     enabled: bool,
     policy_flags: Vec<AspPolicy>,
     asset: ManifestAsset,
@@ -190,6 +195,7 @@ mod tests {
         assert_eq!(deployment.asset.code, "USDC");
         assert_eq!(deployment.asset.issuer.as_str(), USDC_ISSUER);
         assert_eq!(deployment.gvk_mode, GvkMode::Traceable);
+        assert_eq!(deployment.deployment_ledger, 5_388_674);
         Ok(())
     }
 

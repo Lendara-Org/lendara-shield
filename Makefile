@@ -6,7 +6,7 @@ POOL_CLI_DIR := apps/pool-cli
 
 .PHONY: help install dev dev-api dev-web stage-web-sdk db-up db-down migrate setup-testnet \
 	fmt fmt-check lint lint-api lint-pool-cli lint-js lint-openapi typecheck test test-api test-pool-cli \
-	test-js test-web-e2e test-testnet coverage deny codegen build build-api build-pool-cli build-js
+	test-js test-web-e2e init-intake test-testnet coverage deny codegen build build-api build-pool-cli build-js
 
 help: ## List available targets
 	@grep -hE '^[a-z0-9-]+:.*## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*## "}; {printf "  %-15s %s\n", $$1, $$2}'
@@ -76,6 +76,9 @@ test-js: ## Test TS packages
 
 test-web-e2e: ## Smoke test of the built web app in Chromium (`make build-js` first)
 	pnpm --filter @lendara/shield-web test:e2e
+
+init-intake: ## Derive the intake's pool keys and allow-list it if needed (idempotent; needs .env)
+	scripts/init-intake.sh
 
 test-testnet: ## Check the testnet setup on-chain, read-only (needs .env)
 	scripts/verify-testnet.sh

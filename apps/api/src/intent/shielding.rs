@@ -232,7 +232,7 @@ impl ShieldingWorker {
             // Refused outright (e.g. a proof against an ASP root that
             // changed): it is not pending anywhere, so replace it.
             Err(err) => {
-                tracing::warn!(intent_id = %item.intent.id, code = %err.code, "stored pool transaction refused");
+                tracing::warn!(intent_id = %item.intent.id, code = %err.code, message = %err.message, "stored pool transaction refused");
                 self.replace(item, step).await
             }
         }
@@ -274,7 +274,7 @@ impl ShieldingWorker {
     /// again: the next round asks the network about the hash.
     async fn send(&self, item: &WorkItem, tx: &PoolTx) -> Result<(), ShieldingError> {
         if let Err(err) = self.pool.submit(&tx.envelope_xdr).await {
-            tracing::warn!(intent_id = %item.intent.id, tx_hash = %tx.hash, code = %err.code, "pool submit outcome unknown");
+            tracing::warn!(intent_id = %item.intent.id, tx_hash = %tx.hash, code = %err.code, message = %err.message, "pool submit outcome unknown");
         }
         self.schedule(item.intent.id, CHECK_AFTER).await
     }
@@ -335,7 +335,7 @@ impl ShieldingWorker {
 
     /// A failed attempt: back off exponentially and count it.
     async fn retry_later(&self, item: &WorkItem, err: &PoolError) -> Result<(), ShieldingError> {
-        tracing::warn!(intent_id = %item.intent.id, code = %err.code, retryable = err.retryable, "shielding step failed");
+        tracing::warn!(intent_id = %item.intent.id, code = %err.code, message = %err.message, retryable = err.retryable, "shielding step failed");
         let exponent = u32::try_from(item.attempts).unwrap_or(0).min(16);
         let delay = RETRY_BASE
             .saturating_mul(2u32.saturating_pow(exponent))
@@ -346,7 +346,7 @@ impl ShieldingWorker {
 
     /// The network could not be asked: try again soon, not counted.
     async fn check_later(&self, item: &WorkItem, err: &PoolError) -> Result<(), ShieldingError> {
-        tracing::warn!(intent_id = %item.intent.id, code = %err.code, "pool status unknown");
+        tracing::warn!(intent_id = %item.intent.id, code = %err.code, message = %err.message, "pool status unknown");
         self.schedule(item.intent.id, CHECK_AFTER).await
     }
 

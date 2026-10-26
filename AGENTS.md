@@ -74,7 +74,7 @@ lendara-shield/
 ├── packages/api-types/  TypeScript types generated from openapi.yaml
 ├── openapi.yaml         The API contract: SOURCE OF TRUTH
 ├── docs/                Protocol draft, threat model, scenarios, SPP spike, demo script
-├── scripts/             setup-testnet, verify-testnet, stage-web-sdk
+├── scripts/             setup-testnet, init-intake, verify-testnet, stage-web-sdk
 └── Makefile             Every command (make help)
 ```
 
@@ -122,8 +122,8 @@ lendara-shield/
 | Auditor | Global View Key: a **Baby JubJub** keypair (not a Stellar key) from SPP's `tools/gvkey-gen`; its public half is fixed at deploy time | `SHIELD_GVK_KEY_FILE` (path to `{privateKey, publicKey}` JSON, outside the repo) |
 
 - **Asset:** the Lendara sandbox's test USDC (`RAMP_ASSET_ISSUER`), so ramp mode works end to end. The pool needs a SEP-41 token, so `make setup-testnet` deploys (or reuses) its Stellar Asset Contract.
-- **The intake's pool keys** are derived server-side from its own seed and stored in its SDK wallet (`SHIELD_INTAKE_WALLET_PATH`, outside the repo).
-- `make setup-testnet` (`scripts/setup-testnet.sh`, idempotent) creates and funds the operator and intake, adds the trustline, deploys the SAC, generates the GVK and deploys the pool. It writes `~/.local/share/lendara-shield/testnet/testnet.env` (mode 600); copy its variables into `.env`. `make test-testnet` runs read-only checks against testnet.
+- **The intake's pool keys** are derived server-side from its own seed and stored in its SDK wallet (`SHIELD_INTAKE_WALLET_PATH`, outside the repo). The intake's ASP leaf must be in the allow-list like any user's: `make init-intake` (`scripts/init-intake.sh` → `shield-api init-intake`, idempotent) derives the keys if missing and has the operator insert the leaf only if absent. `setup-testnet.sh` and the server's deploy run it; at startup the API checks both and logs an error if the intake is not ready.
+- `make setup-testnet` (`scripts/setup-testnet.sh`, idempotent) creates and funds the operator and intake, adds the trustline, deploys the SAC, generates the GVK, deploys the pool and initialises the intake. It writes `~/.local/share/lendara-shield/testnet/testnet.env` (mode 600); copy its variables into `.env`. `make test-testnet` runs read-only checks against testnet.
 
 ### 6.2 Pool configuration
 
@@ -248,6 +248,7 @@ Before handing over a PR: format, lint, typecheck, tests and build of what chang
 - `sqlx` 0.9 rejects dynamically built SQL: build queries with `concat!` and macros, never `format!`. Queries are runtime-checked and covered by `#[sqlx::test]`.
 - Don't `source .env` in bash: `STELLAR_NETWORK_PASSPHRASE` has spaces and `;`. The `Makefile` loads it correctly.
 - SPP: pin `sdk-v0.2.1` (contracts, crate and npm match); npm's `alpha` tag is stale. Build `pool-cli` in release (the debug prover is slow); the first run downloads circuit artifacts.
+- **A new pool needs the intake initialised** (`make init-intake`): a fresh allow-list does not contain the intake's leaf and a fresh wallet has no keys. Otherwise every shielding attempt fails (`sdk: no privacy keys found` or `not_allowed: … RegisterAtASP`) and funded intents end in `error` with the USDC in the intake. The allow-list contract only stores its root, so membership is read from its `LeafAdded` events since the pool's `deploymentLedger`.
 - RPC history window: proving needs the pool's full event history and the public RPC keeps ~7 days. Past that, run SPP's `tools/bootnode` or redeploy.
 - Next.js 16.0–16.4.0 has critical RCEs: the web pins a patched version.
 - MSW 3 renamed `onUnhandledRequest` to `onUnhandledFrame`. In Playwright, look for alerts inside `main` (Next's route announcer is also `role="alert"`).
