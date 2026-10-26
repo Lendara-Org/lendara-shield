@@ -23,7 +23,7 @@ export function ConnectGate({
   if (!wallet) {
     return (
       <Card title={t.connect.title}>
-        <p className="mb-4 text-sm text-gray">{t.connect.intro}</p>
+        <p className="mb-6 max-w-3xl text-lg leading-8 text-gray">{t.connect.intro}</p>
         <div className="space-y-3">
           <Button onClick={() => void connect()} busy={connecting} disabled={!info}>
             {t.connect.button}

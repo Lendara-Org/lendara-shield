@@ -77,7 +77,7 @@ function Onboarding({ wallet }: { wallet: ShieldWallet }) {
   if (user) {
     return (
       <Card title={t.onboard.statusTitle}>
-        <dl className="mb-4 grid grid-cols-[8rem_1fr] gap-y-2 text-sm">
+        <dl className="mb-4 grid grid-cols-[minmax(0,8rem)_minmax(0,1fr)] gap-y-2 text-base">
           <dt className="text-gray">{t.onboard.kyc}</dt>
           <dd className="capitalize">{t.onboard.kycStatus[user.kyc_status]}</dd>
           <dt className="text-gray">{t.onboard.allowList}</dt>
@@ -102,7 +102,7 @@ function Onboarding({ wallet }: { wallet: ShieldWallet }) {
           </div>
         )}
         {user.asp_status === "allowed" && (
-          <Link href={href("/deposit")} className="mt-4 inline-block text-sm font-medium underline">
+          <Link href={href("/deposit")} className="mt-4 inline-block text-base font-medium underline">
             {t.onboard.continue}
           </Link>
         )}
@@ -112,12 +112,12 @@ function Onboarding({ wallet }: { wallet: ShieldWallet }) {
 
   return (
     <Card title={t.onboard.registerTitle}>
-      <ol className="mb-5 list-decimal space-y-1 pl-5 text-sm text-gray">
+      <ol className="mb-6 max-w-3xl list-decimal space-y-3 pl-5 text-lg leading-8 text-gray">
         {t.onboard.steps.map((step) => (
           <li key={step}>{step}</li>
         ))}
       </ol>
-      <div className="space-y-4">
+      <div className="space-y-6">
         <Field label={t.onboard.scenario} hint={t.onboard.scenarioHint}>
           {(control) => (
             <select

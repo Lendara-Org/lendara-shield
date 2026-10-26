@@ -34,13 +34,13 @@ export function Comparison({ tx, asset }: { tx: AuditTransaction; asset: string 
   const current = view && "tx" in view && view.tx.tx_hash === hash ? view.tx : null;
 
   return (
-    <div className="grid gap-4 md:grid-cols-2">
+    <div className="grid gap-8 xl:grid-cols-2">
       <Card title={a.explorerTitle}>
         {!hash && <Notice>{a.unresolved}</Notice>}
         {hash && view && "error" in view && <Notice tone="error">{view.error}</Notice>}
-        {hash && !current && !(view && "error" in view) && <p className="text-sm text-gray">{a.loading}</p>}
+        {hash && !current && !(view && "error" in view) && <p className="text-base text-gray">{a.loading}</p>}
         {current && (
-          <dl className="space-y-3 text-sm">
+          <dl className="space-y-3 text-base">
             <Row label={a.signedBy}>
               <span className="font-mono">{shorten(current.source_account, 6, 4)}</span>
             </Row>
@@ -49,7 +49,7 @@ export function Comparison({ tx, asset }: { tx: AuditTransaction; asset: string 
             {otherVisible(current).length > 0 && (
               <Row label={a.alsoVisible}>
                 <span className="font-mono">{otherVisible(current).map((a) => shorten(a, 6, 4)).join(", ")}</span>
-                <span className="block text-xs text-gray">{a.issuerNote}</span>
+                <span className="block text-sm text-gray">{a.issuerNote}</span>
               </Row>
             )}
             <Row label={a.transaction}>
@@ -60,7 +60,7 @@ export function Comparison({ tx, asset }: { tx: AuditTransaction; asset: string 
       </Card>
 
       <Card title={a.auditorTitle} className="border-ink/30">
-        <dl className="space-y-3 text-sm">
+        <dl className="space-y-3 text-base">
           <Row label={a.operation}>
             {a.kinds[tx.kind]} · {a.ledger(tx.ledger)}
           </Row>
@@ -71,7 +71,7 @@ export function Comparison({ tx, asset }: { tx: AuditTransaction; asset: string 
             <Notes tx={tx} notes={tx.outputs} asset={asset} empty={tx.kind === "withdraw" ? a.publicWithdrawal : "—"} />
           </Row>
         </dl>
-        <p className="mt-4 text-xs text-gray">{a.gvkNote}</p>
+        <p className="mt-4 text-sm text-gray">{a.gvkNote}</p>
       </Card>
     </div>
   );
@@ -79,7 +79,7 @@ export function Comparison({ tx, asset }: { tx: AuditTransaction; asset: string 
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="grid grid-cols-[7.5rem_1fr] gap-2">
+    <div className="break-words grid grid-cols-[minmax(0,7.5rem)_minmax(0,1fr)] gap-2">
       <dt className="text-gray">{label}</dt>
       <dd>{children}</dd>
     </div>

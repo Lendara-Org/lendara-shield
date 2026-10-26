@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@lendara/shield-api-types": "workspace:*",
+    "@paper-design/shaders-react": "0.0.81",
     "@stellar/freighter-api": "6.0.1",
     "next": "16.4.3",
     "react": "19.3.0",

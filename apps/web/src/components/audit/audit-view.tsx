@@ -41,7 +41,7 @@ export function AuditView() {
   if (!txs) {
     return (
       <Card title={a.accessTitle}>
-        <form onSubmit={(e) => void unlock(e)} className="space-y-4">
+        <form onSubmit={(e) => void unlock(e)} className="max-w-3xl space-y-6">
           <Field label={a.token} hint={a.tokenHint}>
             {(control) => (
               <input
@@ -75,11 +75,11 @@ export function AuditView() {
                 type="button"
                 onClick={() => setSelected(i)}
                 aria-current={i === selected}
-                className="grid w-full grid-cols-[9rem_1fr_auto] gap-3 py-2 text-left text-sm hover:bg-paper aria-[current=true]:font-semibold"
+                className="grid w-full grid-cols-[minmax(0,1fr)_auto] gap-3 py-4 sm:grid-cols-[minmax(0,11rem)_minmax(0,1fr)_auto] text-left text-base hover:bg-paper aria-[current=true]:font-semibold"
               >
                 <span>{a.kinds[tx.kind]}</span>
-                <span className="font-mono text-gray">{tx.tx_hash ? shorten(tx.tx_hash) : a.ledger(tx.ledger)}</span>
-                <span className="font-mono">
+                <span className="min-w-0 break-all font-mono text-gray">{tx.tx_hash ? shorten(tx.tx_hash) : a.ledger(tx.ledger)}</span>
+                <span className="col-span-2 font-sans tabular-nums sm:col-span-1">
                   {movedAmount(tx)} {asset}
                 </span>
               </button>
