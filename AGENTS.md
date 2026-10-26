@@ -51,7 +51,7 @@ Lendara Shield is the reference implementation of the **Shield Protocol**: a com
 
 1. The user connects Freighter in the web; the SPP browser SDK derives their pool keys. The web sends Shield the public keys, the ASP leaf (`deriveAspUserLeaf`) and a SEP-53 signature by the account over them. The user does **not** register in SPP's public key registry (that would publish their address).
 2. Simulated KYC → if approved, Shield (operator key) inserts the leaf into the allow-list.
-3. `POST /v1/intents` → SEP-10 against the anchor (intake + user memo) → SEP-24 interactive deposit to the intake with the intent's memo → the interactive URL.
+3. `POST /v1/intents`, signed by the account (SEP-53 over the amount, a single-use `request_id` and `issued_at`) → SEP-10 against the anchor (intake + user memo) → SEP-24 interactive deposit to the intake with the intent's memo → the interactive URL (only in this response: it carries the anchor's one-time token).
 4. The user completes the anchor's widget; the anchor pays USDC to the intake with the memo.
 5. The watcher records the payment (Horizon). The intent is funded **only** with the payment the anchor reports as its own (`stellar_transaction_id`), checking asset code and issuer.
 6. The worker deposits into the pool from the intake (`ext_amount > 0`), then transfers privately to the user's keys (`ext_amount = 0`).
@@ -133,7 +133,7 @@ Own SPP pool for the sandbox USDC: **`allowlist-blocklist` + `gvk-traceable`**, 
 
 - `shield_users`: account, `sep10_memo` (SEP-10 customer memo), note and encryption public keys, ASP leaf, KYC scenario/status, ASP status.
 - `asp_events`: on-chain ASP writes (allow, block, unblock) with their hashes.
-- `intents` + `intent_events`: mode, status, fiat amount, asset amount (`numeric` read as text), anchor transaction id, **random 63-bit `memo`** (SEP-24 `id` memo), intake payment hash, the signed envelope, hash and sequence of each pool transaction, retry scheduling.
+- `intents` + `intent_events`: mode, status, fiat amount, asset amount (`numeric` read as text), anchor transaction id, **random 63-bit `memo`** (SEP-24 `id` memo), the signed request's `request_id` (`UNIQUE`: replay guard), when the anchor first reported `completed` without a confirmed payment (`anchor_completed_at`), intake payment hash, the signed envelope, hash and sequence of each pool transaction, retry scheduling.
 - `intake_payments`: every incoming payment to the intake, matched or not (unmatched = money in custody for review); `watcher_cursors`.
 
 Statuses and enums are `text` + `CHECK`; constraints (`UNIQUE`, `CHECK`, `FOREIGN KEY`) back the Rust validation.
@@ -149,10 +149,12 @@ transferring ──(private transfer confirmed)──► completed
 
 Error exits:
   created ──► error                       (the anchor could not start the deposit: POST /v1/intents → 502)
-  created | awaiting_anchor ──► rejected  (exists in the machine; not triggered yet when a user is blocked mid-intent)
+  created | awaiting_anchor ──► rejected  (the ASP confirmed a block of the user)
   awaiting_anchor ──► expired             (the anchor reports expired)
-  awaiting_anchor ──► error               (the anchor failed, e.g. KYC rejected in the sandbox)
-  funds_received | shielding | transferring ──► error  (with a message; needs manual review)
+  awaiting_anchor ──► error               (the anchor failed, e.g. KYC rejected in the sandbox; or it reported
+                                           `completed` and its payment was not confirmed within 15 minutes)
+  funds_received | shielding | transferring ──► error  (with a message; needs manual review; also when the
+                                                       user is blocked before the deposit or the transfer)
 ```
 
 Once funds are in Shield's custody (`funds_received` onwards) an intent only ends `completed` or `error`. Implemented in **one module** (`apps/api/src/intent/state.rs`); an invalid transition is an error, every transition writes an `intent_events` row in the same database transaction (`UPDATE … WHERE status = from`).
@@ -257,7 +259,9 @@ Before handing over a PR: format, lint, typecheck, tests and build of what chang
 
 **Hackathon (done, Oct 25–26 2026):** scaffold, SPP spike, API skeleton, OpenAPI contract, testnet pool, onboarding and ASP, intents and anchor client, pool CLI, watcher and shielding worker, web, audit panel, docs, and security fixes (anchor-confirmed funding, signed onboarding). Ramp mode completes on testnet with the user's address appearing nowhere on-chain; hashes are in the README.
 
-**Known gaps:** `GET /v1/users/{account}` is public (threat model, limit 9); `rejected` is not triggered when a user is blocked mid-intent; deposit amount/timing correlation (P4).
+**Security fixes after the hackathon:** signed, single-use intent requests; the interactive URL only in the creation response; blocked users stopped mid-intent; a bounded wait for unconfirmed anchor payments; separate ramp and shielding loops; per-IP rate limit; ASP routes with their own timeout; a CSP; startup checks on keys and URLs. See [SECURITY.md](SECURITY.md).
+
+**Known gaps:** `GET /v1/users/{account}` is public (threat model, limit 9; needs sessions, P2); deposit amount/timing correlation (P4).
 
 **After the hackathon (suggested order):**
 
