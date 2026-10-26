@@ -20,7 +20,7 @@ use crate::{
     ports::{AnchorClient, AnchorError, StartDeposit},
     store::{
         StoreError,
-        intents::{self, Changes, Intent, NewIntent, TransitionError},
+        intents::{self, Changes, InsertIntentError, Intent, NewIntent, TransitionError},
         users,
     },
 };
@@ -30,6 +30,8 @@ pub struct CreateIntent {
     pub stellar_account: AccountId,
     pub fiat_currency: FiatCurrency,
     pub amount: DecimalAmount,
+    /// Single-use id of the request, from the account's signed message.
+    pub request_id: Uuid,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -42,6 +44,9 @@ pub enum IntentError {
     UserNotAllowed,
     #[error("intent not found")]
     NotFound,
+    /// The signed request already created an intent.
+    #[error("the request was already used")]
+    Replayed,
     /// The intent was stored and moved to `error`.
     #[error("the anchor could not start the deposit")]
     AnchorUnavailable { intent_id: Uuid },
@@ -81,23 +86,31 @@ impl IntentService {
         let user = users::find_by_account(&self.db, &input.stellar_account)
             .await?
             .ok_or(IntentError::UserNotFound)?;
-        // Only keys the pool accepts can receive the private transfer.
-        if user.asp_status != AspStatus::Allowed {
-            return Err(IntentError::UserNotAllowed);
-        }
 
         let mut tx = self.db.begin().await?;
+        // Only keys the pool accepts can receive the private transfer. Read
+        // with the user's row locked: a block confirmed by the ASP (which
+        // takes the same lock and rejects unfunded intents) either happens
+        // before and refuses this intent, or after and rejects it.
+        if users::lock_by_id(&mut *tx, user.id).await?.asp_status != AspStatus::Allowed {
+            return Err(IntentError::UserNotAllowed);
+        }
         let intent = intents::insert_created(
             &mut tx,
             &NewIntent {
                 user_id: user.id,
+                request_id: input.request_id,
                 fiat_currency: input.fiat_currency.clone(),
                 amount_fiat: input.amount,
                 asset_code: self.asset_code.clone(),
                 anchor_home_domain: anchor.home_domain().to_owned(),
             },
         )
-        .await?;
+        .await
+        .map_err(|err| match err {
+            InsertIntentError::Replayed => IntentError::Replayed,
+            InsertIntentError::Store(err) => IntentError::Store(err),
+        })?;
         tx.commit().await?;
         tracing::info!(intent_id = %intent.id, "intent created");
 
@@ -108,6 +121,17 @@ impl IntentService {
             deposit_memo: intent.memo,
         };
         let mut conn = self.db.acquire().await?;
+        // While the anchor answers, the ASP may block the user: that rejects
+        // this `created` intent (the only other writer of that status), so a
+        // stale transition below means "not allowed", never a server error.
+        // The user then never gets the interactive URL.
+        let rejected_meanwhile = |err: TransitionError| match err {
+            TransitionError::Stale(_) => {
+                tracing::info!(intent_id = %intent.id, "intent rejected while the anchor answered");
+                IntentError::UserNotAllowed
+            }
+            other => other.into(),
+        };
         match anchor.start_deposit(&request).await {
             Ok(deposit) => {
                 let intent = intents::transition(
@@ -121,7 +145,8 @@ impl IntentService {
                         ..Changes::default()
                     },
                 )
-                .await?;
+                .await
+                .map_err(rejected_meanwhile)?;
                 tracing::info!(intent_id = %intent.id, "anchor deposit started");
                 Ok(intent)
             }
@@ -141,7 +166,8 @@ impl IntentService {
                         ..Changes::default()
                     },
                 )
-                .await?;
+                .await
+                .map_err(rejected_meanwhile)?;
                 Err(IntentError::AnchorUnavailable {
                     intent_id: intent.id,
                 })

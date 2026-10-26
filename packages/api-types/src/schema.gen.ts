@@ -103,7 +103,9 @@ export interface paths {
          * Start a ramp deposit
          * @description Creates an intent and a SEP-24 interactive deposit at the anchor with
          *     `account` = Shield's intake account and `memo` = the intent's numeric memo (`memo_type: id`).
-         *     Open `interactive_url` for the user, then poll `GET /v1/intents/{id}` every 2–3 seconds.
+         *     Only the account's owner can do this: the request carries its SEP-53 signature over the amount
+         *     and a single-use `request_id`. Open `interactive_url` for the user (only this response carries
+         *     it), then poll `GET /v1/intents/{id}` every 2–3 seconds.
          */
         post: operations["createIntent"];
         delete?: never;
@@ -363,6 +365,36 @@ export interface components {
              *     outcome (approved, KYC rejected, payment not received, delayed) is chosen in the widget.
              */
             amount: components["schemas"]["DecimalAmount"];
+            /**
+             * Format: uuid
+             * @description Chosen by the client, new for every request. A reused one answers `409 request_replayed`.
+             */
+            request_id: string;
+            /**
+             * Format: int64
+             * @description Unix seconds when the request was signed. It must be at most 300 seconds old and at most
+             *     60 seconds ahead of the server's clock, or the request answers `400 request_expired`.
+             */
+            issued_at: number;
+            /**
+             * @description Proof that the caller controls `stellar_account`: its [SEP-53](https://github.com/stellar/stellar-protocol/blob/master/ecosystem/sep-0053.md)
+             *     signature (base64, as Freighter's `signMessage` returns it) of this exact text, with
+             *     `fiat_currency` and `amount` exactly as sent, `request_id` in its lowercase hyphenated form
+             *     (`8-4-4-4-12` hex digits, whatever form was sent) and lines separated by `\n`:
+             *
+             *     ```
+             *     Lendara Shield intent
+             *     network: testnet
+             *     account: <stellar_account>
+             *     fiat_currency: <fiat_currency>
+             *     amount: <amount>
+             *     request_id: <request_id>
+             *     issued_at: <issued_at>
+             *     ```
+             *
+             *     A wrong signature answers `400 invalid_signature`.
+             */
+            signature: string;
         };
         /**
          * @description Happy path: `created` → `awaiting_anchor` → `funds_received` → `shielding` → `transferring` → `completed`.
@@ -384,7 +416,9 @@ export interface components {
             amount_asset: components["schemas"]["DecimalAmount"] | null;
             /**
              * Format: uri
-             * @description Anchor's SEP-24 interactive URL to open for the user. `null` once the anchor step is over.
+             * @description Anchor's SEP-24 interactive URL to open for the user. It carries the anchor's one-time session
+             *     token, so only the `POST /v1/intents` response includes it; `GET /v1/intents/{id}` always
+             *     answers `null`.
              */
             interactive_url: string | null;
             /** @description On-chain hashes, filled as each step completes. */
@@ -441,7 +475,9 @@ export interface components {
     responses: {
         /**
          * @description The request is malformed. Codes: `invalid_request` (unparseable body or parameter),
-         *     `invalid_account`, `invalid_key`, `invalid_amount`, `invalid_currency`.
+         *     `invalid_account`, `invalid_key`, `invalid_amount`, `invalid_currency`, `invalid_signature`
+         *     (not the account's SEP-53 signature of the request), `request_expired` (a signed request's
+         *     `issued_at` is too far from the server's time).
          */
         BadRequest: {
             headers: {
@@ -454,6 +490,20 @@ export interface components {
                  *       "message": "stellar_account must be a G... address"
                  *     }
                  */
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /**
+         * @description `rate_limited`: this client IP started too many onboardings and intents in the last minute
+         *     (`RATE_LIMIT_PER_MINUTE`). Retry after the seconds in `Retry-After`.
+         */
+        TooManyRequests: {
+            headers: {
+                /** @description Seconds until the client may try again. */
+                "Retry-After"?: number;
+                [name: string]: unknown;
+            };
+            content: {
                 "application/json": components["schemas"]["Error"];
             };
         };
@@ -604,6 +654,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
+            429: components["responses"]["TooManyRequests"];
         };
     };
     getUser: {
@@ -666,6 +717,7 @@ export interface operations {
             /**
              * @description - `ramp_mode_disabled`: `RAMP_ANCHOR_HOME_DOMAIN` is not configured.
              *     - `user_not_allowed`: the user's key is not in the allow-list (KYC rejected, pending or blocked).
+             *     - `request_replayed`: this `request_id` already created an intent; sign a new request.
              */
             409: {
                 headers: {
@@ -675,6 +727,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
+            429: components["responses"]["TooManyRequests"];
             /** @description `anchor_unavailable`: the anchor failed SEP-1, SEP-10 or SEP-24. */
             502: {
                 headers: {

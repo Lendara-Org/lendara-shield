@@ -7,6 +7,7 @@ use axum::{
 };
 use secrecy::{ExposeSecret, SecretString};
 use serde::de::DeserializeOwned;
+use sha2::{Digest, Sha256};
 
 use crate::{error::ApiError, state::AppState};
 
@@ -75,10 +76,15 @@ fn bearer(parts: &Parts, expected: Option<&SecretString>) -> Result<(), ApiError
     }
 }
 
-/// Compares without short-circuiting on the first differing byte, so the
-/// response time does not reveal how much of the token was right.
+/// Compares SHA-256 digests without short-circuiting: both sides always
+/// have 32 bytes, so the response time reveals neither how much of the token
+/// was right nor how long it is.
 fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
-    a.len() == b.len() && a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
+    let (a, b) = (Sha256::digest(a), Sha256::digest(b));
+    a.iter()
+        .zip(b.iter())
+        .fold(0u8, |acc, (x, y)| acc | (x ^ y))
+        == 0
 }
 
 #[cfg(test)]
@@ -91,5 +97,16 @@ mod tests {
         assert!(!constant_time_eq(b"secret-token", b"secret-tokeN"));
         assert!(!constant_time_eq(b"secret-token", b"secret"));
         assert!(!constant_time_eq(b"", b"x"));
+        assert!(constant_time_eq(b"", b""));
+    }
+
+    #[test]
+    fn a_prefix_or_an_extension_of_the_token_is_refused() {
+        let token = b"0123456789abcdef0123456789abcdef";
+        assert!(!constant_time_eq(&token[..31], token));
+        assert!(!constant_time_eq(
+            b"0123456789abcdef0123456789abcdef0",
+            token
+        ));
     }
 }

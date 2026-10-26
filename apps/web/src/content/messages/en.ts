@@ -80,6 +80,8 @@ export const en = {
       blocked: "Blocked: approved, then frozen by the ASP",
     },
     register: "Derive keys and register",
+    stillPending: "Still pending. If the network was unavailable, the allow-list update may not have been sent: retry it (Freighter signs again).",
+    retry: "Retry the registration",
   },
   deposit: {
     title: "Deposit",

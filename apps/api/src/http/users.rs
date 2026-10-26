@@ -173,6 +173,7 @@ impl From<AspServiceError> for ApiError {
                 code: "asp_update_in_flight",
                 message: "An ASP update for this user is still in flight. Retry shortly.".into(),
             },
+            AspServiceError::IntentTransition(err) => Self::Internal(Box::new(err)),
             AspServiceError::Store(err) => Self::Internal(Box::new(err)),
         }
     }

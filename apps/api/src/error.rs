@@ -29,6 +29,9 @@ pub enum ApiError {
     /// The request conflicts with the current state.
     #[error("{message}")]
     Conflict { code: &'static str, message: String },
+    /// The client sent too many requests; retry after the given seconds.
+    #[error("rate limited")]
+    TooManyRequests { retry_after_secs: u64 },
     /// An upstream we call (the anchor) failed.
     #[error("{message}")]
     BadGateway { code: &'static str, message: String },
@@ -58,6 +61,7 @@ impl ApiError {
             | Self::Conflict { code, .. }
             | Self::BadGateway { code, .. } => code,
             Self::Unauthorized => "unauthorized",
+            Self::TooManyRequests { .. } => "rate_limited",
             Self::Unavailable(_) => "service_unavailable",
             Self::Internal(_) => "internal_error",
         }
@@ -70,6 +74,7 @@ impl ApiError {
             Self::BadRequest { .. } => StatusCode::BAD_REQUEST,
             Self::Unauthorized => StatusCode::UNAUTHORIZED,
             Self::Conflict { .. } => StatusCode::CONFLICT,
+            Self::TooManyRequests { .. } => StatusCode::TOO_MANY_REQUESTS,
             Self::BadGateway { .. } => StatusCode::BAD_GATEWAY,
             Self::Unavailable(_) => StatusCode::SERVICE_UNAVAILABLE,
             Self::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
@@ -85,6 +90,9 @@ impl ApiError {
             | Self::Conflict { message, .. }
             | Self::BadGateway { message, .. } => message.clone(),
             Self::Unauthorized => "Missing or invalid bearer token.".to_owned(),
+            Self::TooManyRequests { retry_after_secs } => {
+                format!("Too many requests. Try again in {retry_after_secs} seconds.")
+            }
             Self::Unavailable(_) => "A dependency is temporarily unavailable.".to_owned(),
             Self::Internal(_) => "An unexpected error occurred.".to_owned(),
         }
@@ -103,11 +111,21 @@ impl IntoResponse for ApiError {
         if status.is_server_error() {
             tracing::error!(error = %self, code = self.code(), "request failed");
         }
+        let retry_after = match &self {
+            Self::TooManyRequests { retry_after_secs } => Some(*retry_after_secs),
+            _ => None,
+        };
         let body = ErrorBody {
             error: self.code(),
             message: self.public_message(),
         };
-        (status, Json(body)).into_response()
+        let mut response = (status, Json(body)).into_response();
+        if let Some(secs) = retry_after {
+            response
+                .headers_mut()
+                .insert(axum::http::header::RETRY_AFTER, secs.into());
+        }
+        response
     }
 }
 

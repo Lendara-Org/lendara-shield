@@ -7,8 +7,9 @@
 //!   while it may still land (until its `valid_until` time bound passes);
 //! - at most one update per user is in flight (unique index in the DB).
 //!
-//! Chain failures do not fail the request: the user stays `pending` and the
-//! next onboarding call (or `GET /v1/users`) picks up where it stopped.
+//! Chain failures do not fail the request: the user stays `pending`. The next
+//! onboarding call picks up where it stopped; `GET /v1/users` only settles an
+//! update already in flight (reads never send), so the web offers a retry.
 
 use std::{sync::Arc, time::Duration};
 
@@ -17,16 +18,25 @@ use sqlx::PgPool;
 use super::rules::{self, AspAction, AspStatus, KycScenario, TransitionError};
 use crate::{
     domain::{AccountId, PoolField, TxHash},
+    intent::IntentStatus,
     ports::{AspContract, ChainError, Clock, TxStatus},
     store::{
         StoreError,
         asp_events::{self, RecordError, SubmittedEvent},
+        intents::{self, Changes},
         users::{self, InsertUserError, NewUser, ShieldUser},
     },
 };
 
-/// How long a request waits for an ASP transaction to land.
-const CONFIRM_TIMEOUT: Duration = Duration::from_secs(30);
+/// Message of an intent rejected because the ASP blocked its user.
+pub const BLOCKED_INTENT_MESSAGE: &str =
+    "The account was blocked by the ASP before the anchor's payment reached Shield.";
+
+/// How long one request may wait for its ASP transactions to land, in
+/// total (not per step). A transaction still unsettled after that stays
+/// stored and is picked up by a later read or onboarding call. The HTTP
+/// timeout of the ASP routes covers it (`http::ASP_REQUEST_TIMEOUT`).
+pub const CONFIRM_TIMEOUT: Duration = Duration::from_secs(30);
 const POLL_INTERVAL: Duration = Duration::from_secs(1);
 /// New transactions one request may build after failures, so a network that
 /// keeps rejecting cannot loop forever.
@@ -68,6 +78,8 @@ pub enum AspServiceError {
     Transition(#[from] TransitionError),
     #[error("an ASP update is already in flight for this user")]
     InFlight,
+    #[error(transparent)]
+    IntentTransition(#[from] intents::TransitionError),
     #[error(transparent)]
     Store(#[from] StoreError),
 }
@@ -137,7 +149,7 @@ impl AspService {
             },
         };
 
-        self.settle_onboarding(&user).await?;
+        self.settle_onboarding(&user, self.deadline()).await?;
         let view = self.view(&input.stellar_account).await?;
         Ok(if created {
             Onboarded::Created(view)
@@ -181,7 +193,7 @@ impl AspService {
             .into());
         }
         rules::check_transition(user.asp_status, action)?;
-        self.run(&user, action).await?;
+        self.run(&user, action, self.deadline()).await?;
         self.view(account).await
     }
 
@@ -221,14 +233,23 @@ impl AspService {
 
     /// Drives the onboarding actions still owed, in order, stopping at the
     /// first one that does not settle within this request.
-    async fn settle_onboarding(&self, user: &ShieldUser) -> Result<(), AspServiceError> {
+    /// When the current request stops waiting for the chain.
+    fn deadline(&self) -> tokio::time::Instant {
+        tokio::time::Instant::now() + self.confirm_timeout
+    }
+
+    async fn settle_onboarding(
+        &self,
+        user: &ShieldUser,
+        deadline: tokio::time::Instant,
+    ) -> Result<(), AspServiceError> {
         if user.asp_status != AspStatus::Pending {
             return Ok(());
         }
         let mut attempts = 0;
         loop {
             if let Some(event) = asp_events::find_submitted(&self.db, user.id).await? {
-                match self.wait_for(user, &event).await? {
+                match self.wait_for(user, &event, deadline).await? {
                     Drive::Confirmed | Drive::NotNeeded | Drive::Failed => continue,
                     Drive::Unsettled => return Ok(()),
                 }
@@ -239,12 +260,17 @@ impl AspService {
             let Some(&next) = remaining.first() else {
                 return Ok(());
             };
+            // Out of time: the next action is left for a later call rather
+            // than sent at the end of a request that is about to give up.
+            if tokio::time::Instant::now() >= deadline {
+                return Ok(());
+            }
             if attempts == MAX_ATTEMPTS_PER_REQUEST {
                 tracing::warn!(user_id = %user.id, action = %next, "ASP update still failing; leaving user pending");
                 return Ok(());
             }
             attempts += 1;
-            match self.run(user, next).await {
+            match self.run(user, next, deadline).await {
                 Ok(Drive::Confirmed | Drive::NotNeeded | Drive::Failed) => {}
                 Ok(Drive::Unsettled) | Err(AspServiceError::InFlight) => return Ok(()),
                 Err(err) => return Err(err),
@@ -253,7 +279,12 @@ impl AspService {
     }
 
     /// Prepares, records, sends and waits for one ASP update.
-    async fn run(&self, user: &ShieldUser, action: AspAction) -> Result<Drive, AspServiceError> {
+    async fn run(
+        &self,
+        user: &ShieldUser,
+        action: AspAction,
+        deadline: tokio::time::Instant,
+    ) -> Result<Drive, AspServiceError> {
         let prepared = match self.chain.prepare(action, &user.asp_keys()).await {
             Ok(prepared) => prepared,
             Err(err) => {
@@ -305,7 +336,7 @@ impl AspService {
             }
         }
 
-        self.wait_for(user, &event).await
+        self.wait_for(user, &event, deadline).await
     }
 
     /// Whether `action` is still needed for the locked `current` row:
@@ -330,8 +361,8 @@ impl AspService {
         &self,
         user: &ShieldUser,
         event: &SubmittedEvent,
+        deadline: tokio::time::Instant,
     ) -> Result<Drive, AspServiceError> {
-        let deadline = tokio::time::Instant::now() + self.confirm_timeout;
         loop {
             match self.check_once(user, event).await? {
                 Drive::Unsettled if tokio::time::Instant::now() < deadline => {
@@ -392,6 +423,25 @@ impl AspService {
         };
         let status = rules::status_after(event.action, remaining);
         users::set_asp_status(&mut *tx, user.id, status).await?;
+        // A frozen key gets no new deposits: intents that hold no funds yet
+        // end here. Funded ones are stopped by the shielding worker, which
+        // never transfers to a key that is not allowed.
+        if status == AspStatus::Blocked {
+            for (intent_id, from) in intents::lock_unfunded_of_user(&mut tx, user.id).await? {
+                intents::transition(
+                    &mut tx,
+                    intent_id,
+                    from,
+                    IntentStatus::Rejected,
+                    Changes {
+                        message: Some(BLOCKED_INTENT_MESSAGE.to_owned()),
+                        ..Changes::default()
+                    },
+                )
+                .await?;
+                tracing::info!(%intent_id, "intent rejected: the user's key was blocked");
+            }
+        }
         tx.commit().await?;
         tracing::info!(user_id = %user.id, action = %event.action, tx_hash = %event.tx_hash, %status, "ASP update confirmed");
         Ok(())

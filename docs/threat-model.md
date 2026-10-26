@@ -18,11 +18,15 @@ What Lendara Shield hides, from whom, and the limits we know about. This is a ha
 |---|---|---|
 | Users' spending keys | Only in the user's browser (derived from a Freighter signature, kept in the SDK's browser storage) | Never sent to Shield; Shield only receives public keys and the ASP leaf |
 | Global View Key (auditor) | A file on Shield's server (`SHIELD_GVK_KEY_FILE`) | Only passed to the auditor's `pool-cli` process; never to the shielding worker, the browser or logs; the audit endpoint needs `AUDITOR_TOKEN` (constant-time check) |
-| Operator key (pool admin, ASP) | Server environment | Separate from the omnibus and auditor keys; admin endpoints need `ADMIN_TOKEN` |
+| Operator key (pool admin, ASP) | Server environment | Separate from the omnibus and auditor keys (the API refuses to start if the operator and omnibus seeds are equal); admin endpoints need `ADMIN_TOKEN` |
 | Omnibus (intake) key and its pool wallet | Server environment and an SQLite wallet outside the repo | Separate key; `pool-cli` runs with an empty environment plus only what it needs |
 | Funds in custody | The omnibus account, between the anchor's payment and the private transfer | Idempotent worker (hash stored before sending, never re-prepared while it may have landed); repeated failures stop in `error` for manual review |
 | The user ↔ key relation | Shield's database | Never in logs: logs carry intent ids and route templates, never "address + amount" |
 | An account's onboarding | `POST /v1/onboarding` | The request carries the account's SEP-53 signature (Freighter `signMessage`) over the exact keys and leaf, so nobody can attach their keys to someone else's account |
+| Starting a deposit | `POST /v1/intents` | The request carries the account's SEP-53 signature over the currency, the amount, a single-use `request_id` and `issued_at` (at most 5 minutes old), so nobody else can open deposits at the anchor in a user's name, and a captured request cannot be replayed |
+| The anchor's widget session | The SEP-24 interactive URL (it carries the anchor's one-time token) | Returned only to the signed request that created the intent; `GET /v1/intents/{id}` never includes it |
+| Shield's operator funds and the anchor | Onboarding (on-chain ASP writes) and intent creation (anchor deposits) | Per-client-IP rate limit (`RATE_LIMIT_PER_MINUTE`, default 20) |
+| A blocked user's money | Intents of a user the ASP blocks | Unfunded intents end `rejected` when the block is confirmed; a funded one is stopped before its deposit, its transfer or a rebuilt transfer, and ends `error` with the funds in Shield's custody, never sent to the frozen key |
 | Funding an intent | The watcher and the anchor sync | Intent memos are random (63 bits). A payment with an intent's memo only funds it if the anchor reports that very transaction (`stellar_transaction_id`); anything else waits for review, so dust sent with someone's memo cannot hijack their deposit |
 
 ## Known limits (said before anyone asks)
@@ -35,9 +39,10 @@ What Lendara Shield hides, from whom, and the limits we know about. This is a ha
 6. **Shield and the auditor are trusted parties.** Shield knows which account owns which keys (it is the ASP); the auditor can decrypt everything. That is the compliance trade-off of a permissioned pool. Splitting the roles across independent parties is future work.
 7. **Unaudited, developer-preview contracts.** Stellar Private Payments `sdk-v0.2.1`. The pool admin is a single key (no multisig) on testnet.
 8. **History window.** Proving needs the pool's full event history; the public RPC keeps about 7 days. Without SPP's bootnode, a pool deployed on 26 October can be used until about 2 November.
-9. **`GET /v1/users/{account}` is public.** It tells anyone whether an account onboarded with Shield, its KYC and allow-list status, and the hash of its allow-list insertion: the same "this address uses the pool" signal we avoided by not using SPP's public key registry. Fix (not built yet): require the account's signature (or a session from it) to read its status.
-10. **Browser trust.** The circuit lock is pinned when the web app is built, so circuit artifacts served next to it are checked against it, but users still trust the app and whoever serves it.
+9. **`GET /v1/users/{account}` is public.** It tells anyone whether an account onboarded with Shield, its KYC and allow-list status, and the hash of its allow-list insertion: the same "this address uses the pool" signal we avoided by not using SPP's public key registry. Fix (not built yet): require a session derived from the account's signature to read its status. A signature on every read is not an option: the web polls this endpoint while onboarding is pending, so it needs sessions first (P2). `GET /v1/intents/{id}` is also unauthenticated, but needs the intent's random id and returns no account and no interactive URL.
+10. **Browser trust.** The circuit lock is pinned when the web app is built, so circuit artifacts served next to it are checked against it, but users still trust the app and whoever serves it. A Content-Security-Policy limits scripts, workers and network access to the app's origin, Shield's API and the RPC; it still allows inline scripts, because Next inlines them in statically rendered pages.
+11. **The rate limit is per client IP.** Behind a reverse proxy every client shares the proxy's address, so the limit becomes global. An attacker with many addresses can still onboard many fresh accounts (each costs the operator an on-chain write).
 
 ## Out of scope for the hackathon
 
-Production hosting, key management (HSM/KMS), rate limiting and project API keys (P2), the relayer (P3), anonymity-set hardening (P4), per-note selective disclosure for users (P5).
+Production hosting, key management (HSM/KMS), proxy-aware or global rate limiting, sessions and project API keys (P2), the relayer (P3), anonymity-set hardening (P4), per-note selective disclosure for users (P5).

@@ -12,7 +12,8 @@ use stellar_xdr::{
 
 use super::tx::Simulation;
 
-const REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
+/// Timeout of every RPC call.
+pub const REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum RpcError {

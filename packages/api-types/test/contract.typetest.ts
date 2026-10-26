@@ -44,7 +44,13 @@ export const intentRequest = {
   stellar_account: ACCOUNT,
   fiat_currency: "CRC",
   amount: "100.00",
+  request_id: "0194f3a2-7c1e-7d3b-9a4f-2b6c8e1d5f70",
+  issued_at: 1_793_016_000,
+  signature: "c2lnbmVk",
 } satisfies CreateIntentRequest;
+
+// @ts-expect-error intents are signed by the account (SEP-53).
+export const unsignedIntent: CreateIntentRequest = { mode: "ramp", stellar_account: ACCOUNT, fiat_currency: "CRC", amount: "1" };
 
 // @ts-expect-error amounts must be decimal strings.
 export const numericAmount: CreateIntentRequest = { ...intentRequest, amount: 100 };

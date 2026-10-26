@@ -82,6 +82,8 @@ export const es: Messages = {
       blocked: "Bloqueado: aprobado y luego congelado por el ASP",
     },
     register: "Derivar llaves y registrarme",
+    stillPending: "Sigue pendiente. Si la red no estaba disponible, puede que la actualización de la allow-list no se haya enviado: reintentala (Freighter firma de nuevo).",
+    retry: "Reintentar el registro",
   },
   deposit: {
     title: "Depositar",

@@ -18,7 +18,7 @@ use shield_api::{
     audit::AuditService,
     build_app,
     deployment::PoolDeployment,
-    http::InfoResponse,
+    http::{InfoResponse, rate_limit::RateLimit},
     intent::service::IntentService,
     ports::{AnchorClient, Explorer, PoolAuditor, SystemClock},
     state::AppState,
@@ -92,15 +92,41 @@ pub fn audit_app(
     app_with(db, None, Arc::new(FakeAspContract::default()), audit)
 }
 
+/// The app with ramp mode and a per-client limit of `requests` a minute on
+/// onboarding and intent creation.
+pub fn rate_limited_app(db: PgPool, requests: u32) -> Result<Router, Box<dyn std::error::Error>> {
+    app_with_options(
+        db.clone(),
+        Some(Arc::new(FakeAnchor::default())),
+        Arc::new(FakeAspContract::default()),
+        AuditService::new(db, None, None),
+        Some(RateLimit {
+            requests,
+            window: Duration::from_secs(60),
+        }),
+    )
+}
+
 fn app_with(
     db: PgPool,
     anchor: Option<Arc<FakeAnchor>>,
     chain: Arc<FakeAspContract>,
     audit: AuditService,
 ) -> Result<Router, Box<dyn std::error::Error>> {
+    app_with_options(db, anchor, chain, audit, None)
+}
+
+fn app_with_options(
+    db: PgPool,
+    anchor: Option<Arc<FakeAnchor>>,
+    chain: Arc<FakeAspContract>,
+    audit: AuditService,
+    rate_limit: Option<RateLimit>,
+) -> Result<Router, Box<dyn std::error::Error>> {
     let info = InfoResponse::new(&deployment()?, anchor.as_ref().map(|_| ANCHOR.to_owned()));
     let asp = AspService::new(db.clone(), chain, Arc::new(SystemClock))
-        .with_timing(Duration::from_millis(60), Duration::from_millis(5));
+        // Budget for a whole request: room for several steps' database work.
+        .with_timing(Duration::from_secs(1), Duration::from_millis(5));
     let intents = IntentService::new(
         db.clone(),
         anchor.map(|a| a as Arc<dyn AnchorClient>),
@@ -115,9 +141,11 @@ fn app_with(
             audit,
             admin_token: Arc::new(Some(SecretString::from(ADMIN_TOKEN))),
             auditor_token: Arc::new(Some(SecretString::from(AUDITOR_TOKEN))),
+            clock: Arc::new(SystemClock),
         },
         HttpOptions {
             cors_allowed_origins: vec![HeaderValue::from_static(WEB_ORIGIN)],
+            rate_limit,
         },
     ))
 }
@@ -169,10 +197,6 @@ const SEEDS: [(&str, u8); 2] = [(ALICE, 7), (BOB, 8)];
 /// `body` (an onboarding request) with the signature its account would
 /// make. Accounts without a known seed get a well-formed but wrong one.
 pub fn signed(body: &Value) -> Value {
-    use base64::{Engine as _, engine::general_purpose::STANDARD};
-    use ed25519_dalek::{Signer, SigningKey};
-    use sha2::{Digest, Sha256};
-
     let field = |name: &str| body[name].as_str().unwrap_or_default().to_ascii_lowercase();
     let account = body["stellar_account"].as_str().unwrap_or_default();
     let message = format!(
@@ -182,13 +206,49 @@ pub fn signed(body: &Value) -> Value {
         field("encryption_public_key"),
         field("asp_leaf"),
     );
+    let mut body = body.clone();
+    body["signature"] = Value::String(sep53(account, &message));
+    body
+}
+
+/// `body` (an intent request) with a fresh request id, `issued_at` now and
+/// the signature its account would make.
+pub fn signed_intent(body: &Value) -> Value {
+    signed_intent_with(
+        body,
+        &uuid::Uuid::now_v7().to_string(),
+        chrono::Utc::now().timestamp(),
+    )
+}
+
+/// Like [`signed_intent`], with a chosen request id and `issued_at`.
+pub fn signed_intent_with(body: &Value, request_id: &str, issued_at: i64) -> Value {
+    let field = |name: &str| body[name].as_str().unwrap_or_default().to_owned();
+    let account = field("stellar_account");
+    let message = format!(
+        "Lendara Shield intent\nnetwork: testnet\naccount: {account}\nfiat_currency: {}\n\
+         amount: {}\nrequest_id: {request_id}\nissued_at: {issued_at}",
+        field("fiat_currency"),
+        field("amount"),
+    );
+    let mut body = body.clone();
+    body["request_id"] = Value::String(request_id.to_owned());
+    body["issued_at"] = Value::from(issued_at);
+    body["signature"] = Value::String(sep53(&account, &message));
+    body
+}
+
+/// SEP-53 signature of `message` by `account` (a known test seed, or a
+/// well-formed but wrong key for any other account).
+fn sep53(account: &str, message: &str) -> String {
+    use base64::{Engine as _, engine::general_purpose::STANDARD};
+    use ed25519_dalek::{Signer, SigningKey};
+    use sha2::{Digest, Sha256};
+
     let seed = SEEDS
         .iter()
         .find(|(a, _)| *a == account)
         .map_or(99, |(_, s)| *s);
     let digest = Sha256::digest(format!("Stellar Signed Message:\n{message}").as_bytes());
-    let signature = SigningKey::from_bytes(&[seed; 32]).sign(&digest);
-    let mut body = body.clone();
-    body["signature"] = Value::String(STANDARD.encode(signature.to_bytes()));
-    body
+    STANDARD.encode(SigningKey::from_bytes(&[seed; 32]).sign(&digest).to_bytes())
 }

@@ -11,7 +11,7 @@ use shield_api::{
     intent::{
         IntentStatus,
         service::{CreateIntent, IntentService},
-        shielding::{MAX_ATTEMPTS, ShieldingWorker},
+        shielding::{BLOCKED_USER_MESSAGE, MAX_ATTEMPTS, ShieldingWorker},
     },
     ports::AnchorClient,
     store::{
@@ -57,6 +57,7 @@ async fn harness(db: PgPool) -> Result<(Harness, Intent), Box<dyn std::error::Er
     let service = IntentService::new(db.clone(), Some(anchor), "USDC".into());
     let intent = service
         .create(CreateIntent {
+            request_id: uuid::Uuid::now_v7(),
             stellar_account: AccountId::parse(ALICE)?,
             fiat_currency: FiatCurrency::parse("CRC")?,
             amount: DecimalAmount::parse("5000")?,
@@ -363,5 +364,65 @@ async fn a_landed_transaction_not_yet_indexed_is_never_replaced(db: PgPool) -> T
     h.rounds(5, secs(30)).await?;
     assert_eq!(h.status(&intent).await?, IntentStatus::Completed);
     h.assert_paid_exactly_once();
+    Ok(())
+}
+
+#[sqlx::test]
+async fn a_blocked_user_gets_no_deposit_and_the_funds_stay_in_custody(db: PgPool) -> TestResult {
+    let (h, intent) = harness(db).await?;
+    users::set_asp_status(&h.db, intent.user_id, AspStatus::Blocked).await?;
+    h.rounds(3, secs(10)).await?;
+
+    let stopped = h.intents.get(intent.id).await?;
+    assert_eq!(stopped.status, IntentStatus::Error);
+    assert_eq!(stopped.message.as_deref(), Some(BLOCKED_USER_MESSAGE));
+    assert!(stopped.pool_deposit.is_none());
+    assert!(h.pool.applied().is_empty());
+    assert_eq!(h.pool.prepares(), 0);
+    Ok(())
+}
+
+#[sqlx::test]
+async fn a_user_blocked_after_the_deposit_never_receives_the_transfer(db: PgPool) -> TestResult {
+    let (h, intent) = harness(db).await?;
+    h.rounds(1, secs(10)).await?;
+    assert_eq!(h.status(&intent).await?, IntentStatus::Shielding);
+
+    users::set_asp_status(&h.db, intent.user_id, AspStatus::Blocked).await?;
+    h.rounds(3, secs(10)).await?;
+
+    let stopped = h.intents.get(intent.id).await?;
+    assert_eq!(stopped.status, IntentStatus::Error);
+    assert_eq!(stopped.message.as_deref(), Some(BLOCKED_USER_MESSAGE));
+    assert!(stopped.pool_transfer.is_none());
+    // The deposit landed in Shield's own note; nothing went to the user.
+    assert_eq!(
+        h.pool.applied(),
+        vec![PoolWrite::Deposit { amount: AMOUNT }]
+    );
+    assert_eq!(h.pool.prepares(), 1);
+    Ok(())
+}
+
+#[sqlx::test]
+async fn a_failed_transfer_is_not_rebuilt_for_a_user_blocked_meanwhile(db: PgPool) -> TestResult {
+    let (h, intent) = harness(db).await?;
+    h.rounds(1, secs(10)).await?; // deposit sent
+    h.pool.set_behaviour(PoolBehaviour::FailsOnChain);
+    h.rounds(1, secs(10)).await?; // deposit confirmed; the transfer fails on-chain
+    assert_eq!(h.status(&intent).await?, IntentStatus::Transferring);
+
+    users::set_asp_status(&h.db, intent.user_id, AspStatus::Blocked).await?;
+    h.pool.set_behaviour(PoolBehaviour::Healthy);
+    h.rounds(3, secs(10)).await?;
+
+    let stopped = h.intents.get(intent.id).await?;
+    assert_eq!(stopped.status, IntentStatus::Error);
+    assert_eq!(stopped.message.as_deref(), Some(BLOCKED_USER_MESSAGE));
+    assert_eq!(h.pool.prepares(), 2, "no second transfer was built");
+    assert_eq!(
+        h.pool.applied(),
+        vec![PoolWrite::Deposit { amount: AMOUNT }]
+    );
     Ok(())
 }

@@ -11,3 +11,10 @@ export const SDK_BASE_PATH = "/spp";
 
 /** How often a pending intent is polled. */
 export const INTENT_POLL_MS = 2500;
+
+/**
+ * How long onboarding may stay `pending` before the page offers to retry it.
+ * Reads never resume an ASP write that could not even be prepared (chain
+ * down): only replaying the signed onboarding does.
+ */
+export const ONBOARDING_RETRY_AFTER_MS = 20_000;

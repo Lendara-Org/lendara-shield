@@ -7,6 +7,8 @@ import { useI18n } from "@/components/i18n";
 import { message } from "@/components/session";
 import { Button, Card, Field, Notice, inputClass } from "@/components/ui/primitives";
 import { api } from "@/lib/api";
+import { signedIntentRequest } from "@/lib/intent-request";
+import type { ShieldWallet } from "@/lib/pool/types";
 
 import { IntentProgress } from "./intent-progress";
 
@@ -14,7 +16,7 @@ const AMOUNT = /^(0|[1-9]\d*)(\.\d{1,2})?$/;
 const CURRENCY = /^[A-Z]{3}$/;
 const ZERO = /^0+(\.0+)?$/;
 
-export function RampDeposit({ account, anchor }: { account: string; anchor: string | null | undefined }) {
+export function RampDeposit({ wallet, anchor }: { wallet: ShieldWallet; anchor: string | null | undefined }) {
   const { t } = useI18n();
   const [currency, setCurrency] = useState("CRC");
   const [amount, setAmount] = useState("");
@@ -32,12 +34,8 @@ export function RampDeposit({ account, anchor }: { account: string; anchor: stri
     // Opened in the click so the browser does not block it as a popup.
     const popup = window.open("about:blank", "shield-anchor", "popup,width=480,height=760");
     try {
-      const created = await api.createIntent({
-        mode: "ramp",
-        stellar_account: account,
-        fiat_currency: currency,
-        amount,
-      });
+      // Freighter signs the amount: only the account's owner can start it.
+      const created = await api.createIntent(await signedIntentRequest(wallet, currency, amount));
       setIntent(created);
       if (created.interactive_url) {
         if (popup) popup.location.href = created.interactive_url;

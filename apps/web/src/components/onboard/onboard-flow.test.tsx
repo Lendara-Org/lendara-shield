@@ -10,7 +10,7 @@ import { onboardingMessage } from "@/lib/onboarding";
 
 import { OnboardFlow } from "./onboard-flow";
 
-vi.mock("@/lib/config", async (original) => ({ ...(await original<object>()), INTENT_POLL_MS: 10 }));
+vi.mock("@/lib/config", async (original) => ({ ...(await original<object>()), INTENT_POLL_MS: 10, ONBOARDING_RETRY_AFTER_MS: 50 }));
 
 const newUser = () => server.use(http.get(url(`/v1/users/${ACCOUNT}`), () => apiError(404, "not_found", "none")));
 
@@ -45,6 +45,29 @@ describe("OnboardFlow", () => {
     expect(await screen.findByText(/Updating the pool's allow-list/)).toBeInTheDocument();
     expect(await screen.findByText(/You are in the allow-list/)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Continue to deposit/ })).toHaveAttribute("href", "/en/deposit");
+  });
+
+  it("offers to retry an onboarding that stays pending, and the retry resumes it", async () => {
+    // The chain was down: the API keeps the user pending and reads never resume it.
+    server.use(http.get(url(`/v1/users/${ACCOUNT}`), () => HttpResponse.json(user({ asp_status: "pending", last_asp_tx_hash: null }))));
+    let replayed = 0;
+    server.use(
+      http.post(url("/v1/onboarding"), () => {
+        replayed += 1;
+        server.use(http.get(url(`/v1/users/${ACCOUNT}`), () => HttpResponse.json(user())));
+        return HttpResponse.json(user(), { status: 200 });
+      }),
+    );
+    const wallet = fakeWallet();
+    const { user: ui } = await renderConnected(<OnboardFlow />, wallet);
+
+    expect(await screen.findByText(/Updating the pool's allow-list/)).toBeInTheDocument();
+    await ui.click(await screen.findByRole("button", { name: "Retry the registration" }));
+
+    expect(replayed).toBe(1);
+    expect(wallet.signMessage).toHaveBeenCalledTimes(1);
+    expect(await screen.findByText(/You are in the allow-list/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Retry the registration" })).not.toBeInTheDocument();
   });
 
   it("shows an existing user's status and ASP transaction", async () => {

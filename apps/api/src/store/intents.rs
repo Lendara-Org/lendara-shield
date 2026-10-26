@@ -7,8 +7,9 @@ use chrono::{DateTime, Utc};
 use sqlx::{PgConnection, PgExecutor, prelude::FromRow};
 use uuid::Uuid;
 
-use super::{StoreError, corrupt};
+use super::{StoreError, corrupt, unique_violation};
 use crate::{
+    asp::AspStatus,
     domain::{DecimalAmount, FiatCurrency, TxHash},
     intent::state::{self, IntentStatus, InvalidTransition},
     ports::PoolTx,
@@ -43,6 +44,8 @@ pub struct Intent {
 #[derive(Debug, Clone)]
 pub struct NewIntent {
     pub user_id: Uuid,
+    /// Single-use id of the signed request that creates it.
+    pub request_id: Uuid,
     pub fiat_currency: FiatCurrency,
     pub amount_fiat: DecimalAmount,
     pub asset_code: String,
@@ -59,6 +62,15 @@ pub struct Changes {
     pub pool_deposit: Option<PoolTx>,
     pub pool_transfer: Option<PoolTx>,
     pub message: Option<String>,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum InsertIntentError {
+    /// An intent already exists for this signed request.
+    #[error("the request was already used")]
+    Replayed,
+    #[error(transparent)]
+    Store(#[from] StoreError),
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -178,15 +190,16 @@ impl TryFrom<Row> for Intent {
     }
 }
 
-/// Inserts an intent in `created` and records its first event.
+/// Inserts an intent in `created` and records its first event. A request id
+/// that was already used is refused.
 pub async fn insert_created(
     conn: &mut PgConnection,
     new: &NewIntent,
-) -> Result<Intent, StoreError> {
+) -> Result<Intent, InsertIntentError> {
     let row: Row = sqlx::query_as(concat!(
         "INSERT INTO intents (id, user_id, mode, status, fiat_currency, amount_fiat, asset_code, \
-         anchor_home_domain) VALUES ($1, $2, 'ramp', 'created', $3, $4::numeric, $5, $6) \
-         RETURNING ",
+         anchor_home_domain, request_id) \
+         VALUES ($1, $2, 'ramp', 'created', $3, $4::numeric, $5, $6, $7) RETURNING ",
         columns!()
     ))
     .bind(Uuid::now_v7())
@@ -195,8 +208,13 @@ pub async fn insert_created(
     .bind(new.amount_fiat.as_str())
     .bind(&new.asset_code)
     .bind(&new.anchor_home_domain)
+    .bind(new.request_id)
     .fetch_one(&mut *conn)
-    .await?;
+    .await
+    .map_err(|err| match unique_violation(&err) {
+        Some("intents_request_id_key") => InsertIntentError::Replayed,
+        _ => InsertIntentError::Store(err.into()),
+    })?;
     let intent: Intent = row.try_into()?;
     record_event(&mut *conn, intent.id, None, IntentStatus::Created, None).await?;
     Ok(intent)
@@ -288,23 +306,52 @@ pub async fn lock_by_memo(
     row.map(TryInto::try_into).transpose()
 }
 
-/// Intents waiting for the anchor whose next check is due, with the user's
-/// customer memo (to authenticate as them with the anchor).
+/// Locks the user's intents that hold no funds yet (`created`,
+/// `awaiting_anchor`) until the transaction ends.
+pub async fn lock_unfunded_of_user(
+    conn: &mut PgConnection,
+    user_id: Uuid,
+) -> Result<Vec<(Uuid, IntentStatus)>, StoreError> {
+    let rows: Vec<(Uuid, String)> = sqlx::query_as(
+        "SELECT id, status FROM intents WHERE user_id = $1 \
+         AND status IN ('created', 'awaiting_anchor') ORDER BY created_at FOR UPDATE",
+    )
+    .bind(user_id)
+    .fetch_all(&mut *conn)
+    .await?;
+    rows.into_iter()
+        .map(|(id, status)| Ok((id, status.parse().map_err(|e| corrupt(TABLE, e))?)))
+        .collect()
+}
+
+/// An intent waiting for the anchor, as the anchor sync needs it.
+#[derive(Debug, Clone)]
+pub struct AwaitingItem {
+    pub intent: Intent,
+    /// The user's SEP-10 customer memo (to authenticate as them).
+    pub customer_memo: i64,
+    /// See [`set_anchor_completed_at`].
+    pub anchor_completed_at: Option<DateTime<Utc>>,
+}
+
+/// Intents waiting for the anchor whose next check is due.
 pub async fn due_awaiting_anchor(
     db: impl PgExecutor<'_>,
     now: DateTime<Utc>,
     limit: i64,
-) -> Result<Vec<(Intent, i64)>, StoreError> {
+) -> Result<Vec<AwaitingItem>, StoreError> {
     #[derive(FromRow)]
     struct DueRow {
         #[sqlx(flatten)]
         intent: Row,
         customer_memo: i64,
+        anchor_completed_at: Option<DateTime<Utc>>,
     }
     let rows: Vec<DueRow> = sqlx::query_as(concat!(
         "SELECT ",
         columns!(),
-        ", (SELECT sep10_memo FROM shield_users u WHERE u.id = intents.user_id) AS customer_memo \
+        ", (SELECT sep10_memo FROM shield_users u WHERE u.id = intents.user_id) AS customer_memo, \
+         anchor_completed_at \
          FROM intents WHERE status = 'awaiting_anchor' \
          AND (next_attempt_at IS NULL OR next_attempt_at <= $1) \
          ORDER BY next_attempt_at NULLS FIRST, created_at LIMIT $2"
@@ -314,8 +361,31 @@ pub async fn due_awaiting_anchor(
     .fetch_all(db)
     .await?;
     rows.into_iter()
-        .map(|row| Ok((row.intent.try_into()?, row.customer_memo)))
+        .map(|row| {
+            Ok(AwaitingItem {
+                intent: row.intent.try_into()?,
+                customer_memo: row.customer_memo,
+                anchor_completed_at: row.anchor_completed_at,
+            })
+        })
         .collect()
+}
+
+/// Marks when the anchor first reported the deposit completed while its
+/// payment could not be confirmed yet.
+pub async fn set_anchor_completed_at(
+    db: impl PgExecutor<'_>,
+    id: Uuid,
+    at: DateTime<Utc>,
+) -> Result<(), StoreError> {
+    sqlx::query(
+        "UPDATE intents SET anchor_completed_at = $2 WHERE id = $1 AND anchor_completed_at IS NULL",
+    )
+    .bind(id)
+    .bind(at)
+    .execute(db)
+    .await?;
+    Ok(())
 }
 
 /// Makes the intent due now (e.g. a payment with its memo just arrived).
@@ -392,6 +462,8 @@ pub struct WorkItem {
     pub unseen_since: Option<DateTime<Utc>>,
     pub note_public_key: crate::domain::PoolField,
     pub encryption_public_key: crate::domain::PoolField,
+    /// The recipient's current ASP status: only `allowed` keys receive funds.
+    pub asp_status: AspStatus,
 }
 
 /// Intents in `funds_received`, `shielding` or `transferring` that are due.
@@ -408,13 +480,15 @@ pub async fn due_for_shielding(
         pool_unseen_since: Option<DateTime<Utc>>,
         note_public_key: String,
         encryption_public_key: String,
+        asp_status: String,
     }
     let rows: Vec<WorkRow> = sqlx::query_as(concat!(
         "SELECT ",
         columns!(),
         ", attempts, pool_unseen_since, (SELECT note_public_key FROM shield_users u WHERE u.id = intents.user_id) \
          AS note_public_key, (SELECT encryption_public_key FROM shield_users u \
-         WHERE u.id = intents.user_id) AS encryption_public_key \
+         WHERE u.id = intents.user_id) AS encryption_public_key, \
+         (SELECT asp_status FROM shield_users u WHERE u.id = intents.user_id) AS asp_status \
          FROM intents WHERE status IN ('funds_received', 'shielding', 'transferring') \
          AND (next_attempt_at IS NULL OR next_attempt_at <= $1) \
          ORDER BY next_attempt_at NULLS FIRST, created_at LIMIT $2"
@@ -430,6 +504,10 @@ pub async fn due_for_shielding(
             Ok(WorkItem {
                 note_public_key: key(&row.note_public_key)?,
                 encryption_public_key: key(&row.encryption_public_key)?,
+                asp_status: row
+                    .asp_status
+                    .parse()
+                    .map_err(|e| corrupt("shield_users", e))?,
                 attempts: row.attempts,
                 unseen_since: row.pool_unseen_since,
                 intent: row.intent.try_into()?,

@@ -10,6 +10,8 @@
 
 use std::{sync::Arc, time::Duration};
 
+use chrono::{DateTime, Utc};
+
 use sqlx::PgPool;
 
 use super::state::IntentStatus;
@@ -18,7 +20,7 @@ use crate::{
     ports::{AnchorClient, AnchorStatus, Clock},
     store::{
         StoreError, intake_payments,
-        intents::{self, Changes, Intent, TransitionError},
+        intents::{self, AwaitingItem, Changes, Intent, TransitionError},
     },
 };
 
@@ -26,6 +28,14 @@ use crate::{
 pub const CHECK_INTERVAL: Duration = Duration::from_secs(20);
 /// Wait when the anchor reports a payment Shield has not read on-chain yet.
 pub const CONFIRM_RETRY: Duration = Duration::from_secs(5);
+/// How long the anchor may report `completed` without Shield confirming its
+/// payment before the intent ends in `error` for manual review. Horizon is
+/// seconds behind, so this only trips when the payment is really missing or
+/// unrecognisable (no memo, wrong asset, no `stellar_transaction_id`).
+pub const ANCHOR_PAYMENT_GRACE: Duration = Duration::from_mins(15);
+
+/// Message of an intent whose anchor payment could not be confirmed.
+pub const UNCONFIRMED_PAYMENT_MESSAGE: &str = "The anchor reports the deposit completed, but Shield could not confirm its payment. Any funds received are in Shield's custody and need review.";
 const BATCH: i64 = 20;
 
 #[derive(Debug, thiserror::Error)]
@@ -61,7 +71,8 @@ impl AnchorSync {
         let now = self.clock.now();
         let next = now + chrono::Duration::from_std(CHECK_INTERVAL).unwrap_or_default();
         let mut finished = 0;
-        for (intent, customer_memo) in intents::due_awaiting_anchor(&self.db, now, BATCH).await? {
+        for item in intents::due_awaiting_anchor(&self.db, now, BATCH).await? {
+            let (intent, customer_memo) = (&item.intent, item.customer_memo);
             let Some(anchor_tx_id) = intent.anchor_tx_id.as_deref() else {
                 continue;
             };
@@ -78,18 +89,21 @@ impl AnchorSync {
                     (IntentStatus::Error, format!("Anchor: {reason}"))
                 }
                 Ok(AnchorStatus::Completed(Some(hash))) => {
-                    if self.fund(&intent, &hash).await? {
+                    if self.fund(intent, &hash).await? {
                         finished += 1;
-                    } else {
-                        let retry =
-                            now + chrono::Duration::from_std(CONFIRM_RETRY).unwrap_or_default();
-                        intents::schedule(&self.db, intent.id, retry).await?;
+                        continue;
+                    }
+                    let retry = now + chrono::Duration::from_std(CONFIRM_RETRY).unwrap_or_default();
+                    if self.unconfirmed(&item, now, retry).await? {
+                        finished += 1;
                     }
                     continue;
                 }
                 Ok(AnchorStatus::Completed(None)) => {
                     tracing::warn!(intent_id = %intent.id, "anchor completed without a stellar_transaction_id; cannot confirm the payment");
-                    intents::schedule(&self.db, intent.id, next).await?;
+                    if self.unconfirmed(&item, now, next).await? {
+                        finished += 1;
+                    }
                     continue;
                 }
                 Ok(AnchorStatus::Pending) => {
@@ -125,6 +139,49 @@ impl AnchorSync {
             }
         }
         Ok(finished)
+    }
+
+    /// The anchor says `completed` but its payment is not confirmed. Waits
+    /// (until `retry`) for up to [`ANCHOR_PAYMENT_GRACE`] after the first
+    /// such report, then ends the intent in `error`. Returns whether it ended.
+    async fn unconfirmed(
+        &self,
+        item: &AwaitingItem,
+        now: DateTime<Utc>,
+        retry: DateTime<Utc>,
+    ) -> Result<bool, SyncError> {
+        let id = item.intent.id;
+        let Some(since) = item.anchor_completed_at else {
+            intents::set_anchor_completed_at(&self.db, id, now).await?;
+            intents::schedule(&self.db, id, retry).await?;
+            return Ok(false);
+        };
+        let grace = chrono::Duration::from_std(ANCHOR_PAYMENT_GRACE).unwrap_or_default();
+        if now - since < grace {
+            intents::schedule(&self.db, id, retry).await?;
+            return Ok(false);
+        }
+        let mut conn = self.db.acquire().await?;
+        match intents::transition(
+            &mut conn,
+            id,
+            IntentStatus::AwaitingAnchor,
+            IntentStatus::Error,
+            Changes {
+                message: Some(UNCONFIRMED_PAYMENT_MESSAGE.to_owned()),
+                ..Changes::default()
+            },
+        )
+        .await
+        {
+            Ok(_) => {
+                tracing::error!(intent_id = %id, "anchor payment never confirmed; manual review needed");
+                Ok(true)
+            }
+            // Funded meanwhile by another round.
+            Err(TransitionError::Stale(_)) => Ok(false),
+            Err(err) => Err(err.into()),
+        }
     }
 
     /// Funds `intent` with the payment the anchor reports (`hash`), if the

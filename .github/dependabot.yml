@@ -12,3 +12,18 @@ updates:
       interval: weekly
     commit-message:
       prefix: chore(api)
+  # The prover and the intake's signer: same weekly cadence as the API.
+  - package-ecosystem: cargo
+    directory: /apps/pool-cli
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: chore(api)
+  # The pnpm workspace (web and api-types). pnpm's minimumReleaseAge still
+  # applies when the update is installed.
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: chore(web)
