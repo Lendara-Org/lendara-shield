@@ -24,7 +24,7 @@ use super::{
 };
 use crate::{
     domain::AccountId,
-    ports::{AnchorClient, AnchorDeposit, AnchorError, Clock, StartDeposit},
+    ports::{AnchorClient, AnchorDeposit, AnchorError, AnchorStatus, Clock, StartDeposit},
 };
 
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
@@ -249,6 +249,44 @@ impl AnchorClient for Sep24AnchorClient {
             interactive_url: deposit.url,
         })
     }
+
+    async fn deposit_status(
+        &self,
+        customer_memo: i64,
+        anchor_tx_id: &str,
+    ) -> Result<AnchorStatus, AnchorError> {
+        let endpoints = self.endpoints().await?;
+        let customer_memo = u64::try_from(customer_memo)
+            .map_err(|_| refused("customer memo must be positive".into()))?;
+        let token = self.authenticate(endpoints, customer_memo).await?;
+        let mut url = join(&endpoints.transfer_server, "transaction")?;
+        url.query_pairs_mut().append_pair("id", anchor_tx_id);
+        let response = self
+            .http
+            .get(url)
+            .bearer_auth(token.expose_secret())
+            .send()
+            .await
+            .map_err(|e| unavailable(&e))?;
+        let body: TransactionResponse = ok_json(response).await?;
+        Ok(map_status(
+            &body.transaction.status,
+            body.transaction.message,
+        ))
+    }
+}
+
+/// SEP-24 transaction statuses, reduced to what Shield acts on.
+fn map_status(status: &str, message: Option<String>) -> AnchorStatus {
+    match status {
+        "completed" => AnchorStatus::Completed,
+        "expired" => AnchorStatus::Expired,
+        "error" | "refunded" | "no_market" | "too_small" | "too_large" => {
+            AnchorStatus::Failed(message.unwrap_or_else(|| status.to_owned()))
+        }
+        // `incomplete`, `pending_*` and any status added later: keep waiting.
+        _ => AnchorStatus::Pending,
+    }
 }
 
 #[derive(Deserialize)]
@@ -260,6 +298,17 @@ struct ChallengeResponse {
 #[derive(Deserialize)]
 struct TokenResponse {
     token: String,
+}
+
+#[derive(Deserialize)]
+struct TransactionResponse {
+    transaction: TransactionStatus,
+}
+
+#[derive(Deserialize)]
+struct TransactionStatus {
+    status: String,
+    message: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -384,6 +433,36 @@ mod tests {
             "https://anchor.example/sep24/info"
         );
         Ok(())
+    }
+
+    #[test]
+    fn maps_sep24_statuses() {
+        for pending in [
+            "incomplete",
+            "pending_user_transfer_start",
+            "pending_anchor",
+            "pending_stellar",
+            "something_new",
+        ] {
+            assert_eq!(
+                map_status(pending, None),
+                AnchorStatus::Pending,
+                "{pending}"
+            );
+        }
+        assert_eq!(map_status("completed", None), AnchorStatus::Completed);
+        assert_eq!(map_status("expired", None), AnchorStatus::Expired);
+        assert_eq!(
+            map_status("error", Some("KYC rejected (sandbox scenario).".into())),
+            AnchorStatus::Failed("KYC rejected (sandbox scenario).".into())
+        );
+        for failed in ["refunded", "no_market", "too_small", "too_large"] {
+            assert_eq!(
+                map_status(failed, None),
+                AnchorStatus::Failed(failed.into()),
+                "{failed}"
+            );
+        }
     }
 
     #[test]
