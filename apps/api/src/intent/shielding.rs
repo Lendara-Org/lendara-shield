@@ -45,6 +45,9 @@ const CHECK_AFTER: Duration = Duration::from_secs(4);
 /// First retry delay after a failure; doubles per attempt, capped.
 const RETRY_BASE: Duration = Duration::from_secs(5);
 const RETRY_CAP: Duration = Duration::from_secs(300);
+/// Wait before preparing again when the SDK wallet's ASP index is behind
+/// (a few ledgers, ~5 s each).
+const SYNC_WAIT: Duration = Duration::from_secs(5);
 const BATCH: i64 = 5;
 
 /// Message of an intent stopped because its user's key is no longer allowed.
@@ -333,8 +336,14 @@ impl ShieldingWorker {
         Ok(())
     }
 
-    /// A failed attempt: back off exponentially and count it.
+    /// A failed attempt: back off exponentially and count it. A wallet that
+    /// is only behind the chain (`sync_required`) is waited for instead, not
+    /// counted: it is not a failure of the intent.
     async fn retry_later(&self, item: &WorkItem, err: &PoolError) -> Result<(), ShieldingError> {
+        if err.is_sync_wait() {
+            tracing::info!(intent_id = %item.intent.id, message = %err.message, "waiting for the intake's wallet to sync");
+            return self.schedule(item.intent.id, SYNC_WAIT).await;
+        }
         tracing::warn!(intent_id = %item.intent.id, code = %err.code, message = %err.message, retryable = err.retryable, "shielding step failed");
         let exponent = u32::try_from(item.attempts).unwrap_or(0).min(16);
         let delay = RETRY_BASE

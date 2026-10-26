@@ -12,8 +12,8 @@ use stellar_private_payments::{
     circuit_lock,
     gvk::{GvkAudit, GvkTxAudit},
     types::{
-        ContractConfig, EncryptionPublicKey, Field, NoteAmount, NoteOwnerAddress, NotePublicKey,
-        SignedTransaction, SignerAddress, TransferRecipient,
+        AspMembershipSync, ContractConfig, EncryptionPublicKey, Field, NoteAmount,
+        NoteOwnerAddress, NotePublicKey, SignedTransaction, SignerAddress, TransferRecipient,
     },
     zk::gvk::GvkAuditedNote,
 };
@@ -318,6 +318,11 @@ fn sdk(err: &SdkError) -> CliError {
     match err {
         SdkError::Rpc(_) => CliError::new("chain", message, true),
         SdkError::RetentionGap(_) => CliError::new("retention_gap", message, false),
+        // The wallet's ASP index is a few ledgers behind the chain: it
+        // catches up on its own, so the caller should wait, not give up.
+        SdkError::MembershipSync(AspMembershipSync::SyncRequired(_)) => {
+            CliError::new("sync_required", message, true)
+        }
         SdkError::MembershipSync(_) => CliError::new("not_allowed", message, false),
         SdkError::AccountNotFound { .. } | SdkError::InvalidConfig(_) => {
             CliError::new("config", message, false)
@@ -326,5 +331,26 @@ fn sdk(err: &SdkError) -> CliError {
         // Simulation failures land here (e.g. a proof built against an ASP
         // root that changed): preparing again is safe since nothing was sent.
         _ => CliError::new("sdk", message, true),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_wallet_behind_the_chain_is_a_retryable_sync_wait() {
+        let err = sdk(&SdkError::MembershipSync(AspMembershipSync::SyncRequired(
+            Some(1),
+        )));
+        assert_eq!(err.error, "sync_required");
+        assert!(err.retryable);
+    }
+
+    #[test]
+    fn a_leaf_missing_from_the_allow_list_is_not_retryable() {
+        let err = sdk(&SdkError::MembershipSync(AspMembershipSync::RegisterAtASP));
+        assert_eq!(err.error, "not_allowed");
+        assert!(!err.retryable);
     }
 }

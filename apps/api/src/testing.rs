@@ -389,6 +389,8 @@ struct FakePoolTx {
 struct PoolState {
     behaviour: PoolBehaviour,
     prepare_fails: Option<bool>,
+    /// The next `prepare` calls that answer `sync_required`.
+    sync_required: usize,
     intake_sequence: i64,
     txs: std::collections::HashMap<String, FakePoolTx>,
     applied: Vec<PoolWrite>,
@@ -410,6 +412,7 @@ impl Default for FakePool {
         Self(Mutex::new(PoolState {
             behaviour: PoolBehaviour::Healthy,
             prepare_fails: None,
+            sync_required: 0,
             intake_sequence: 100,
             txs: std::collections::HashMap::new(),
             applied: Vec::new(),
@@ -436,6 +439,12 @@ impl FakePool {
     /// Makes `prepare_*` fail; `Some(retryable)` or `None` to recover.
     pub fn set_prepare_fails(&self, retryable: Option<bool>) {
         lock(&self.0).prepare_fails = retryable;
+    }
+
+    /// The next `calls` prepares answer `sync_required` (the SDK wallet's ASP
+    /// index is behind the chain).
+    pub fn set_sync_required(&self, calls: usize) {
+        lock(&self.0).sync_required = calls;
     }
 
     /// Landed transactions look `NotFound` for the next `calls` status
@@ -480,6 +489,14 @@ impl FakePool {
 
     fn prepare(&self, write: PoolWrite) -> Result<PoolTx, PoolError> {
         let mut state = lock(&self.0);
+        if state.sync_required > 0 {
+            state.sync_required -= 1;
+            return Err(PoolError {
+                code: PoolError::SYNC_REQUIRED.into(),
+                message: "ASP membership sync required: SyncRequired(Some(1))".into(),
+                retryable: true,
+            });
+        }
         if let Some(retryable) = state.prepare_fails {
             return Err(PoolError {
                 code: "chain".into(),
