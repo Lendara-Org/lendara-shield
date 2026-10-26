@@ -30,8 +30,6 @@ die() { printf 'error: %s\n' "$*" >&2; exit 1; }
   while IFS= read -r line || [[ -n $line ]]; do
     [[ $line =~ ^[A-Za-z_][A-Za-z0-9_]*= ]] && export "$line"
   done <"$ENV_FILE"
-  # init-intake never connects to the database, but the config requires it.
-  export DATABASE_URL=${DATABASE_URL:-postgres://unused}
   export POOL_CLI_PATH=${POOL_CLI_PATH:-$ROOT/apps/pool-cli/target/release/pool-cli}
   export LOG_FORMAT=${LOG_FORMAT:-pretty}
   # Relative paths in .env are relative to apps/api, as for the service.

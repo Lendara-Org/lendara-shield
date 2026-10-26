@@ -23,8 +23,10 @@ const MIN_ADMIN_TOKEN_LEN: usize = 32;
 pub struct Config {
     /// TCP port the HTTP server binds to on all interfaces.
     pub api_port: u16,
-    /// Postgres connection string. Secret: it embeds the password.
-    pub database_url: SecretString,
+    /// Postgres connection string. Secret: it embeds the password. Only
+    /// `serve` and `migrate` need it ([`Config::database_url`]);
+    /// `init-intake` runs without a database.
+    database_url: Option<SecretString>,
     /// Log output format.
     pub log_format: LogFormat,
     /// Origins allowed by CORS. Empty means no cross-origin access.
@@ -83,6 +85,14 @@ pub enum ConfigError {
 }
 
 impl Config {
+    /// The Postgres connection string, required by every command that
+    /// opens the database.
+    pub fn database_url(&self) -> Result<&SecretString, ConfigError> {
+        self.database_url
+            .as_ref()
+            .ok_or(ConfigError::Missing("DATABASE_URL"))
+    }
+
     /// Loads the configuration from the process environment.
     pub fn from_env() -> Result<Self, ConfigError> {
         Self::from_lookup(|name| std::env::var(name).ok())
@@ -103,9 +113,7 @@ impl Config {
             requests: per_minute,
             window: std::time::Duration::from_secs(60),
         });
-        let database_url = get("DATABASE_URL")
-            .map(SecretString::from)
-            .ok_or(ConfigError::Missing("DATABASE_URL"))?;
+        let database_url = get("DATABASE_URL").map(SecretString::from);
         let log_format = parse_or("LOG_FORMAT", get("LOG_FORMAT"), LogFormat::Pretty)?;
         let cors_allowed_origins = get("CORS_ALLOWED_ORIGINS")
             .map(|raw| parse_origins(&raw))
@@ -283,7 +291,7 @@ mod tests {
         let config = load(&[("DATABASE_URL", DB_URL)])?;
 
         assert_eq!(config.api_port, 8080);
-        assert_eq!(config.database_url.expose_secret(), DB_URL);
+        assert_eq!(config.database_url()?.expose_secret(), DB_URL);
         assert_eq!(config.log_format, LogFormat::Pretty);
         assert!(config.cors_allowed_origins.is_empty());
         Ok(())
@@ -537,16 +545,23 @@ mod tests {
     }
 
     #[test]
-    fn rejects_missing_database_url() {
-        assert_eq!(load(&[]).err(), Some(ConfigError::Missing("DATABASE_URL")));
+    fn the_database_url_is_required_only_when_asked_for() -> Result<(), ConfigError> {
+        // `init-intake` loads the config without a database.
+        let config = load(&[])?;
+        assert_eq!(
+            config.database_url().err(),
+            Some(ConfigError::Missing("DATABASE_URL"))
+        );
+        Ok(())
     }
 
     #[test]
-    fn treats_blank_values_as_unset() {
+    fn treats_blank_values_as_unset() -> Result<(), ConfigError> {
         assert_eq!(
-            load(&[("DATABASE_URL", "   ")]).err(),
+            load(&[("DATABASE_URL", "   ")])?.database_url().err(),
             Some(ConfigError::Missing("DATABASE_URL"))
         );
+        Ok(())
     }
 
     #[test]

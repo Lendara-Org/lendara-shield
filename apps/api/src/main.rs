@@ -93,7 +93,7 @@ async fn run() -> Result<(), BoxError> {
         tracing::warn!("ADMIN_TOKEN is not set: /v1/asp/* answers 401");
     }
 
-    let pool = db::connect(&config.database_url).await?;
+    let pool = db::connect(config.database_url()?).await?;
     db::MIGRATOR.run(&pool).await?;
     tracing::info!("database migrations applied");
     if command == Command::Migrate {
