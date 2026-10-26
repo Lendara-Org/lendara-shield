@@ -4,10 +4,12 @@
  */
 import type {
   ApiError,
+  AuditTransactionList,
   CreateIntentRequest,
   Info,
   Intent,
   OnboardingRequest,
+  PublicTransaction,
   ShieldUser,
 } from "@lendara/shield-api-types";
 
@@ -25,12 +27,16 @@ export class ApiRequestError extends Error {
   }
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+async function request<T>(path: string, init?: RequestInit, bearer?: string): Promise<T> {
   let response: Response;
   try {
     response = await fetch(`${API_BASE_URL}${path}`, {
       ...init,
-      headers: { accept: "application/json", ...(init?.body ? { "content-type": "application/json" } : {}) },
+      headers: {
+        accept: "application/json",
+        ...(init?.body ? { "content-type": "application/json" } : {}),
+        ...(bearer ? { authorization: `Bearer ${bearer}` } : {}),
+      },
     });
   } catch {
     throw new ApiRequestError(0, "network", "Shield's API is unreachable. Is it running?");
@@ -69,4 +75,9 @@ export const api = {
   },
   createIntent: (body: CreateIntentRequest) => request<Intent>("/v1/intents", post(body)),
   intent: (id: string) => request<Intent>(`/v1/intents/${encodeURIComponent(id)}`),
+  /** The auditor's decrypted view; the view key itself stays on the server. */
+  auditTransactions: (token: string, limit = 20) =>
+    request<AuditTransactionList>(`/v1/audit/transactions?limit=${limit}`, undefined, token),
+  publicTransaction: (hash: string) =>
+    request<PublicTransaction>(`/v1/audit/public/${encodeURIComponent(hash)}`),
 };

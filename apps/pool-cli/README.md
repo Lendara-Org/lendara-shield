@@ -16,6 +16,7 @@ One command per process. Exactly one JSON object on stdout. Exit `0` on success;
 | `prepare-transfer --amount N --note-key 0x.. --encryption-key 0x..` | same, to the recipient's raw pool keys |
 | `submit --envelope XDR` | `{hash}` |
 | `status --hash HEX` | `{status: success \| failed \| pending \| not_found, result_xdr}` |
+| `audit --limit N` | `{transactions: [{ledger, inputs: [{owner, amount}], outputs: [...]}]}`, newest first; needs `SHIELD_GVK_KEY_FILE`. `owner` is the note key as the SDK's audit prints it (the reverse bytes of the registered key) |
 
 `prepare-*` proves, simulates and signs but does **not** send: the caller stores `hash` first, then calls `submit`. SDK pool transactions have no time bounds (`valid_until: null`); a transaction that is `not_found` can only be replaced once the intake's sequence number has passed `sequence`. Only single-transaction plans are supported (`multi_transaction_plan` otherwise).
 

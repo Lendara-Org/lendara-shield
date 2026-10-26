@@ -236,6 +236,55 @@ pub trait PoolClient: Send + Sync + Debug {
     async fn intake_sequence(&self) -> Result<i64, PoolError>;
 }
 
+/// A note decrypted with the Global View Key: who owns it and how much.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AuditedNote {
+    /// Owner's note public key **as the SDK's audit prints it** (the field
+    /// element, big-endian): the reverse of the key users register.
+    pub owner: PoolField,
+    pub stroops: i64,
+}
+
+/// One pool transaction as the auditor sees it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AuditedTx {
+    pub ledger: u32,
+    /// Notes spent and created; zero-value padding notes are left out.
+    pub inputs: Vec<AuditedNote>,
+    pub outputs: Vec<AuditedNote>,
+}
+
+/// Decrypts the pool's activity with the Global View Key (`pool-cli audit`).
+#[async_trait]
+pub trait PoolAuditor: Send + Sync + Debug {
+    /// The newest `limit` pool transactions, newest first.
+    async fn audit(&self, limit: usize) -> Result<Vec<AuditedTx>, PoolError>;
+}
+
+/// What anyone sees about a transaction on a public explorer.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PublicTx {
+    pub hash: TxHash,
+    pub ledger: u32,
+    pub created_at: DateTime<Utc>,
+    pub source_account: AccountId,
+    /// Whether it calls Shield's pool contract.
+    pub is_pool_transaction: bool,
+    /// Net asset amount into (+) or out of (−) the pool, in stroops.
+    pub pool_ext_stroops: Option<i128>,
+    /// Every Stellar account that appears in it, sorted and unique.
+    pub visible_accounts: Vec<AccountId>,
+}
+
+/// Public read access to the ledger (Horizon), as any observer has it.
+#[async_trait]
+pub trait Explorer: Send + Sync + Debug {
+    /// `None` when the network does not know the transaction.
+    async fn transaction(&self, hash: &TxHash) -> Result<Option<PublicTx>, LedgerError>;
+    /// Successful transactions in `ledger` that call the pool.
+    async fn pool_transactions_in_ledger(&self, ledger: u32) -> Result<Vec<TxHash>, LedgerError>;
+}
+
 /// Source of the current time, injected so tests control it.
 pub trait Clock: Send + Sync + Debug {
     fn now(&self) -> DateTime<Utc>;

@@ -22,5 +22,11 @@ case "$1" in
     ;;
   submit) echo "{\"hash\":\"$hash\"}" ;;
   status) echo '{"status":"failed","result_xdr":"AAAA"}' ;;
+  audit)
+    # Real output shape; the owner is a note key as the SDK's audit prints it.
+    [[ "$3" == "2" && "${SHIELD_GVK_KEY_FILE:-}" == /gvk.json ]] || { echo '{"error":"config","message":"no gvk","retryable":false}'; exit 1; }
+    owner=0x24382f33fe99fcea57632e6dd4ba6eca4d7053785ff10b71e90577541cd7a6a2
+    echo "{\"transactions\":[{\"ledger\":5392292,\"inputs\":[{\"owner\":\"$owner\",\"amount\":\"20000000\"}],\"outputs\":[{\"owner\":\"$owner\",\"amount\":\"5000000\"}]},{\"ledger\":5392288,\"inputs\":[],\"outputs\":[]}]}"
+    ;;
   *) echo '{"error":"invalid_arguments","message":"unknown","retryable":false}'; exit 1 ;;
 esac

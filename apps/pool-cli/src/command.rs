@@ -29,11 +29,16 @@ pub enum Command {
     Submit { envelope: String },
     /// Network status of a transaction.
     Status { hash: String },
+    /// The newest `limit` pool transactions, decrypted with the Global View Key.
+    Audit { limit: usize },
 }
+
+/// Most transactions `audit` returns.
+pub const MAX_AUDIT_LIMIT: usize = 100;
 
 pub const USAGE: &str = "usage: pool-cli <keys | balance | prepare-deposit --amount N | \
      prepare-transfer --amount N --note-key 0x.. --encryption-key 0x.. | \
-     submit --envelope XDR | status --hash HEX>";
+     submit --envelope XDR | status --hash HEX | audit --limit N>";
 
 /// Parses `args` (without the program name).
 pub fn parse(args: &[String]) -> Result<Command, CliError> {
@@ -62,6 +67,22 @@ pub fn parse(args: &[String]) -> Result<Command, CliError> {
             }
             Command::Status {
                 hash: hash.to_owned(),
+            }
+        }
+        "audit" => {
+            let limit = flags.required("--limit")?;
+            match limit.parse::<usize>() {
+                Ok(n)
+                    if (1..=MAX_AUDIT_LIMIT).contains(&n)
+                        && limit.bytes().all(|b| b.is_ascii_digit()) =>
+                {
+                    Command::Audit { limit: n }
+                }
+                _ => {
+                    return Err(CliError::usage(&format!(
+                        "--limit must be an integer from 1 to {MAX_AUDIT_LIMIT}"
+                    )));
+                }
             }
         }
         other => return Err(CliError::usage(&format!("unknown command `{other}`"))),
@@ -131,6 +152,7 @@ impl<'a> Flags<'a> {
             Command::PrepareTransfer { .. } => &["--amount", "--note-key", "--encryption-key"],
             Command::Submit { .. } => &["--envelope"],
             Command::Status { .. } => &["--hash"],
+            Command::Audit { .. } => &["--limit"],
         };
         match self.0.iter().find(|(flag, _)| !allowed.contains(flag)) {
             Some((flag, _)) => Err(CliError::usage(&format!("unknown flag {flag}"))),
@@ -284,6 +306,10 @@ mod tests {
                 hash: "ab".repeat(32)
             }
         );
+        assert_eq!(
+            parse(&args(&["audit", "--limit", "20"]))?,
+            Command::Audit { limit: 20 }
+        );
         Ok(())
     }
 
@@ -310,6 +336,10 @@ mod tests {
             ],
             vec!["status", "--hash", "XYZ"],
             vec!["keys", "extra"],
+            vec!["audit"],
+            vec!["audit", "--limit", "0"],
+            vec!["audit", "--limit", "101"],
+            vec!["audit", "--limit", "+5"],
         ] {
             let parsed = parse(&args(&raw));
             assert!(

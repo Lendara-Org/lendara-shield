@@ -13,9 +13,9 @@ use crate::{
     asp::AspAction,
     domain::{PoolField, TxHash},
     ports::{
-        AnchorClient, AnchorDeposit, AnchorError, AnchorStatus, AspContract, AspKeys, ChainError,
-        Clock, IncomingPayment, IntakeLedger, LedgerError, PaymentPage, PoolClient, PoolError,
-        PoolTx, PreparedTx, StartDeposit, TxStatus,
+        AnchorClient, AnchorDeposit, AnchorError, AnchorStatus, AspContract, AspKeys, AuditedTx,
+        ChainError, Clock, Explorer, IncomingPayment, IntakeLedger, LedgerError, PaymentPage,
+        PoolAuditor, PoolClient, PoolError, PoolTx, PreparedTx, PublicTx, StartDeposit, TxStatus,
     },
 };
 
@@ -577,6 +577,105 @@ impl PoolClient for FakePool {
 
     async fn intake_sequence(&self) -> Result<i64, PoolError> {
         Ok(lock(&self.0).intake_sequence)
+    }
+}
+
+/// The auditor's decrypted pool history, newest first; can be made to fail.
+#[derive(Debug, Default)]
+pub struct FakeAuditor {
+    txs: Mutex<Vec<AuditedTx>>,
+    fails: Mutex<bool>,
+    limits: Mutex<Vec<usize>>,
+}
+
+impl FakeAuditor {
+    #[must_use]
+    pub fn with(txs: Vec<AuditedTx>) -> Self {
+        Self {
+            txs: Mutex::new(txs),
+            ..Self::default()
+        }
+    }
+
+    pub fn set_fails(&self, fails: bool) {
+        *lock(&self.fails) = fails;
+    }
+
+    /// The `limit` of every call so far.
+    #[must_use]
+    pub fn limits(&self) -> Vec<usize> {
+        lock(&self.limits).clone()
+    }
+}
+
+#[async_trait]
+impl PoolAuditor for FakeAuditor {
+    async fn audit(&self, limit: usize) -> Result<Vec<AuditedTx>, PoolError> {
+        lock(&self.limits).push(limit);
+        if *lock(&self.fails) {
+            return Err(PoolError {
+                code: "cli_timeout".into(),
+                message: "pool-cli timed out".into(),
+                retryable: true,
+            });
+        }
+        Ok(lock(&self.txs).iter().take(limit).cloned().collect())
+    }
+}
+
+/// Public transactions by hash and pool transactions by ledger.
+#[derive(Debug, Default)]
+pub struct FakeExplorer {
+    txs: Mutex<Vec<PublicTx>>,
+    ledgers: Mutex<Vec<(u32, Vec<TxHash>)>>,
+    fails: Mutex<bool>,
+    ledger_queries: Mutex<Vec<u32>>,
+}
+
+impl FakeExplorer {
+    pub fn add_tx(&self, tx: PublicTx) {
+        lock(&self.txs).push(tx);
+    }
+
+    pub fn set_ledger(&self, ledger: u32, hashes: Vec<TxHash>) {
+        lock(&self.ledgers).push((ledger, hashes));
+    }
+
+    pub fn set_fails(&self, fails: bool) {
+        *lock(&self.fails) = fails;
+    }
+
+    #[must_use]
+    pub fn ledger_queries(&self) -> Vec<u32> {
+        lock(&self.ledger_queries).clone()
+    }
+
+    fn check(&self) -> Result<(), LedgerError> {
+        if *lock(&self.fails) {
+            Err(LedgerError(
+                "Horizon answered 503 Service Unavailable".into(),
+            ))
+        } else {
+            Ok(())
+        }
+    }
+}
+
+#[async_trait]
+impl Explorer for FakeExplorer {
+    async fn transaction(&self, hash: &TxHash) -> Result<Option<PublicTx>, LedgerError> {
+        self.check()?;
+        Ok(lock(&self.txs).iter().find(|tx| &tx.hash == hash).cloned())
+    }
+
+    async fn pool_transactions_in_ledger(&self, ledger: u32) -> Result<Vec<TxHash>, LedgerError> {
+        lock(&self.ledger_queries).push(ledger);
+        self.check()?;
+        Ok(lock(&self.ledgers)
+            .iter()
+            .find(|(l, _)| *l == ledger)
+            .map(|(_, hashes)| hashes.clone())
+            .unwrap_or_default())
     }
 }
 

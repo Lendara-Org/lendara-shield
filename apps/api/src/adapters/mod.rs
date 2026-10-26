@@ -2,6 +2,7 @@
 //! services.
 
 pub mod anchor;
+pub mod explorer;
 pub mod horizon;
 pub mod pool_cli;
 pub mod soroban;

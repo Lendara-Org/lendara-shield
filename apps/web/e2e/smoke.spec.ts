@@ -27,3 +27,50 @@ test("says when Shield's API is down", async ({ page }) => {
   await page.goto("/wallet");
   await expect(page.getByRole("main").getByRole("alert")).toContainText("unreachable");
 });
+
+test("the audit compares the explorer with the auditor", async ({ page }) => {
+  const cors = { "access-control-allow-origin": "*", "access-control-allow-headers": "authorization" };
+  const hash = "2fe1".repeat(16);
+  const intake = "GCRN35RTRRZAIFFEMOTZFV7PNPMFOTDNXQKLMOQFSMOBU3LAON3A6NJC";
+  const carol = "GCWQUSCIB2S4LNW6FIOKL2N6BLFKAQ365A43IZVWJBR2ANAEDSIG3GQK";
+  await page.route(`${API}/v1/audit/transactions?limit=20`, (route) =>
+    route.request().method() === "OPTIONS"
+      ? route.fulfill({ status: 204, headers: cors })
+      : route.fulfill({
+          headers: cors,
+          json: {
+            transactions: [
+              {
+                ledger: 5392310,
+                tx_hash: hash,
+                kind: "transfer",
+                ext_amount: "0",
+                inputs: [{ owner_note_public_key: `0x${"1d".repeat(32)}`, owner_stellar_account: intake, amount: "9.3039215" }],
+                outputs: [{ owner_note_public_key: `0x${"c0".repeat(32)}`, owner_stellar_account: carol, amount: "9.3039215" }],
+              },
+            ],
+          },
+        }),
+  );
+  await page.route(`${API}/v1/audit/public/${hash}`, (route) =>
+    route.fulfill({
+      headers: cors,
+      json: {
+        tx_hash: hash,
+        ledger: 5392310,
+        created_at: "2026-10-26T03:30:00Z",
+        source_account: intake,
+        is_pool_transaction: true,
+        ext_amount: "0",
+        visible_accounts: [intake],
+        explorer_url: `https://stellar.expert/explorer/testnet/tx/${hash}`,
+      },
+    }),
+  );
+
+  await page.goto("/audit");
+  await page.getByLabel("Auditor token").fill("auditor-token");
+  await page.getByRole("button", { name: "Open the audit" }).click();
+  await expect(page.getByText("Nothing: amount hidden")).toBeVisible();
+  await expect(page.getByText("GCWQUS…3GQK")).toBeVisible();
+});

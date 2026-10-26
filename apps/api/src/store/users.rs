@@ -1,5 +1,7 @@
 //! `shield_users`.
 
+use std::collections::HashMap;
+
 use chrono::{DateTime, Utc};
 use sqlx::{PgExecutor, prelude::FromRow};
 use uuid::Uuid;
@@ -151,6 +153,28 @@ pub async fn find_by_account(
     .fetch_optional(db)
     .await?;
     row.map(TryInto::try_into).transpose()
+}
+
+/// Accounts of the users who registered these note public keys.
+pub async fn accounts_by_note_keys(
+    db: impl PgExecutor<'_>,
+    keys: &[PoolField],
+) -> Result<HashMap<PoolField, AccountId>, StoreError> {
+    let keys: Vec<&str> = keys.iter().map(PoolField::as_str).collect();
+    let rows: Vec<(String, String)> = sqlx::query_as(
+        "SELECT note_public_key, stellar_account FROM shield_users WHERE note_public_key = ANY($1)",
+    )
+    .bind(&keys)
+    .fetch_all(db)
+    .await?;
+    rows.into_iter()
+        .map(|(key, account)| {
+            Ok((
+                PoolField::parse(&key).map_err(|e| corrupt("shield_users", e))?,
+                AccountId::parse(&account).map_err(|e| corrupt("shield_users", e))?,
+            ))
+        })
+        .collect()
 }
 
 /// Reads the user and locks the row until the transaction ends, so ASP

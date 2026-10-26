@@ -1,0 +1,89 @@
+"use client";
+
+import type { AuditTransaction } from "@lendara/shield-api-types";
+import { useState } from "react";
+
+import { message, useSession } from "@/components/session";
+import { Button, Card, Field, Notice, inputClass } from "@/components/ui/primitives";
+import { ApiRequestError, api } from "@/lib/api";
+import { kindLabel, movedAmount } from "@/lib/audit";
+import { shorten } from "@/lib/explorer";
+
+import { Comparison } from "./comparison";
+
+export function AuditView() {
+  const { info } = useSession();
+  const asset = info?.pool.asset.code ?? "USDC";
+  const [token, setToken] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [txs, setTxs] = useState<AuditTransaction[] | null>(null);
+  const [selected, setSelected] = useState(0);
+
+  async function unlock(event: React.FormEvent) {
+    event.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      const { transactions } = await api.auditTransactions(token.trim());
+      setTxs(transactions);
+      setSelected(0);
+    } catch (err) {
+      setError(err instanceof ApiRequestError && err.status === 401 ? "That auditor token is not valid." : message(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!txs) {
+    return (
+      <Card title="Auditor access">
+        <form onSubmit={(e) => void unlock(e)} className="space-y-4">
+          <Field label="Auditor token" hint="Shield's AUDITOR_TOKEN. It is only sent to Shield's API.">
+            {(control) => (
+              <input
+                {...control}
+                type="password"
+                autoComplete="off"
+                className={inputClass}
+                value={token}
+                onChange={(e) => setToken(e.target.value)}
+              />
+            )}
+          </Field>
+          <Button type="submit" busy={busy} disabled={token.trim() === ""}>
+            Open the audit
+          </Button>
+          {error && <Notice tone="error">{error}</Notice>}
+        </form>
+      </Card>
+    );
+  }
+
+  const current = txs[selected];
+  return (
+    <div className="space-y-6">
+      {current ? <Comparison tx={current} asset={asset} /> : <Notice>The pool has no transactions yet.</Notice>}
+      <Card title="Pool activity">
+        <ul className="divide-y divide-line">
+          {txs.map((tx, i) => (
+            <li key={`${tx.ledger}:${tx.tx_hash ?? i}`}>
+              <button
+                type="button"
+                onClick={() => setSelected(i)}
+                aria-current={i === selected}
+                className="grid w-full grid-cols-[9rem_1fr_auto] gap-3 py-2 text-left text-sm hover:bg-paper aria-[current=true]:font-semibold"
+              >
+                <span>{kindLabel(tx.kind)}</span>
+                <span className="font-mono text-gray">{tx.tx_hash ? shorten(tx.tx_hash) : `ledger ${tx.ledger}`}</span>
+                <span className="font-mono">
+                  {movedAmount(tx)} {asset}
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      </Card>
+    </div>
+  );
+}
