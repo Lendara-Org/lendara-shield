@@ -6,13 +6,14 @@
   "type": "module",
   "scripts": {
     "stage-sdk": "../../scripts/stage-web-sdk.sh",
-    "dev": "next dev",
-    "build": "next build",
+    "dev": "pnpm run api-reference && next dev",
+    "build": "pnpm run api-reference && next build",
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "api-reference": "redocly build-docs ../../openapi.yaml --output public/api-reference.html"
   },
   "dependencies": {
     "@lendara/shield-api-types": "workspace:*",

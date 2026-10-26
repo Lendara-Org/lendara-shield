@@ -37,3 +37,5 @@ CLAUDE.local.md
 # Pool SDK served to the browser (scripts/stage-web-sdk.sh)
 apps/web/public/spp/
 apps/web/next-env.d.ts
+# API reference generated from openapi.yaml (pnpm run api-reference)
+apps/web/public/api-reference.html

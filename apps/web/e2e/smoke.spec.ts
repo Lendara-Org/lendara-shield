@@ -74,3 +74,20 @@ test("the audit compares the explorer with the auditor", async ({ page }) => {
   await expect(page.getByText("Nothing: amount hidden")).toBeVisible();
   await expect(page.getByText("GCWQUS…3GQK")).toBeVisible();
 });
+
+test("switches language and reads the docs", async ({ page }) => {
+  await page.goto("/en");
+  await page.getByRole("group", { name: "Language" }).getByRole("link", { name: "es" }).click();
+  await expect(page).toHaveURL(/\/es$/);
+  await expect(page.getByRole("heading", { level: 1 })).toContainText("KYC una vez");
+
+  await page.getByRole("navigation", { name: "Principal" }).getByRole("link", { name: "Docs" }).click();
+  await expect(page).toHaveURL(/\/es\/docs$/);
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Introducción");
+  await page.getByRole("link", { name: /Siguiente/ }).click();
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Shield Protocol");
+
+  // Old links still work, in English.
+  await page.goto("/onboard");
+  await expect(page).toHaveURL(/\/en\/onboard$/);
+});
