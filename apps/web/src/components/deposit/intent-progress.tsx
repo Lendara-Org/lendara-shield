@@ -30,18 +30,18 @@ export function IntentProgress({ initial }: { initial: Intent }) {
 
   return (
     <Card title={t.progress.title}>
-      <ol className="space-y-4" aria-live="polite">
+      <ol className="space-y-6" aria-live="polite">
         {intentSteps(intent).map((step, i) => (
           <li key={step.key} className="flex gap-3" data-state={step.state}>
-            <span aria-hidden className={`flex size-6 shrink-0 items-center justify-center rounded-full text-xs ${MARK[step.state]}`}>
+            <span aria-hidden className={`flex size-8 shrink-0 items-center justify-center rounded-full text-sm ${MARK[step.state]}`}>
               {step.state === "done" ? "✓" : step.state === "failed" ? "!" : i + 1}
             </span>
             <div className="space-y-0.5">
-              <p className="text-sm font-medium">
+              <p className="text-base font-medium">
                 {t.progress.steps[step.key].label}
                 <span className="sr-only">: {t.progress.state[step.state]}</span>
               </p>
-              <p className="text-xs text-gray">{t.progress.steps[step.key].detail}</p>
+              <p className="text-sm text-gray">{t.progress.steps[step.key].detail}</p>
               {step.hash && <TxLink hash={step.hash} />}
             </div>
           </li>

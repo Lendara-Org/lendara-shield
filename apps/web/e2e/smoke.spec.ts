@@ -73,6 +73,8 @@ test("the audit compares the explorer with the auditor", async ({ page }) => {
   await page.getByRole("button", { name: "Open the audit" }).click();
   await expect(page.getByText("Nothing: amount hidden")).toBeVisible();
   await expect(page.getByText("GCWQUS…3GQK")).toBeVisible();
+  await page.setViewportSize({ width: 375, height: 1000 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
 
 test("switches language and reads the docs", async ({ page }) => {
@@ -167,4 +169,16 @@ test("entry illustrations lift on hover without rotation or zoom", async ({ page
   const card = page.getByRole("link", { name: /Con rampa/ });
   await card.hover();
   await expect(card.locator(".entry-payment-window")).toHaveCSS("transform", "matrix(1, 0, 0, 1, 0, -10)");
+});
+
+test("app and docs pages share the wider, readable home scale", async ({ page }) => {
+  for (const width of [375, 1920]) {
+    await page.setViewportSize({ width, height: 1000 });
+    for (const route of ["onboard", "deposit", "wallet", "audit", "docs"]) {
+      await page.goto(`/es/${route}`);
+      await expect(page.getByRole("main")).toHaveCSS("max-width", "1440px");
+      await expect(page.getByRole("heading", { level: 1 })).toHaveCSS("font-size", width === 375 ? "40px" : "64px");
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), `${route} at ${width}px`).toBe(true);
+    }
+  }
 });

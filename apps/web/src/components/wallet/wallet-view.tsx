@@ -52,15 +52,15 @@ function Wallet({ wallet }: { wallet: ShieldWallet }) {
   return (
     <div className="space-y-6">
       <Card title={t.wallet.balanceTitle}>
-        <div className="flex items-end justify-between gap-4">
-          <p className="font-sans text-4xl tabular-nums" aria-live="polite">
+        <div className="flex flex-wrap items-end justify-between gap-4">
+          <p className="font-sans text-5xl leading-tight tabular-nums sm:text-6xl" aria-live="polite">
             {balance === null ? "—" : formatAmount(balance)} <span className="text-base text-gray">{asset}</span>
           </p>
           <Button variant="quiet" onClick={() => void refresh()} busy={syncing}>
             {t.wallet.sync}
           </Button>
         </div>
-        <p className="mt-2 text-xs text-gray">{t.wallet.balanceNote}</p>
+        <p className="mt-2 text-sm text-gray">{t.wallet.balanceNote}</p>
         {balanceError && (
           <div className="mt-3">
             <Notice tone="error">{balanceError}</Notice>
@@ -70,7 +70,7 @@ function Wallet({ wallet }: { wallet: ShieldWallet }) {
 
       <ReceiveCard wallet={wallet} />
 
-      <div className="grid gap-6 sm:grid-cols-2">
+      <div className="grid gap-8 lg:grid-cols-2">
         <SpendForm
           title={t.wallet.sendTitle}
           action={t.wallet.send}
@@ -116,10 +116,10 @@ function ReceiveCard({ wallet }: { wallet: ShieldWallet }) {
 
   return (
     <Card title={t.wallet.receiveTitle}>
-      <p className="mb-3 text-sm text-gray">{t.wallet.receiveIntro}</p>
+      <p className="mb-3 text-base text-gray">{t.wallet.receiveIntro}</p>
       {address ? (
         <div className="flex items-start gap-2">
-          <code className="block flex-1 break-all rounded-md bg-paper p-3 font-mono text-xs">{address}</code>
+          <code className="block min-w-0 flex-1 break-all rounded-md bg-paper p-3 font-mono text-sm">{address}</code>
           <Button variant="quiet" onClick={() => void copy()}>
             {copied ? t.wallet.copied : t.wallet.copy}
           </Button>
@@ -181,7 +181,7 @@ function SpendForm({
 
   return (
     <Card title={title}>
-      <form onSubmit={(e) => void submit(e)} className="space-y-4">
+      <form onSubmit={(e) => void submit(e)} className="space-y-6">
         {withRecipient && (
           <Field label={t.wallet.recipient} hint="shield:0x…:0x…">
             {(control) => (

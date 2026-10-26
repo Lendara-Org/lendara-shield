@@ -54,7 +54,7 @@ export function RampDeposit({ account, anchor }: { account: string; anchor: stri
 
   if (intent) {
     return (
-      <div className="space-y-4">
+      <div className="space-y-6">
         {intent.interactive_url && (
           <Notice>
             {t.deposit.completeInWindow}{" "}
@@ -70,8 +70,8 @@ export function RampDeposit({ account, anchor }: { account: string; anchor: stri
 
   return (
     <Card title={t.deposit.rampTitle}>
-      <p className="mb-4 text-sm text-gray">{t.deposit.rampIntro(anchor ?? null)}</p>
-      <form onSubmit={(e) => void start(e)} className="space-y-4">
+      <p className="mb-4 text-base text-gray">{t.deposit.rampIntro(anchor ?? null)}</p>
+      <form onSubmit={(e) => void start(e)} className="max-w-3xl space-y-6">
         <div className="grid gap-4 sm:grid-cols-[8rem_1fr]">
           <Field label={t.deposit.currency}>
             {(control) => (

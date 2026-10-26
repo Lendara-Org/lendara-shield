@@ -201,6 +201,8 @@ Routes: `/` (what Shield is), `/docs` (overview, protocol, quickstart, API, scen
 
 - Landing visuals use bilingual HTML/SVG and the pinned @paper-design/shaders-react 0.0.81 MeshGradient. The hero preview switches public/authorized views using fixture data only; never connect it to wallets or backend audit permissions. Stop its automatic cycle on interaction, honor reduced motion (shader speed 0), and preserve entry links. Entry previews lift on hover without rotation.
 
+- App and docs pages share the home max-width of 1440px, desktop titles at 64/72 and mobile titles at 40/46. Keep text-entry forms bounded (max-width 768px) inside the wider page; data comparisons and docs may use the available width.
+
 ### TypeScript
 
 - `strict`, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`; no `any`, no `as` unless justified.

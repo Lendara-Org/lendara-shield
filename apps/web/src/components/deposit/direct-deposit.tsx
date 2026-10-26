@@ -36,7 +36,7 @@ export function DirectDeposit({ wallet, assetCode }: { wallet: ShieldWallet; ass
       <div className="mb-4">
         <Notice tone="warn">{t.deposit.directWarning}</Notice>
       </div>
-      <form onSubmit={(e) => void deposit(e)} className="space-y-4">
+      <form onSubmit={(e) => void deposit(e)} className="max-w-3xl space-y-6">
         <Field label={t.deposit.directAmount(assetCode)} hint={t.deposit.directHint}>
           {(control) => (
             <input

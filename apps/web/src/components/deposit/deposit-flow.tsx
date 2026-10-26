@@ -24,7 +24,7 @@ export function DepositFlow() {
     <ConnectGate requireAllowed>
       {(wallet) => (
         <div className="space-y-6">
-          <div role="radiogroup" aria-label={t.deposit.mode} className="inline-flex rounded-md border border-line bg-surface p-1 text-sm">
+          <div role="radiogroup" aria-label={t.deposit.mode} className="inline-flex max-w-full flex-wrap rounded-xl border border-line bg-surface p-1 text-base">
             {(
               [
                 ["ramp", t.deposit.ramp],
@@ -38,7 +38,7 @@ export function DepositFlow() {
                 aria-checked={mode === value}
                 disabled={value === "ramp" && !rampEnabled}
                 onClick={() => setChosen(value)}
-                className="rounded px-4 py-1.5 text-gray aria-checked:bg-ink aria-checked:text-paper disabled:opacity-40"
+                className="min-h-12 rounded-lg px-4 py-3 text-gray aria-checked:bg-ink aria-checked:text-paper disabled:opacity-40"
               >
                 {label}
               </button>
