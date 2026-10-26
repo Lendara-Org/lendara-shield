@@ -69,6 +69,7 @@ test-js: ## Test TS packages
 
 test-testnet: ## Check the testnet setup on-chain, read-only (needs .env)
 	scripts/verify-testnet.sh
+	cd $(API_DIR) && cargo test --test testnet_asp -- --ignored
 
 coverage: ## API coverage summary; `main.rs` is wiring only and excluded
 	cd $(API_DIR) && cargo llvm-cov --ignore-filename-regex 'src/main\.rs' --summary-only
