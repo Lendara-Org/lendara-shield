@@ -1,15 +1,18 @@
 //! HTTP layer: routing and cross-cutting middleware. Handlers stay thin and
 //! delegate business logic to services.
 
+mod extract;
 mod health;
 mod info;
+mod users;
 
 use std::time::Duration;
 
 use axum::{
     Router,
+    extract::MatchedPath,
     http::{HeaderName, Method, Request, StatusCode, header},
-    routing::get,
+    routing::{get, post},
 };
 use tower_http::{
     cors::{AllowOrigin, CorsLayer},
@@ -47,6 +50,10 @@ pub fn build_app(state: AppState, options: HttpOptions) -> Router {
     Router::new()
         .route("/health", get(health::health))
         .route("/v1/info", get(info::info))
+        .route("/v1/onboarding", post(users::onboard))
+        .route("/v1/users/{account}", get(users::get_user))
+        .route("/v1/asp/block", post(users::block))
+        .route("/v1/asp/unblock", post(users::unblock))
         .fallback(not_found)
         .with_state(state)
         .layer(TimeoutLayer::with_status_code(
@@ -62,11 +69,16 @@ pub fn build_app(state: AppState, options: HttpOptions) -> Router {
                         .get::<RequestId>()
                         .and_then(|id| id.header_value().to_str().ok())
                         .unwrap_or_default();
-                    // Path only: query strings could carry identifiers.
+                    // Route template (`/v1/users/{account}`), never the raw
+                    // path: it would put user addresses in the logs (§0.5).
+                    let route = request
+                        .extensions()
+                        .get::<MatchedPath>()
+                        .map_or("unmatched", MatchedPath::as_str);
                     tracing::info_span!(
                         "http_request",
                         method = %request.method(),
-                        path = %request.uri().path(),
+                        route,
                         request_id,
                     )
                 })

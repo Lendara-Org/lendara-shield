@@ -12,6 +12,8 @@ pub enum StrkeyError {
     Account(String),
     #[error("`{0}` is not a valid C... contract address")]
     Contract(String),
+    #[error("`{0}` is not a 64-character lowercase hex transaction hash")]
+    TxHash(String),
 }
 
 /// A Stellar account public key (`G...`). Muxed (`M...`) accounts are not
@@ -51,6 +53,36 @@ impl ContractId {
     }
 }
 
+/// A Stellar transaction hash: 32 bytes as lowercase hex.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
+pub struct TxHash(String);
+
+impl TxHash {
+    pub fn parse(raw: &str) -> Result<Self, StrkeyError> {
+        if raw.len() == 64 && raw.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')) {
+            Ok(Self(raw.to_owned()))
+        } else {
+            Err(StrkeyError::TxHash(raw.to_owned()))
+        }
+    }
+
+    #[must_use]
+    pub fn from_bytes(bytes: [u8; 32]) -> Self {
+        use std::fmt::Write;
+        let hex = bytes.iter().fold(String::with_capacity(64), |mut out, b| {
+            let _ = write!(out, "{b:02x}");
+            out
+        });
+        Self(hex)
+    }
+
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
 macro_rules! string_conversions {
     ($ty:ty) => {
         impl TryFrom<String> for $ty {
@@ -76,6 +108,7 @@ macro_rules! string_conversions {
 
 string_conversions!(AccountId);
 string_conversions!(ContractId);
+string_conversions!(TxHash);
 
 #[cfg(test)]
 mod tests {
@@ -113,6 +146,16 @@ mod tests {
         for raw in ["", "G", "hello", &ACCOUNT.to_lowercase()] {
             assert!(AccountId::parse(raw).is_err(), "{raw}");
         }
+    }
+
+    #[test]
+    fn parses_transaction_hashes() -> Result<(), StrkeyError> {
+        let hash = "770f0c7954347bfd2663f0c7b4b268c05bcfdc5205f702253adf60e0498b17b6";
+        assert_eq!(TxHash::parse(hash)?.as_str(), hash);
+        assert!(TxHash::parse(&hash.to_uppercase()).is_err());
+        assert!(TxHash::parse(&hash[1..]).is_err());
+        assert_eq!(TxHash::from_bytes([0xab; 32]).as_str(), "ab".repeat(32));
+        Ok(())
     }
 
     #[test]

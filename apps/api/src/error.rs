@@ -17,9 +17,18 @@ pub enum ApiError {
     /// The route or resource does not exist.
     #[error("not found")]
     NotFound,
+    /// A specific resource does not exist (`user_not_found`, ...).
+    #[error("{message}")]
+    Missing { code: &'static str, message: String },
     /// The request is malformed or fails validation.
     #[error("{message}")]
     BadRequest { code: &'static str, message: String },
+    /// Missing or wrong credentials.
+    #[error("unauthorized")]
+    Unauthorized,
+    /// The request conflicts with the current state.
+    #[error("{message}")]
+    Conflict { code: &'static str, message: String },
     /// A dependency (database, Stellar RPC, anchor) is unavailable.
     #[error("service unavailable: {0}")]
     Unavailable(String),
@@ -41,7 +50,10 @@ impl ApiError {
     pub fn code(&self) -> &'static str {
         match self {
             Self::NotFound => "not_found",
-            Self::BadRequest { code, .. } => code,
+            Self::Missing { code, .. }
+            | Self::BadRequest { code, .. }
+            | Self::Conflict { code, .. } => code,
+            Self::Unauthorized => "unauthorized",
             Self::Unavailable(_) => "service_unavailable",
             Self::Internal(_) => "internal_error",
         }
@@ -50,8 +62,10 @@ impl ApiError {
     #[must_use]
     pub fn status(&self) -> StatusCode {
         match self {
-            Self::NotFound => StatusCode::NOT_FOUND,
+            Self::NotFound | Self::Missing { .. } => StatusCode::NOT_FOUND,
             Self::BadRequest { .. } => StatusCode::BAD_REQUEST,
+            Self::Unauthorized => StatusCode::UNAUTHORIZED,
+            Self::Conflict { .. } => StatusCode::CONFLICT,
             Self::Unavailable(_) => StatusCode::SERVICE_UNAVAILABLE,
             Self::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
@@ -61,7 +75,10 @@ impl ApiError {
     fn public_message(&self) -> String {
         match self {
             Self::NotFound => "The requested resource does not exist.".to_owned(),
-            Self::BadRequest { message, .. } => message.clone(),
+            Self::Missing { message, .. }
+            | Self::BadRequest { message, .. }
+            | Self::Conflict { message, .. } => message.clone(),
+            Self::Unauthorized => "Missing or invalid bearer token.".to_owned(),
             Self::Unavailable(_) => "A dependency is temporarily unavailable.".to_owned(),
             Self::Internal(_) => "An unexpected error occurred.".to_owned(),
         }
@@ -122,6 +139,40 @@ mod tests {
             body,
             json!({"error": "invalid_amount", "message": "amount must be positive"})
         );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn specific_errors_keep_their_codes() -> Result<(), Box<dyn std::error::Error>> {
+        let cases = [
+            (
+                ApiError::Missing {
+                    code: "user_not_found",
+                    message: "no".into(),
+                },
+                StatusCode::NOT_FOUND,
+                "user_not_found",
+            ),
+            (
+                ApiError::Conflict {
+                    code: "user_not_allowed",
+                    message: "no".into(),
+                },
+                StatusCode::CONFLICT,
+                "user_not_allowed",
+            ),
+            (
+                ApiError::Unauthorized,
+                StatusCode::UNAUTHORIZED,
+                "unauthorized",
+            ),
+        ];
+        for (err, expected_status, expected_code) in cases {
+            let (status, body) = render(err).await?;
+            assert_eq!(status, expected_status);
+            assert_eq!(body["error"], expected_code);
+            assert!(body["message"].is_string());
+        }
         Ok(())
     }
 
