@@ -80,9 +80,48 @@ impl fmt::Display for DecimalAmount {
     }
 }
 
+/// Formats a signed amount of stroops as a canonical decimal (`-0.5`, `0`,
+/// `9.3039215`), as `SignedDecimalAmount` in the API contract.
+#[must_use]
+pub fn format_stroops(stroops: i128) -> String {
+    let sign = if stroops < 0 { "-" } else { "" };
+    let abs = stroops.unsigned_abs();
+    let scale = 10u128.pow(7);
+    let frac = format!("{:07}", abs % scale);
+    let frac = frac.trim_end_matches('0');
+    if frac.is_empty() {
+        format!("{sign}{}", abs / scale)
+    } else {
+        format!("{sign}{}.{frac}", abs / scale)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn formats_signed_stroops() {
+        for (stroops, text) in [
+            (0, "0"),
+            (93_039_215, "9.3039215"),
+            (10_000_000, "1"),
+            (-5_000_000, "-0.5"),
+            (1, "0.0000001"),
+            (-1, "-0.0000001"),
+        ] {
+            assert_eq!(format_stroops(stroops), text);
+        }
+    }
+
+    #[test]
+    fn formatting_round_trips_with_parse() -> Result<(), AmountError> {
+        for raw in ["9.3039215", "0.5", "100", "0.0000001"] {
+            let amount = DecimalAmount::parse(raw)?;
+            assert_eq!(format_stroops(i128::from(amount.to_stroops())), raw);
+        }
+        Ok(())
+    }
 
     #[test]
     fn canonicalises() -> Result<(), AmountError> {

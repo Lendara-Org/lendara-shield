@@ -3,18 +3,19 @@
 //!
 //! The child gets an empty environment plus only the variables it needs, so
 //! no other API secret (admin token, operator seed, database URL) reaches it.
+//! Only the auditor's instance gets the Global View Key ([`AUDITOR_ENV`]).
 
-use std::{path::PathBuf, process::Stdio, time::Duration};
+use std::{path::PathBuf, process::Stdio, sync::Arc, time::Duration};
 
 use async_trait::async_trait;
 use serde::Deserialize;
 use serde_json::Value;
-use tokio::process::Command;
+use tokio::{process::Command, sync::Mutex};
 
 use super::soroban::rpc::SorobanRpc;
 use crate::{
     domain::{PoolField, TxHash},
-    ports::{PoolClient, PoolError, PoolTx, TxStatus},
+    ports::{AuditedNote, AuditedTx, PoolAuditor, PoolClient, PoolError, PoolTx, TxStatus},
 };
 
 /// Variables forwarded to the CLI (same names as the API's `.env`).
@@ -27,6 +28,9 @@ pub const FORWARDED_ENV: [&str; 6] = [
     "SOROBAN_RPC_URL",
 ];
 
+/// Extra variable of the auditor's instance: the Global View Key file.
+pub const AUDITOR_ENV: &str = "SHIELD_GVK_KEY_FILE";
+
 /// Proving takes ~10 s; the first run also downloads circuit artifacts.
 pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(180);
 
@@ -37,6 +41,9 @@ pub struct CliPoolClient {
     timeout: Duration,
     rpc: SorobanRpc,
     intake: [u8; 32],
+    /// Held while the CLI runs: every instance opens the same SDK wallet
+    /// (SQLite), so runs that share a wallet must share this lock.
+    wallet: Arc<Mutex<()>>,
 }
 
 impl CliPoolClient {
@@ -55,7 +62,15 @@ impl CliPoolClient {
             timeout,
             rpc,
             intake,
+            wallet: Arc::default(),
         }
+    }
+
+    /// Serialises this instance's runs with others holding the same lock.
+    #[must_use]
+    pub fn sharing_wallet(mut self, lock: Arc<Mutex<()>>) -> Self {
+        self.wallet = lock;
+        self
     }
 
     /// Collects [`FORWARDED_ENV`] from this process's environment.
@@ -71,7 +86,18 @@ impl CliPoolClient {
             .collect()
     }
 
+    /// [`Self::forwarded_env`] plus the Global View Key, for [`PoolAuditor`].
+    #[must_use]
+    pub fn auditor_env() -> Vec<(String, String)> {
+        let mut env = Self::forwarded_env();
+        if let Ok(value) = std::env::var(AUDITOR_ENV) {
+            env.push((AUDITOR_ENV.to_owned(), value));
+        }
+        env
+    }
+
     async fn run(&self, args: &[&str]) -> Result<Value, PoolError> {
+        let _wallet = self.wallet.lock().await;
         let child = Command::new(&self.binary)
             .args(args)
             .env_clear()
@@ -192,6 +218,25 @@ impl PoolClient for CliPoolClient {
     }
 }
 
+#[async_trait]
+impl PoolAuditor for CliPoolClient {
+    async fn audit(&self, limit: usize) -> Result<Vec<AuditedTx>, PoolError> {
+        let value = self.run(&["audit", "--limit", &limit.to_string()]).await?;
+        let audit: Audit = serde_json::from_value(value).map_err(|e| {
+            failure(
+                "cli_protocol",
+                format!("unexpected audit output: {e}"),
+                true,
+            )
+        })?;
+        audit
+            .transactions
+            .into_iter()
+            .map(TryInto::try_into)
+            .collect()
+    }
+}
+
 fn failure(code: &str, message: String, retryable: bool) -> PoolError {
     PoolError {
         code: code.to_owned(),
@@ -218,4 +263,52 @@ struct Prepared {
 struct Status {
     status: String,
     result_xdr: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct Audit {
+    transactions: Vec<AuditTx>,
+}
+
+#[derive(Deserialize)]
+struct AuditTx {
+    ledger: u32,
+    inputs: Vec<AuditNote>,
+    outputs: Vec<AuditNote>,
+}
+
+#[derive(Deserialize)]
+struct AuditNote {
+    owner: String,
+    amount: String,
+}
+
+impl TryFrom<AuditTx> for AuditedTx {
+    type Error = PoolError;
+
+    fn try_from(tx: AuditTx) -> Result<Self, Self::Error> {
+        let notes = |notes: Vec<AuditNote>| -> Result<Vec<AuditedNote>, PoolError> {
+            notes
+                .into_iter()
+                .map(|note| {
+                    Ok(AuditedNote {
+                        owner: PoolField::parse(&note.owner)
+                            .map_err(|e| failure("cli_protocol", e.to_string(), true))?,
+                        stroops: note.amount.parse().map_err(|_| {
+                            failure(
+                                "cli_protocol",
+                                format!("bad note amount `{}`", note.amount),
+                                true,
+                            )
+                        })?,
+                    })
+                })
+                .collect()
+        };
+        Ok(Self {
+            ledger: tx.ledger,
+            inputs: notes(tx.inputs)?,
+            outputs: notes(tx.outputs)?,
+        })
+    }
 }

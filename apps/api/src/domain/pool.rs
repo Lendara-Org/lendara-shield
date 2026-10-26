@@ -33,6 +33,18 @@ impl PoolField {
         Ok(Self(format!("0x{}", hex.to_ascii_lowercase())))
     }
 
+    /// Writes `bytes` as `0x` + 64 lowercase hex digits.
+    #[must_use]
+    pub fn from_bytes(bytes: [u8; 32]) -> Self {
+        use std::fmt::Write as _;
+        let mut out = String::with_capacity(66);
+        out.push_str("0x");
+        for byte in bytes {
+            let _ = write!(out, "{byte:02x}");
+        }
+        Self(out)
+    }
+
     /// The 32 bytes in the order they are written.
     #[must_use]
     pub fn to_bytes(&self) -> [u8; 32] {
