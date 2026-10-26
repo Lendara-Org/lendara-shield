@@ -3,12 +3,10 @@
 mod common;
 
 use axum::http::StatusCode;
-use common::{TestResult, app_with_fakes, app_with_ramp, get, post_json, send};
+use common::{ALICE, TestResult, app_with_fakes, app_with_ramp, get, post_json, send, signed};
 use serde_json::{Value, json};
 use shield_api::testing::{AnchorBehaviour, ChainBehaviour};
 use sqlx::PgPool;
-
-const ALICE: &str = "GDZOAGBQFY65MGK5Z6RBBFCHPYB2PJDJW3UV47IWK53UQF4LFSUP6XZC";
 
 fn onboarding() -> Value {
     json!({
@@ -60,7 +58,7 @@ async fn creates_and_reads_an_intent(db: PgPool) -> TestResult {
     let (app, _, anchor) = app_with_fakes(db)?;
     send(
         app.clone(),
-        post_json("/v1/onboarding", &onboarding(), None)?,
+        post_json("/v1/onboarding", &signed(&onboarding()), None)?,
     )
     .await?;
 
@@ -121,7 +119,7 @@ async fn unknown_and_not_allowed_users_are_refused(db: PgPool) -> TestResult {
     chain.set_behaviour(ChainBehaviour::Down);
     send(
         app.clone(),
-        post_json("/v1/onboarding", &onboarding(), None)?,
+        post_json("/v1/onboarding", &signed(&onboarding()), None)?,
     )
     .await?;
     let (status, _, err) =
@@ -137,7 +135,7 @@ async fn anchor_failures_are_a_502_and_leave_an_error_intent(db: PgPool) -> Test
     let (app, _, anchor) = app_with_fakes(db.clone())?;
     send(
         app.clone(),
-        post_json("/v1/onboarding", &onboarding(), None)?,
+        post_json("/v1/onboarding", &signed(&onboarding()), None)?,
     )
     .await?;
     anchor.set_behaviour(AnchorBehaviour::Down);
@@ -159,7 +157,7 @@ async fn validates_the_request(db: PgPool) -> TestResult {
     let (app, _, anchor) = app_with_fakes(db)?;
     send(
         app.clone(),
-        post_json("/v1/onboarding", &onboarding(), None)?,
+        post_json("/v1/onboarding", &signed(&onboarding()), None)?,
     )
     .await?;
 

@@ -1,7 +1,7 @@
 //! Onboarding and ASP administration: orchestrates the database and the
 //! on-chain [`AspContract`].
 //!
-//! Money-integrity rules (CLAUDE.md §0.6) applied to ASP writes:
+//! Money-integrity rules (AGENTS.md §5.3) applied to ASP writes:
 //! - the transaction hash is stored **before** sending;
 //! - a retry first asks the network about the stored hash and never resends
 //!   while it may still land (until its `valid_until` time bound passes);

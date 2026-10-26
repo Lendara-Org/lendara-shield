@@ -160,3 +160,35 @@ pub fn post_json(
     }
     request.body(Body::from(body.to_string()))
 }
+
+/// Test accounts with known seeds, so tests can sign as them (SEP-53).
+pub const ALICE: &str = "GDVEU3DD4KOFECV66VIHWEZOYX4ZKR3WV27L464SIIPOU2IUI3JCZA57";
+pub const BOB: &str = "GAJZR5RMNUNEK7CRXJVEWXZ5XUXWT7FJGILCDDOITF7EC26RPWJ4UVOE";
+const SEEDS: [(&str, u8); 2] = [(ALICE, 7), (BOB, 8)];
+
+/// `body` (an onboarding request) with the signature its account would
+/// make. Accounts without a known seed get a well-formed but wrong one.
+pub fn signed(body: &Value) -> Value {
+    use base64::{Engine as _, engine::general_purpose::STANDARD};
+    use ed25519_dalek::{Signer, SigningKey};
+    use sha2::{Digest, Sha256};
+
+    let field = |name: &str| body[name].as_str().unwrap_or_default().to_ascii_lowercase();
+    let account = body["stellar_account"].as_str().unwrap_or_default();
+    let message = format!(
+        "Lendara Shield onboarding\nnetwork: testnet\naccount: {account}\nnote_public_key: {}\n\
+         encryption_public_key: {}\nasp_leaf: {}",
+        field("note_public_key"),
+        field("encryption_public_key"),
+        field("asp_leaf"),
+    );
+    let seed = SEEDS
+        .iter()
+        .find(|(a, _)| *a == account)
+        .map_or(99, |(_, s)| *s);
+    let digest = Sha256::digest(format!("Stellar Signed Message:\n{message}").as_bytes());
+    let signature = SigningKey::from_bytes(&[seed; 32]).sign(&digest);
+    let mut body = body.clone();
+    body["signature"] = Value::String(STANDARD.encode(signature.to_bytes()));
+    body
+}

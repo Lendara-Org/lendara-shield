@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use super::extract::{AdminAuth, ApiJson};
 use crate::{
     asp::{
-        AspStatus, KycScenario, KycStatus,
+        AspStatus, KycScenario, KycStatus, ownership,
         service::{AspServiceError, Onboarded, OnboardingInput, UserView},
     },
     domain::{AccountId, PoolField, TxHash},
@@ -28,6 +28,8 @@ pub struct OnboardingRequest {
     note_public_key: String,
     encryption_public_key: String,
     asp_leaf: String,
+    /// SEP-53 signature by `stellar_account` of the onboarding message.
+    signature: String,
     #[serde(default)]
     scenario: KycScenario,
 }
@@ -82,6 +84,19 @@ pub async fn onboard(
     if !PoolField::is_canonical(&input.note_public_key.field_le()) {
         return Err(not_a_field_element("note_public_key"));
     }
+    // Only the account's owner can attach pool keys to it.
+    let message = ownership::onboarding_message(
+        &input.stellar_account,
+        &input.note_public_key,
+        &input.encryption_public_key,
+        &input.asp_leaf,
+    );
+    ownership::verify(&input.stellar_account, &message, &body.signature).map_err(|err| {
+        ApiError::BadRequest {
+            code: "invalid_signature",
+            message: err.to_string(),
+        }
+    })?;
     Ok(match state.asp.onboard(input).await? {
         Onboarded::Created(view) => (StatusCode::CREATED, Json(view.into())),
         Onboarded::Existing(view) => (StatusCode::OK, Json(view.into())),

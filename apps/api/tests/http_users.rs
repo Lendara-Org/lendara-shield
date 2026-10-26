@@ -3,12 +3,11 @@
 mod common;
 
 use axum::http::StatusCode;
-use common::{ADMIN_TOKEN, TestResult, app_with_chain, get, post_json, send};
+use common::{ADMIN_TOKEN, ALICE, BOB, TestResult, app_with_chain, get, post_json, send, signed};
 use serde_json::{Value, json};
 use shield_api::testing::ChainBehaviour;
 use sqlx::PgPool;
 
-const ALICE: &str = "GDZOAGBQFY65MGK5Z6RBBFCHPYB2PJDJW3UV47IWK53UQF4LFSUP6XZC";
 const NOTE_KEY: &str = "0x1111111111111111111111111111111111111111111111111111111111111111";
 const ENC_KEY: &str = "0x2222222222222222222222222222222222222222222222222222222222222222";
 const LEAF: &str = "0x0333333333333333333333333333333333333333333333333333333333333333";
@@ -48,8 +47,11 @@ fn assert_shield_user(body: &Value) {
 #[sqlx::test]
 async fn onboarding_creates_an_allowed_user(db: PgPool) -> TestResult {
     let (app, _) = app_with_chain(db)?;
-    let (status, _, body) =
-        send(app, post_json("/v1/onboarding", &onboarding(None), None)?).await?;
+    let (status, _, body) = send(
+        app,
+        post_json("/v1/onboarding", &signed(&onboarding(None)), None)?,
+    )
+    .await?;
 
     assert_eq!(status, StatusCode::CREATED);
     assert_shield_user(&body);
@@ -69,11 +71,14 @@ async fn replaying_onboarding_returns_200(db: PgPool) -> TestResult {
     let (app, chain) = app_with_chain(db)?;
     send(
         app.clone(),
-        post_json("/v1/onboarding", &onboarding(None), None)?,
+        post_json("/v1/onboarding", &signed(&onboarding(None)), None)?,
     )
     .await?;
-    let (status, _, body) =
-        send(app, post_json("/v1/onboarding", &onboarding(None), None)?).await?;
+    let (status, _, body) = send(
+        app,
+        post_json("/v1/onboarding", &signed(&onboarding(None)), None)?,
+    )
+    .await?;
 
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["asp_status"], "allowed");
@@ -86,7 +91,11 @@ async fn rejected_and_blocked_scenarios(db: PgPool) -> TestResult {
     let (app, _) = app_with_chain(db)?;
     let (_, _, rejected) = send(
         app.clone(),
-        post_json("/v1/onboarding", &onboarding(Some("rejected")), None)?,
+        post_json(
+            "/v1/onboarding",
+            &signed(&onboarding(Some("rejected"))),
+            None,
+        )?,
     )
     .await?;
     assert_eq!(rejected["kyc_status"], "rejected");
@@ -94,10 +103,10 @@ async fn rejected_and_blocked_scenarios(db: PgPool) -> TestResult {
     assert_eq!(rejected["last_asp_tx_hash"], Value::Null);
 
     let mut bob = onboarding(Some("blocked"));
-    bob["stellar_account"] = json!("GBJ3H74T4LB23V3WKE46BSWMZVOH4YWX2P5ZLQTY4EZXH3YAZZUCPFWY");
+    bob["stellar_account"] = json!(BOB);
     bob["note_public_key"] = json!(NOTE_KEY.replace('1', "2"));
     bob["asp_leaf"] = json!(LEAF.replace('3', "5"));
-    let (_, _, blocked) = send(app, post_json("/v1/onboarding", &bob, None)?).await?;
+    let (_, _, blocked) = send(app, post_json("/v1/onboarding", &signed(&bob), None)?).await?;
     assert_eq!(blocked["kyc_status"], "approved");
     assert_eq!(blocked["asp_status"], "blocked");
     Ok(())
@@ -107,8 +116,11 @@ async fn rejected_and_blocked_scenarios(db: PgPool) -> TestResult {
 async fn chain_down_returns_a_pending_user(db: PgPool) -> TestResult {
     let (app, chain) = app_with_chain(db)?;
     chain.set_behaviour(ChainBehaviour::Down);
-    let (status, _, body) =
-        send(app, post_json("/v1/onboarding", &onboarding(None), None)?).await?;
+    let (status, _, body) = send(
+        app,
+        post_json("/v1/onboarding", &signed(&onboarding(None)), None)?,
+    )
+    .await?;
 
     assert_eq!(status, StatusCode::CREATED);
     assert_eq!(body["asp_status"], "pending");
@@ -139,7 +151,11 @@ async fn onboarding_validates_every_field(db: PgPool) -> TestResult {
     for (field, value, code) in cases {
         let mut body = onboarding(None);
         body[field] = value;
-        let (status, _, err) = send(app.clone(), post_json("/v1/onboarding", &body, None)?).await?;
+        let (status, _, err) = send(
+            app.clone(),
+            post_json("/v1/onboarding", &signed(&body), None)?,
+        )
+        .await?;
         assert_eq!(status, StatusCode::BAD_REQUEST, "{field}");
         assert_eq!(err["error"], code, "{field}");
     }
@@ -151,7 +167,7 @@ async fn onboarding_refuses_unknown_fields_such_as_private_keys(db: PgPool) -> T
     let (app, _) = app_with_chain(db)?;
     let mut body = onboarding(None);
     body["note_private_key"] = json!(NOTE_KEY);
-    let (status, _, err) = send(app, post_json("/v1/onboarding", &body, None)?).await?;
+    let (status, _, err) = send(app, post_json("/v1/onboarding", &signed(&body), None)?).await?;
 
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(err["error"], "invalid_request");
@@ -163,21 +179,27 @@ async fn onboarding_reports_conflicts(db: PgPool) -> TestResult {
     let (app, _) = app_with_chain(db)?;
     send(
         app.clone(),
-        post_json("/v1/onboarding", &onboarding(None), None)?,
+        post_json("/v1/onboarding", &signed(&onboarding(None)), None)?,
     )
     .await?;
 
     let mut other_keys = onboarding(None);
     other_keys["asp_leaf"] = json!(LEAF.replace('3', "6"));
-    let (status, _, err) =
-        send(app.clone(), post_json("/v1/onboarding", &other_keys, None)?).await?;
+    let (status, _, err) = send(
+        app.clone(),
+        post_json("/v1/onboarding", &signed(&other_keys), None)?,
+    )
+    .await?;
     assert_eq!(status, StatusCode::CONFLICT);
     assert_eq!(err["error"], "account_already_onboarded");
 
     let mut other_account = onboarding(None);
-    other_account["stellar_account"] =
-        json!("GBJ3H74T4LB23V3WKE46BSWMZVOH4YWX2P5ZLQTY4EZXH3YAZZUCPFWY");
-    let (status, _, err) = send(app, post_json("/v1/onboarding", &other_account, None)?).await?;
+    other_account["stellar_account"] = json!(BOB);
+    let (status, _, err) = send(
+        app,
+        post_json("/v1/onboarding", &signed(&other_account), None)?,
+    )
+    .await?;
     assert_eq!(status, StatusCode::CONFLICT);
     assert_eq!(err["error"], "pool_key_already_registered");
     Ok(())
@@ -201,7 +223,7 @@ async fn get_user_returns_the_status(db: PgPool) -> TestResult {
     let (app, _) = app_with_chain(db)?;
     send(
         app.clone(),
-        post_json("/v1/onboarding", &onboarding(None), None)?,
+        post_json("/v1/onboarding", &signed(&onboarding(None)), None)?,
     )
     .await?;
     let (status, _, body) = send(app.clone(), get(&format!("/v1/users/{ALICE}"))?).await?;
@@ -228,7 +250,7 @@ async fn admin_endpoints_require_the_bearer_token(db: PgPool) -> TestResult {
     let (app, chain) = app_with_chain(db)?;
     send(
         app.clone(),
-        post_json("/v1/onboarding", &onboarding(None), None)?,
+        post_json("/v1/onboarding", &signed(&onboarding(None)), None)?,
     )
     .await?;
     let body = json!({"stellar_account": ALICE});
@@ -251,7 +273,7 @@ async fn admin_blocks_and_unblocks(db: PgPool) -> TestResult {
     let (app, _) = app_with_chain(db)?;
     send(
         app.clone(),
-        post_json("/v1/onboarding", &onboarding(None), None)?,
+        post_json("/v1/onboarding", &signed(&onboarding(None)), None)?,
     )
     .await?;
     let body = json!({"stellar_account": ALICE});
@@ -293,5 +315,43 @@ async fn admin_actions_on_unknown_users_are_404(db: PgPool) -> TestResult {
 
     assert_eq!(status, StatusCode::NOT_FOUND);
     assert_eq!(err["error"], "user_not_found");
+    Ok(())
+}
+
+#[sqlx::test]
+async fn onboarding_needs_the_accounts_signature(db: PgPool) -> TestResult {
+    let (app, chain) = app_with_chain(db)?;
+
+    // No signature at all.
+    let (status, _, err) = send(
+        app.clone(),
+        post_json("/v1/onboarding", &onboarding(None), None)?,
+    )
+    .await?;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(err["error"], "invalid_request");
+
+    // Bob tries to claim Alice's account with his own keys: signed by Bob.
+    let mut squat = signed(&json!({
+        "stellar_account": BOB,
+        "note_public_key": NOTE_KEY,
+        "encryption_public_key": ENC_KEY,
+        "asp_leaf": LEAF,
+    }));
+    squat["stellar_account"] = json!(ALICE);
+    let (status, _, err) = send(app.clone(), post_json("/v1/onboarding", &squat, None)?).await?;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(err["error"], "invalid_signature");
+
+    // Alice's signature cannot be reused for other keys.
+    let mut swapped = signed(&onboarding(None));
+    swapped["note_public_key"] = json!(NOTE_KEY.replace('1', "2"));
+    let (status, _, err) = send(app.clone(), post_json("/v1/onboarding", &swapped, None)?).await?;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(err["error"], "invalid_signature");
+
+    let (status, _, _) = send(app, get(&format!("/v1/users/{ALICE}"))?).await?;
+    assert_eq!(status, StatusCode::NOT_FOUND, "nothing was registered");
+    assert_eq!(chain.submits(), 0, "and nothing reached the chain");
     Ok(())
 }
