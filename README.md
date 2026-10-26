@@ -88,7 +88,8 @@ lendara-shield/
 │                    shielding worker, auditor. Ports and adapters; Postgres (sqlx).
 ├── apps/pool-cli/   Rust: stateless JSON CLI around the SPP SDK (prover, signing, GVK audit).
 │                    The API runs it as a subprocess with an isolated environment.
-├── apps/web/        Next.js: onboarding, deposit (both modes), private wallet, audit.
+├── apps/web/        Next.js, in English and Spanish: onboarding, deposit (both modes), private
+│                    wallet, audit, and developer docs (/en/docs, /es/docs) with the API reference.
 │                    The SPP browser SDK proves in the user's browser.
 ├── packages/api-types/  TypeScript types generated from openapi.yaml.
 ├── openapi.yaml     The API contract (source of truth).
@@ -120,15 +121,18 @@ Checks: `make lint`, `make test` (Postgres needed), `make test-web-e2e`, and `ma
 
 ## 5-minute demo
 
-1. **Onboard.** Open <http://localhost:3000/onboard> and connect Freighter (Testnet). Choose the KYC scenario **Approved** and click *Derive keys and register*. Freighter signs twice: once to derive your pool keys in the browser, once to prove the account is yours. Shield then adds your leaf to the allow-list. The ASP transaction appears with a link.
-2. **Deposit with a ramp.** On `/deposit`, choose *With a ramp*, enter `CRC 5000` and continue. In the anchor's window, pay with the test card **4242 4242 4242 4242** (any future date and any CVC): it is the *Approved* outcome. Back in Shield, the timeline fills on its own: anchor paid Shield → Shield deposited into the pool → private transfer to your keys. There is a link for every step.
+1. **Onboard.** Open <http://localhost:3000/en/onboard> (or `/es/…` in Spanish) and connect Freighter (Testnet). Choose the KYC scenario **Approved** and click *Derive keys and register*. Freighter signs twice: once to derive your pool keys in the browser, once to prove the account is yours. Shield then adds your leaf to the allow-list. The ASP transaction appears with a link.
+2. **Deposit with a ramp.** On `/en/deposit`, choose *With a ramp*, enter `CRC 5000` and continue. In the anchor's window, pay with the test card **4242 4242 4242 4242** (any future date and any CVC): it is the *Approved* outcome. Back in Shield, the timeline fills on its own: anchor paid Shield → Shield deposited into the pool → private transfer to your keys. There is a link for every step.
 3. **Check the explorer.** Open the three links: your address is in none of them. The deposit shows `ext_amount > 0` from Shield's account. The transfer shows nothing but Shield's account.
-4. **See your private balance.** On `/wallet`, the USDC is there. Only you, and the auditor, can see it.
-5. **Audit.** On `/audit`, paste `AUDITOR_TOKEN`. The same transaction appears side by side. The explorer sees *"signed by Shield, amount hidden, recipient not visible"*; the auditor sees *"9.30 USDC to you"*.
+4. **See your private balance.** On `/en/wallet`, the USDC is there. Only you, and the auditor, can see it.
+5. **Audit.** On `/en/audit`, paste `AUDITOR_TOKEN`. The same transaction appears side by side. The explorer sees *"signed by Shield, amount hidden, recipient not visible"*; the auditor sees *"9.30 USDC to you"*.
 
 Try the gatekeeper too: onboard another account with **Rejected** (it never enters the allow-list) or **Blocked** (frozen by the ASP). In the anchor's widget, card **4000 0000 0000 0002** (*Rejected (KYC)*) ends the intent in `error` without touching the pool. All scenarios are listed in [docs/scenarios.md](docs/scenarios.md).
 
 ## Documentation
+
+The web app has developer docs in English and Spanish at `/en/docs` and `/es/docs` (overview, protocol, quickstart, API, scenarios, security), plus the full API reference generated from `openapi.yaml` at `/api-reference.html`.
+
 
 - [Shield Protocol (draft)](docs/protocol/shield-protocol.md): Shield as middleware for any SEP-24 anchor (level 1) and native shielded deposits for anchors (level 2)
 - [Threat model](docs/threat-model.md): what is private, from whom, and the honest limits

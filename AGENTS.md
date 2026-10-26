@@ -176,7 +176,9 @@ Once funds are in Shield's custody (`funds_received` onwards) an intent only end
 
 ### 6.8 Web
 
-Routes: `/` (what Shield is), `/onboard`, `/deposit` (ramp with a live intent timeline, or direct with a visible-address warning), `/wallet` (private balance, private address `shield:<note key>:<encryption key>`, transfer, withdraw), `/audit`. Freighter and the SPP SDK sit behind the `ShieldWallet` interface so pages are tested with a fake.
+Every page lives under `/<lang>/` (`en`, `es`): `/` redirects by the browser's language and old unprefixed paths redirect to `/en/…`. App copy is in `apps/web/src/content/messages/{en,es}.ts` (Spanish must have the same keys; a test checks it); docs pages in `apps/web/src/content/docs/{en,es}.tsx`. Add text in both languages in the same PR.
+
+Routes: `/` (what Shield is), `/docs` (overview, protocol, quickstart, API, scenarios, security), `/onboard`, `/deposit` (ramp with a live intent timeline, or direct with a visible-address warning), `/wallet` (private balance, private address `shield:<note key>:<encryption key>`, transfer, withdraw), `/audit`. Freighter and the SPP SDK sit behind the `ShieldWallet` interface so pages are tested with a fake.
 
 ## 7. Conventions and quality
 
@@ -237,6 +239,7 @@ Before handing over a PR: format, lint, typecheck, tests and build of what chang
 - **SDK pool transactions have no time bounds** (`valid_until: null`): a `not_found` transaction may only be replaced once the intake's sequence passed its `sequence` **and** it stayed unseen for `UNSEEN_GRACE` (60 s), because the RPC can lag behind a landed transaction.
 - The browser SDK only sees the notes of keys derived **in that browser's storage**: derive (idempotent) before any pool operation.
 - The SPP browser SDK is not bundled by Next: `scripts/stage-web-sdk.sh` (`make stage-web-sdk`) copies its JS, WASM, workers, this pool's circuits and `deployments.json` into `apps/web/public/spp/` (gitignored). The circuit lock is pinned at build time.
+- `apps/web/public/api-reference.html` is generated from `openapi.yaml` by Redocly on every `dev` and `build` (gitignored).
 - The audit's `GvkAudit` gives ledgers, not transaction hashes: the API resolves them from Horizon's ledger operations (pool calls only) and caches them. The worker and the auditor share a lock because both open the intake's SQLite wallet.
 - Sandbox: `stellar.toml` lives at `lendara-monorepo-fixh.vercel.app` but `WEB_AUTH_ENDPOINT` and `TRANSFER_SERVER_SEP0024` are on `lendaraweb-production.up.railway.app`; the challenge's `web_auth_domain` is the endpoint host. Scenarios are chosen by test card; there are no webhooks (poll `GET /sep24/transaction`). To pay without a browser: `POST /widget-api/sessions` → `/transaction/confirm` → `/transaction/simulate-payment`.
 - **Applied migrations are immutable:** `sqlx` stores their checksums and refuses to start if one changes, even a comment. Older migrations still cite sections of a former `CLAUDE.md`; the rules they mean are now in §5.2, §5.3 and §6.4 here.
