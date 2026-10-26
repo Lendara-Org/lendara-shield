@@ -1,8 +1,10 @@
 "use client";
 
 import { MeshGradient } from "@paper-design/shaders-react";
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { Messages } from "@/content/messages";
+
+import { useOnScreen } from "@/lib/hooks/use-on-screen";
 
 import { Isotipo } from "../brand/isotipo";
 
@@ -114,13 +116,28 @@ function motionIsAllowed() {
   return !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
 
-/** Original Paper shader parameters; a stationary frame honors reduced motion. */
+/**
+ * Most pixels the mesh renders. It is a soft gradient, so a lower resolution
+ * looks the same; without GPU acceleration every pixel costs CPU.
+ */
+const MESH_MAX_PIXELS = 1280 * 720;
+
+/**
+ * Original Paper shader parameters. Animates only while on screen and when
+ * the visitor allows motion (a still frame otherwise), at the device's pixel
+ * ratio instead of the library's 2x minimum, capped at MESH_MAX_PIXELS.
+ */
 function PaperHeroMesh() {
-  const animate = useSyncExternalStore(subscribeToMotionPreference, motionIsAllowed, () => false);
+  const ref = useRef<HTMLDivElement>(null);
+  const motionAllowed = useSyncExternalStore(subscribeToMotionPreference, motionIsAllowed, () => false);
+  const onScreen = useOnScreen(ref);
+  const animate = motionAllowed && onScreen;
   return (
-    <div className="payment-mesh" data-testid="payment-mesh" data-speed={animate ? "1" : "0"} aria-hidden="true">
+    <div ref={ref} className="payment-mesh" data-testid="payment-mesh" data-speed={animate ? "1" : "0"} aria-hidden="true">
       <MeshGradient
         speed={animate ? 1 : 0}
+        minPixelRatio={1}
+        maxPixelCount={MESH_MAX_PIXELS}
         scale={1}
         distortion={0.8}
         swirl={0.1}

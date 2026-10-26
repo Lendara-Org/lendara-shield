@@ -188,6 +188,28 @@ test("the illustrative mesh honors reduced motion without changing entry links",
   await expect(page.getByTestId("payment-mesh")).toHaveAttribute("data-speed", "1");
 });
 
+test("the mesh pauses off screen and renders at a bounded resolution", async ({ page }) => {
+  await page.setViewportSize({ width: 1920, height: 1000 });
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await page.goto("/en");
+  const mesh = page.getByTestId("payment-mesh");
+  await expect(mesh).toHaveAttribute("data-speed", "1");
+  await page.getByRole("contentinfo").scrollIntoViewIfNeeded();
+  await expect(mesh).toHaveAttribute("data-speed", "0");
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await expect(mesh).toHaveAttribute("data-speed", "1");
+
+  const size = await mesh.locator("canvas").evaluate((canvas: HTMLCanvasElement) => ({
+    pixels: canvas.width * canvas.height,
+    maxWidth: Math.ceil(canvas.clientWidth * window.devicePixelRatio),
+    width: canvas.width,
+  }));
+  expect(size.pixels).toBeGreaterThan(0);
+  expect(size.pixels).toBeLessThanOrEqual(1280 * 720);
+  // Not upscaled past the device pixel ratio (the library's default is 2x).
+  expect(size.width).toBeLessThanOrEqual(size.maxWidth);
+});
+
 test("public payment details reveal on selection and stay under manual control", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/es");
