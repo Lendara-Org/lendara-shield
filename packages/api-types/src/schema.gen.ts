@@ -337,7 +337,11 @@ export interface components {
              * @example CRC
              */
             fiat_currency: string;
-            /** @description Amount in `fiat_currency`. In the Lendara sandbox the cents select a scenario (`.13` KYC rejected, `.50` delayed, `.99` expired). */
+            /**
+             * @description Amount the user intends to pay in `fiat_currency`. The anchor's interactive flow quotes it
+             *     and the USDC actually received is reported in `amount_asset`. In the Lendara sandbox the
+             *     outcome (approved, KYC rejected, payment not received, delayed) is chosen in the widget.
+             */
             amount: components["schemas"]["DecimalAmount"];
         };
         /**

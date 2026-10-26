@@ -4,6 +4,7 @@
 mod extract;
 mod health;
 mod info;
+mod intents;
 mod users;
 
 use std::time::Duration;
@@ -54,6 +55,8 @@ pub fn build_app(state: AppState, options: HttpOptions) -> Router {
         .route("/v1/users/{account}", get(users::get_user))
         .route("/v1/asp/block", post(users::block))
         .route("/v1/asp/unblock", post(users::unblock))
+        .route("/v1/intents", post(intents::create))
+        .route("/v1/intents/{id}", get(intents::get))
         .fallback(not_found)
         .with_state(state)
         .layer(TimeoutLayer::with_status_code(

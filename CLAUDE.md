@@ -332,11 +332,15 @@ shielding ──(depósito confirmado)──► transferring
 transferring ──(transferencia privada confirmada)──► completed
 
 Salidas de error:
-  created ──► rejected        (la llave fue bloqueada después de crear el intent; si ya no estaba
-                               permitida al crearlo, POST /v1/intents responde 409 user_not_allowed)
+  created ──► error           (el anchor no pudo iniciar el depósito: POST /v1/intents → 502)
+  created | awaiting_anchor ──► rejected  (la llave fue bloqueada antes de que llegara el dinero; si ya
+                               no estaba permitida al crearlo, POST /v1/intents responde 409 user_not_allowed)
   awaiting_anchor ──► expired (el anchor marcó la transacción como expirada o pasó el TTL)
   awaiting_anchor ──► error   (el anchor terminó en error, p. ej. KYC rechazado en el sandbox)
   funds_received | shielding | transferring ──► error (con `message`; requiere revisión)
+
+Con el dinero ya en custodia de Shield (desde funds_received) el intent solo termina en completed o
+error (revisión manual): nunca rejected ni expired.
 ```
 
 - Implementada en **un solo módulo** (`apps/api/src/intent/state.rs`), con transiciones explícitas y validadas. Una transición inválida es un error, no un no-op.
@@ -356,7 +360,8 @@ Salidas de error:
 | `rejected` | KYC rechazado → la llave no entra; los depósitos fallan |
 | `blocked` | Aprobado y luego bloqueado → demuestra el congelamiento por llave |
 
-- **Modo ramp:** se suman los escenarios del sandbox por monto mágico. `.13` (KYC rechazado en el anchor) → el intent pasa a `error` y Shield no deposita. `.99` → `expired`. `.50` → demora en el anchor (prueba el polling). Documentar todo en `docs/scenarios.md`.
+- **Modo ramp:** los escenarios del sandbox **se eligen dentro de su widget** (verificado en el código del sandbox, 26-oct): `approved`, `kyc_rejected` (→ el intent pasa a `error`, Shield no deposita), `payment_not_received` (→ `expired`) y `delayed` (prueba el polling). No hay montos mágicos. Documentar en `docs/scenarios.md`.
+- **Montos en SEP-24:** el `amount` de SEP-24 va en el activo (USDC). Shield no lo envía: manda `source_asset = iso4217:<moneda>` y el widget cotiza. `amount_fiat` es la intención del usuario; `amount_asset` es el USDC realmente recibido (H6b).
 - Las reglas viven en un solo módulo (`apps/api/src/asp/`).
 
 ### 7.6 Auditoría
@@ -533,7 +538,7 @@ Cada PR deja el repo funcionando. Marcar ✅ al completar.
 | H3 ✅ | Contrato OpenAPI | `feat/repo-openapi` | `openapi.yaml` (sección 7.8), `packages/api-types` con `openapi-typescript`, `make codegen` | Codegen corre sin errores; los tipos compilan |
 | H4 ✅ | Setup testnet + pool | `feat/api-testnet-setup` | `make setup-testnet` (sección 7.1), despliegue del SAC del USDC del sandbox (plan A), pool según el plan A o B, `GET /v1/info` | El script es idempotente; `/v1/info` devuelve el contrato del pool |
 | H5 | Onboarding y ASP | `feat/api-asp-onboarding` | `shield_users`, `asp_events`, KYC simulado con escenarios, allow-list y block-list (o simulación en plan B), tests | `approved` agrega la llave; `rejected` no; `blocked` congela; hashes reales |
-| H6a | Intents y cliente del anchor | `feat/api-ramp-intents` | Tabla `intents`, máquina de estados con tests, cliente SEP-1/SEP-10/SEP-24, `POST /v1/intents`, `GET /v1/intents/{id}`, modo ramp opcional por config | Se crea un intent `awaiting_anchor` con la URL interactiva real del sandbox |
+| H6a1 ✅ / H6a2 | Intents y cliente del anchor (dividido) | `feat/api-ramp-intents` | Tabla `intents`, máquina de estados con tests, cliente SEP-1/SEP-10/SEP-24, `POST /v1/intents`, `GET /v1/intents/{id}`, modo ramp opcional por config | Se crea un intent `awaiting_anchor` con la URL interactiva real del sandbox |
 | H6b | Watcher y worker de shielding | `feat/api-shielding-worker` | Watcher de pagos a la intake (Horizon, por memo), worker idempotente: depósito al pool + transferencia privada, seguimiento del estado del anchor | Un intent llega a `completed` con los hashes de depósito (`ext_amount > 0`) y transferencia (`ext_amount = 0`) |
 | H7 | Web: onboarding, depósito y wallet | `feat/web-shield-flow` | Next.js, Freighter, SDK web del pool, rutas `/onboard`, `/deposit` (ambos modos), `/wallet` | Depósito de punta a punta en los dos modos desde la web |
 | H8 | Auditoría | `feat/audit-panel` | `GET /v1/audit/*` en el API y la ruta `/audit` en la web | La comparación se entiende en 5 segundos |
@@ -599,8 +604,10 @@ Cada una tiene una recomendación. Si Anouk no responde y el PR no puede esperar
 - H5 dividido en H5a y H5b (26-oct, decisión de Anouk).
 - H5a (onboarding y ASP sin red) ✅ en `feat/api-onboarding` (26-oct): migración `shield_users` + `asp_events`, reglas puras del KYC/ASP, puerto `AspContract` (prepare → guardar hash → submit → status), servicio idempotente con reanudación y tope de reintentos, endpoints de onboarding, usuarios y admin (`ADMIN_TOKEN` en tiempo constante), logs con plantilla de ruta (sin direcciones). 88 tests, 96 % de líneas.
 - H5b (adaptador Soroban del ASP) ✅ en `feat/api-asp-soroban` (26-oct): cliente JSON-RPC propio (`stellar-xdr` 28 + `ed25519-dalek` 3 + `reqwest`), armado/firma puros, `SorobanAspContract` con control de secuencia, decisión+registro bajo `FOR UPDATE` (arregla una carrera de H5a), validación de elementos de campo. **En testnet:** la intake quedó en la allow-list y se probó bloquear/desbloquear con verificación independiente del SDK. 109 tests, 94,8 % de líneas.
-- **Decisión pendiente para H6b:** cómo usar el SDK de SPP (prover) desde el API, dado el conflicto de SQLite (ver trampas).
-- Siguiente: H6a (intents y cliente del anchor). H7 (web) puede arrancar en paralelo.
+- H6a dividido en H6a1 y H6a2 (26-oct, decisión de Anouk).
+- H6a1 (intents sin red) ✅ en `feat/api-ramp-intents` (26-oct): migración `intents` + `intent_events` (memo SEP-24 por secuencia, montos `numeric` leídos como texto, hash del pago del anchor único), máquina de estados pura con tests exhaustivos, `DecimalAmount`/`FiatCurrency`, puerto `AnchorClient` + fake, transiciones atómicas (`WHERE status = from`) con evento en la misma transacción, `POST/GET /v1/intents`.
+- **Decisión H6b (26-oct, Anouk):** el prover vive en un CLI aparte, `apps/pool-cli` (crate propio con el SDK de SPP, sin estado, JSON por stdin/stdout: `prepare-deposit`, `prepare-transfer`, `submit`, `status`). El API lo invoca como subproceso detrás de un puerto `PoolClient`; la máquina de estados y la idempotencia quedan en el API.
+- Siguiente: H6a2 (cliente SEP-1/SEP-10/SEP-24 real + intent real contra el sandbox). H7 (web) puede arrancar en paralelo.
 
 ### Riesgos identificados (25-oct)
 1. **Tiempo:** 12 PRs en ~1 día. ~~Plan B del backend~~ descartado en H1.

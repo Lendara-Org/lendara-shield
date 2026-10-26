@@ -13,13 +13,23 @@ use http_body_util::BodyExt;
 use secrecy::SecretString;
 use serde_json::Value;
 use shield_api::{
-    HttpOptions, asp::service::AspService, build_app, deployment::PoolDeployment,
-    http::InfoResponse, ports::SystemClock, state::AppState, testing::FakeAspContract,
+    HttpOptions,
+    asp::service::AspService,
+    build_app,
+    deployment::PoolDeployment,
+    http::InfoResponse,
+    intent::service::IntentService,
+    ports::{AnchorClient, SystemClock},
+    state::AppState,
+    testing::{FakeAnchor, FakeAspContract},
 };
 use sqlx::{PgPool, postgres::PgPoolOptions};
 use tower::ServiceExt;
 
 pub type TestResult = Result<(), Box<dyn std::error::Error>>;
+
+/// The app plus the fakes behind it, for tests to script and inspect.
+pub type Fakes = (Router, Arc<FakeAspContract>, Arc<FakeAnchor>);
 
 pub const WEB_ORIGIN: &str = "http://localhost:3000";
 pub const ANCHOR: &str = "lendara-monorepo-fixh.vercel.app";
@@ -40,34 +50,45 @@ pub fn app_with_ramp(
     db: PgPool,
     ramp_anchor_home_domain: Option<String>,
 ) -> Result<Router, Box<dyn std::error::Error>> {
-    app_with(
-        db,
-        ramp_anchor_home_domain,
-        Arc::new(FakeAspContract::default()),
-    )
+    let anchor = ramp_anchor_home_domain.map(|_| Arc::new(FakeAnchor::default()));
+    app_with(db, anchor, Arc::new(FakeAspContract::default()))
 }
 
 /// The app wired to a fake chain the test can script and inspect.
 pub fn app_with_chain(
     db: PgPool,
 ) -> Result<(Router, Arc<FakeAspContract>), Box<dyn std::error::Error>> {
+    let (router, chain, _) = app_with_fakes(db)?;
+    Ok((router, chain))
+}
+
+/// The app wired to a fake chain and a fake anchor, both inspectable.
+pub fn app_with_fakes(db: PgPool) -> Result<Fakes, Box<dyn std::error::Error>> {
     let chain = Arc::new(FakeAspContract::default());
-    Ok((app_with(db, Some(ANCHOR.to_owned()), chain.clone())?, chain))
+    let anchor = Arc::new(FakeAnchor::default());
+    let router = app_with(db, Some(anchor.clone()), chain.clone())?;
+    Ok((router, chain, anchor))
 }
 
 fn app_with(
     db: PgPool,
-    ramp_anchor_home_domain: Option<String>,
+    anchor: Option<Arc<FakeAnchor>>,
     chain: Arc<FakeAspContract>,
 ) -> Result<Router, Box<dyn std::error::Error>> {
-    let info = InfoResponse::new(&deployment()?, ramp_anchor_home_domain);
+    let info = InfoResponse::new(&deployment()?, anchor.as_ref().map(|_| ANCHOR.to_owned()));
     let asp = AspService::new(db.clone(), chain, Arc::new(SystemClock))
         .with_timing(Duration::from_millis(60), Duration::from_millis(5));
+    let intents = IntentService::new(
+        db.clone(),
+        anchor.map(|a| a as Arc<dyn AnchorClient>),
+        "USDC".into(),
+    );
     Ok(build_app(
         AppState {
             db,
             info: Arc::new(info),
             asp,
+            intents,
             admin_token: Arc::new(Some(SecretString::from(ADMIN_TOKEN))),
         },
         HttpOptions {

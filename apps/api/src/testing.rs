@@ -12,7 +12,10 @@ use chrono::{DateTime, Duration, Utc};
 use crate::{
     asp::AspAction,
     domain::{PoolField, TxHash},
-    ports::{AspContract, AspKeys, ChainError, Clock, PreparedTx, TxStatus},
+    ports::{
+        AnchorClient, AnchorDeposit, AnchorError, AspContract, AspKeys, ChainError, Clock,
+        PreparedTx, StartDeposit, TxStatus,
+    },
 };
 
 /// A clock that only moves when told to.
@@ -189,6 +192,66 @@ impl AspContract for FakeAspContract {
         } else {
             TxStatus::NotFound
         })
+    }
+}
+
+/// How the fake anchor answers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AnchorBehaviour {
+    Healthy,
+    Down,
+    Refuses,
+}
+
+/// In-memory SEP-24 anchor that records every request.
+#[derive(Debug)]
+pub struct FakeAnchor {
+    behaviour: Mutex<AnchorBehaviour>,
+    requests: Mutex<Vec<StartDeposit>>,
+}
+
+impl Default for FakeAnchor {
+    fn default() -> Self {
+        Self {
+            behaviour: Mutex::new(AnchorBehaviour::Healthy),
+            requests: Mutex::new(Vec::new()),
+        }
+    }
+}
+
+impl FakeAnchor {
+    pub const HOME_DOMAIN: &'static str = "anchor.example";
+
+    pub fn set_behaviour(&self, behaviour: AnchorBehaviour) {
+        *lock(&self.behaviour) = behaviour;
+    }
+
+    #[must_use]
+    pub fn requests(&self) -> Vec<StartDeposit> {
+        lock(&self.requests).clone()
+    }
+}
+
+#[async_trait]
+impl AnchorClient for FakeAnchor {
+    fn home_domain(&self) -> &str {
+        Self::HOME_DOMAIN
+    }
+
+    async fn start_deposit(&self, request: &StartDeposit) -> Result<AnchorDeposit, AnchorError> {
+        lock(&self.requests).push(request.clone());
+        match *lock(&self.behaviour) {
+            AnchorBehaviour::Healthy => Ok(AnchorDeposit {
+                id: format!("anchor-tx-{}", request.deposit_memo),
+                interactive_url: format!(
+                    "https://{}/sep24/interactive?token=t{}",
+                    Self::HOME_DOMAIN,
+                    request.deposit_memo
+                ),
+            }),
+            AnchorBehaviour::Down => Err(AnchorError::Unavailable("connection refused".into())),
+            AnchorBehaviour::Refuses => Err(AnchorError::Refused("asset not supported".into())),
+        }
     }
 }
 
