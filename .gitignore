@@ -33,3 +33,7 @@ artifacts/
 
 # Local AI context
 CLAUDE.local.md
+
+# Pool SDK served to the browser (scripts/stage-web-sdk.sh)
+apps/web/public/spp/
+apps/web/next-env.d.ts

@@ -9,12 +9,12 @@ define pending
 	@echo "make $@: not available yet (arrives in $(1), see CLAUDE.md section 11)"
 endef
 
-.PHONY: help install dev dev-api dev-web db-up db-down migrate setup-testnet \
+.PHONY: help install dev dev-api dev-web stage-web-sdk db-up db-down migrate setup-testnet \
 	fmt fmt-check lint lint-api lint-pool-cli lint-js lint-openapi typecheck test test-api test-pool-cli \
-	test-js test-testnet coverage deny codegen build build-api build-pool-cli build-js
+	test-js test-web-e2e test-testnet coverage deny codegen build build-api build-pool-cli build-js
 
 help: ## List available targets
-	@grep -hE '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*## "}; {printf "  %-15s %s\n", $$1, $$2}'
+	@grep -hE '^[a-z0-9-]+:.*## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*## "}; {printf "  %-15s %s\n", $$1, $$2}'
 
 install: ## Install JS dependencies and git hooks
 	pnpm install
@@ -26,13 +26,16 @@ db-down: ## Stop local Postgres (data volume is kept)
 	docker compose down
 
 dev: ## Run API and web together
-	$(call pending,H2 and H7)
+	$(MAKE) -j2 dev-api dev-web
 
 dev-api: ## Run the API (applies pending migrations first)
 	cd $(API_DIR) && cargo run
 
-dev-web: ## Run the web app
-	$(call pending,H7)
+dev-web: stage-web-sdk ## Run the web app (http://localhost:3000)
+	pnpm --filter @lendara/shield-web dev
+
+stage-web-sdk: ## Serve the pool SDK and this deployment to the browser (apps/web/public/spp)
+	scripts/stage-web-sdk.sh
 
 migrate: ## Apply database migrations and exit
 	cd $(API_DIR) && cargo run --quiet -- migrate
@@ -75,6 +78,9 @@ test-pool-cli: ## Unit tests of the pool CLI
 
 test-js: ## Test TS packages
 	pnpm test
+
+test-web-e2e: ## Smoke test of the built web app in Chromium (`make build-js` first)
+	pnpm --filter @lendara/shield-web test:e2e
 
 test-testnet: ## Check the testnet setup on-chain, read-only (needs .env)
 	scripts/verify-testnet.sh
