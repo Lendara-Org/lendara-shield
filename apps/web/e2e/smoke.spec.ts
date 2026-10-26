@@ -99,7 +99,7 @@ test("the visual identity stays readable and usable across viewport widths", asy
     await page.evaluate(() => document.fonts.ready);
     if (width === 1920) {
       await expect(page.getByRole("main")).toHaveCSS("max-width", "1440px");
-      await expect(page.getByRole("heading", { level: 1 })).toHaveCSS("font-size", "76px");
+      await expect(page.getByRole("heading", { level: 1 })).toHaveCSS("font-size", "64px");
     }
     await expect(page.getByRole("heading", { level: 1 })).toHaveCSS("font-weight", "600");
     await expect(page.getByRole("link", { name: "Empezar: registro" })).toHaveCSS("background-color", "rgb(194, 24, 82)");
@@ -111,4 +111,15 @@ test("the visual identity stays readable and usable across viewport widths", asy
     await expect(connect).toHaveCSS("border-radius", "10px");
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   }
+});
+
+
+test("the illustrative mesh honors reduced motion without changing entry links", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto("/es");
+  await expect(page.getByTestId("payment-mesh")).toHaveCSS("animation-name", "none");
+  await expect(page.getByRole("link", { name: /Con rampa/ })).toHaveAttribute("href", "/es/deposit");
+  await expect(page.getByRole("link", { name: /Desde tu wallet/ })).toHaveAttribute("href", "/es/deposit?mode=direct");
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await expect(page.getByTestId("payment-mesh")).toHaveCSS("animation-name", "payment-mesh-drift");
 });
