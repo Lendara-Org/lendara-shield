@@ -6,7 +6,7 @@ import { CopyCode } from "./copy-code";
 
 export function H2({ id, children }: { id: string; children: ReactNode }) {
   return (
-    <h2 id={id} className="group mt-12 scroll-mt-20 text-xl font-semibold text-ink first:mt-0">
+    <h2 id={id} className="group mt-12 scroll-mt-20 text-[30px] leading-[38px] font-semibold text-ink first:mt-0">
       <a href={`#${id}`} className="no-underline">
         {children}
         <span aria-hidden className="ml-2 text-gray opacity-0 transition group-hover:opacity-100">
@@ -18,7 +18,7 @@ export function H2({ id, children }: { id: string; children: ReactNode }) {
 }
 
 export function H3({ children }: { children: ReactNode }) {
-  return <h3 className="mt-8 text-base font-semibold text-ink">{children}</h3>;
+  return <h3 className="mt-10 text-2xl leading-8 font-semibold text-ink">{children}</h3>;
 }
 
 export function P({ children }: { children: ReactNode }) {
@@ -50,8 +50,8 @@ export function List({ children, ordered = false }: { children: ReactNode; order
 export function Callout({ title, children, tone = "info" }: { title: string; children: ReactNode; tone?: "info" | "warning" }) {
   return (
     <aside
-      className={`mt-6 rounded-lg border-l-2 bg-paper px-4 py-3 text-sm leading-relaxed ${
-        tone === "warning" ? "border-wine" : "border-ink"
+      className={`mt-6 rounded-lg border-l-2 bg-paper px-5 py-4 text-base leading-7 ${
+        tone === "warning" ? "border-warning-accent" : "border-info-accent"
       }`}
     >
       <p className="font-semibold text-ink">{title}</p>
@@ -62,12 +62,12 @@ export function Callout({ title, children, tone = "info" }: { title: string; chi
 
 export function CodeBlock({ code, title, copy }: { code: string; title?: string; copy: [label: string, copied: string] }) {
   return (
-    <figure className="mt-5 overflow-hidden rounded-lg border border-white/10 bg-ink shadow-lg">
+    <figure className="mt-5 overflow-hidden rounded-lg border border-white/10 bg-ink">
       <figcaption className="flex items-center justify-between border-b border-white/10 px-4 py-1.5">
-        <span className="font-mono text-xs text-paper/60">{title ?? ""}</span>
+        <span className="font-mono text-sm text-paper/80">{title ?? ""}</span>
         <CopyCode code={code} label={copy[0]} copied={copy[1]} />
       </figcaption>
-      <pre className="overflow-x-auto p-4 font-mono text-[13px] leading-relaxed text-paper">
+      <pre className="overflow-x-auto p-4 font-mono text-[15px] leading-[26px] text-paper">
         <code>{code}</code>
       </pre>
     </figure>
@@ -77,8 +77,8 @@ export function CodeBlock({ code, title, copy }: { code: string; title?: string;
 export function Table({ head, rows }: { head: string[]; rows: ReactNode[][] }) {
   return (
     <div className="mt-5 overflow-x-auto rounded-lg border border-line">
-      <table className="w-full text-left text-sm [&_td:first-child_code]:whitespace-nowrap">
-        <thead className="bg-paper text-xs text-gray">
+      <table className="w-full text-left text-base [&_td:first-child_code]:whitespace-nowrap">
+        <thead className="bg-paper text-sm text-gray">
           <tr>
             {head.map((h) => (
               <th key={h} className="px-4 py-2 font-medium">

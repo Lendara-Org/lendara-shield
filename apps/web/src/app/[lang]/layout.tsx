@@ -35,7 +35,7 @@ export default async function LangLayout({ children, params }: Props) {
         <SessionProvider>
           <SiteHeader />
           {children}
-          <footer className="mx-auto max-w-5xl px-4 pb-10 text-xs text-gray">{messages[lang].footer}</footer>
+          <footer className="mx-auto max-w-[1440px] border-t border-line px-5 py-8 text-sm sm:px-8 lg:px-12 text-gray">{messages[lang].footer}</footer>
         </SessionProvider>
       </I18nProvider>
     </div>
