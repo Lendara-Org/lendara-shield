@@ -9,6 +9,7 @@ use axum::http::HeaderValue;
 use secrecy::SecretString;
 
 const DEFAULT_API_PORT: u16 = 8080;
+const DEFAULT_SOROBAN_RPC_URL: &str = "https://soroban-testnet.stellar.org";
 /// Shortest accepted admin token, so it cannot be guessed.
 const MIN_ADMIN_TOKEN_LEN: usize = 32;
 
@@ -29,6 +30,10 @@ pub struct Config {
     pub ramp_anchor_home_domain: Option<String>,
     /// Bearer token for `/v1/asp/*`. `None` disables the admin endpoints.
     pub admin_token: Option<SecretString>,
+    /// Stellar RPC used for Soroban calls.
+    pub soroban_rpc_url: String,
+    /// ASP admin (operator) seed. `None` leaves on-chain ASP writes off.
+    pub operator_secret: Option<SecretString>,
 }
 
 /// Log output format.
@@ -87,6 +92,12 @@ impl Config {
         let ramp_anchor_home_domain = get("RAMP_ANCHOR_HOME_DOMAIN")
             .map(|raw| parse_home_domain(raw.trim()))
             .transpose()?;
+        let soroban_rpc_url = get("SOROBAN_RPC_URL")
+            .map(|raw| parse_url("SOROBAN_RPC_URL", raw.trim()))
+            .transpose()?
+            .unwrap_or_else(|| DEFAULT_SOROBAN_RPC_URL.to_owned());
+        let operator_secret =
+            get("SHIELD_OPERATOR_SECRET").map(|raw| SecretString::from(raw.trim().to_owned()));
         let admin_token = get("ADMIN_TOKEN")
             .map(|raw| parse_admin_token(&raw))
             .transpose()?;
@@ -99,6 +110,8 @@ impl Config {
             deployment_file,
             ramp_anchor_home_domain,
             admin_token,
+            soroban_rpc_url,
+            operator_secret,
         })
     }
 }
@@ -136,6 +149,17 @@ fn parse_origins(raw: &str) -> Result<Vec<HeaderValue>, ConfigError> {
             })
         })
         .collect()
+}
+
+fn parse_url(name: &'static str, raw: &str) -> Result<String, ConfigError> {
+    if raw.starts_with("https://") || raw.starts_with("http://") {
+        Ok(raw.trim_end_matches('/').to_owned())
+    } else {
+        Err(ConfigError::Invalid {
+            name,
+            reason: format!("`{raw}` must start with http:// or https://"),
+        })
+    }
 }
 
 fn parse_admin_token(raw: &str) -> Result<SecretString, ConfigError> {
@@ -298,6 +322,35 @@ mod tests {
             err,
             Some(ConfigError::Invalid {
                 name: "ADMIN_TOKEN",
+                ..
+            })
+        ));
+        Ok(())
+    }
+
+    #[test]
+    fn soroban_settings_default_to_testnet_and_keep_the_seed_secret() -> Result<(), ConfigError> {
+        let config = load(&[("DATABASE_URL", DB_URL)])?;
+        assert_eq!(
+            config.soroban_rpc_url,
+            "https://soroban-testnet.stellar.org"
+        );
+        assert!(config.operator_secret.is_none());
+
+        let seed = "test-operator-secret-not-a-real-seed";
+        let config = load(&[
+            ("DATABASE_URL", DB_URL),
+            ("SOROBAN_RPC_URL", "http://localhost:8000/"),
+            ("SHIELD_OPERATOR_SECRET", seed),
+        ])?;
+        assert_eq!(config.soroban_rpc_url, "http://localhost:8000");
+        assert!(!format!("{config:?}").contains(seed));
+
+        let err = load(&[("DATABASE_URL", DB_URL), ("SOROBAN_RPC_URL", "rpc.example")]).err();
+        assert!(matches!(
+            err,
+            Some(ConfigError::Invalid {
+                name: "SOROBAN_RPC_URL",
                 ..
             })
         ));

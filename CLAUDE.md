@@ -598,7 +598,9 @@ Cada una tiene una recomendación. Si Anouk no responde y el PR no puede esperar
 - H4 (setup testnet + pool) ✅ en `feat/api-testnet-setup` (26-oct): `make setup-testnet` y `make test-testnet` en bash, pool de USDC desplegado, `GET /v1/info` desde el manifiesto validado (`PoolDeployment`), tipos de dominio `AccountId`/`ContractId` con `stellar-strkey` 0.0.18 (misma versión que el SDK de SPP).
 - H5 dividido en H5a y H5b (26-oct, decisión de Anouk).
 - H5a (onboarding y ASP sin red) ✅ en `feat/api-onboarding` (26-oct): migración `shield_users` + `asp_events`, reglas puras del KYC/ASP, puerto `AspContract` (prepare → guardar hash → submit → status), servicio idempotente con reanudación y tope de reintentos, endpoints de onboarding, usuarios y admin (`ADMIN_TOKEN` en tiempo constante), logs con plantilla de ruta (sin direcciones). 88 tests, 96 % de líneas.
-- Siguiente: H5b (adaptador Soroban del ASP + prueba en testnet). H7 (web) puede arrancar en paralelo.
+- H5b (adaptador Soroban del ASP) ✅ en `feat/api-asp-soroban` (26-oct): cliente JSON-RPC propio (`stellar-xdr` 28 + `ed25519-dalek` 3 + `reqwest`), armado/firma puros, `SorobanAspContract` con control de secuencia, decisión+registro bajo `FOR UPDATE` (arregla una carrera de H5a), validación de elementos de campo. **En testnet:** la intake quedó en la allow-list y se probó bloquear/desbloquear con verificación independiente del SDK. 109 tests, 94,8 % de líneas.
+- **Decisión pendiente para H6b:** cómo usar el SDK de SPP (prover) desde el API, dado el conflicto de SQLite (ver trampas).
+- Siguiente: H6a (intents y cliente del anchor). H7 (web) puede arrancar en paralelo.
 
 ### Riesgos identificados (25-oct)
 1. **Tiempo:** 12 PRs en ~1 día. ~~Plan B del backend~~ descartado en H1.
@@ -619,6 +621,8 @@ Cada una tiene una recomendación. Si Anouk no responde y el PR no puede esperar
 - gitleaks y actionlint no están instalados localmente: correrlos con Docker usando las mismas imágenes del CI.
 - Los targets del `Makefile` cuyo código llega en un PR futuro imprimen "arrives in Hx" en vez de fallar. Cada PR los reemplaza por el comando real.
 - API: consultas SQL en tiempo de ejecución (`sqlx::query_as`, no las macros `query!`), cada una cubierta por tests `#[sqlx::test]`: evita `sqlx-cli` y el caché offline en el CI. `sqlx` 0.9 exige SQL estático: armar consultas con `concat!` y macros, nunca `format!`.
+- **El SDK de SPP no puede ir en el mismo binario que `sqlx`:** `rusqlite` 0.40 (SDK) y `sqlx` 0.9 enlazan versiones incompatibles de la librería nativa de SQLite (`libsqlite3-sys` 0.38 vs < 0.38), aunque no usemos SQLite. Cargo lo rechaza. El ASP se resolvió sin SDK; el prover (H6b) necesita otra vía.
+- **Orden de bytes (verificado en testnet):** el SDK imprime la hoja ASP en big-endian y la llave de nota en **little-endian**. La clave de la block-list es la llave de nota con los bytes invertidos (`PoolField::field_le`). La llave de cifrado es X25519, no un elemento del campo. Validar elementos de campo contra el módulo BN254 en el orden correcto.
 - ASP: la block-list usa `key = value = llave pública de nota` (convención de la app de SPP). Toda escritura en la block-list invalida las pruebas construidas antes: el worker de H6b debe poder rehacer la prueba y reintentar.
 - ASP: el usuario queda `pending` si la red falla; repetir `POST /v1/onboarding` retoma desde donde quedó. `GET /v1/users/{account}` solo consulta el estado de la transacción en vuelo (nunca envía).
 - API: las migraciones van embebidas (`sqlx::migrate!`), se aplican al arrancar y con `make migrate`; no hace falta `sqlx-cli` hasta que existan consultas con `query!` (entonces: `cargo sqlx prepare` y el chequeo en el CI).
@@ -626,6 +630,8 @@ Cada una tiene una recomendación. Si Anouk no responde y el PR no puede esperar
 - API: `cargo test` necesita Postgres arriba (`make db-up`) y `DATABASE_URL`; el `Makefile` la toma del `.env`. `#[sqlx::test]` crea una base aislada por test.
 - TypeScript fijado en 5.9.3: `openapi-typescript` 7.13 exige `^5` (TS 7.0 ya salió, pero no es compatible todavía). Mismo que el sandbox.
 - Tests de TS sin dependencias: `node --test` (Node 24 ejecuta `.ts` nativo). Los tests de tipos van en `*.typetest.ts` y los corre `tsc` con `@ts-expect-error`.
+- `stellar-strkey` oculta las llaves privadas por diseño: para codificar una (solo en tests) usar `PrivateKey(..).as_unredacted().to_string()`.
+- La intake ya está en la allow-list del pool de USDC (hoja `0x1df0…08d3`, tx `ad5627d8…`); su wallet del SDK está en `SHIELD_INTAKE_WALLET_PATH`. No borrar.
 - No hacer `source .env` en bash: `STELLAR_NETWORK_PASSPHRASE` tiene espacios y `;`. El `Makefile` lo carga bien (`-include .env`); para correr algo a mano, usar `make` o exportar la variable entre comillas.
 - `make lint/test/build` corren Rust + JS; el CI usa los targets separados (`-api`, `-js`).
 - SPP: fijar el tag `sdk-v0.2.1` (contratos, crate y npm coinciden). El tag `alpha` de npm está viejo: usar `stellar-private-payments@0.2.1`.

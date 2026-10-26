@@ -49,7 +49,7 @@ fn field(byte: u8) -> Result<PoolField, Box<dyn std::error::Error>> {
     ))?)
 }
 
-/// Distinct keys per account: note key 0x11.., encryption 0x22.., leaf 0x33..
+/// Distinct keys per account: note key 0x11.., encryption 0x21.., leaf 0x06..
 /// (offset by `seed`).
 fn input(
     account: &str,
@@ -60,7 +60,7 @@ fn input(
         stellar_account: AccountId::parse(account)?,
         note_public_key: field(0x10 + seed)?,
         encryption_public_key: field(0x20 + seed)?,
-        asp_leaf: field(0x30 + seed)?,
+        asp_leaf: field(0x05 + seed)?,
         scenario,
     })
 }
@@ -88,7 +88,7 @@ async fn approved_kyc_allow_lists_the_leaf(db: PgPool) -> TestResult {
         h.chain.applied(),
         vec![AppliedWrite {
             action: AspAction::Allow,
-            key: field(0x31)?
+            key: field(0x06)?
         }]
     );
     Ok(())
@@ -126,7 +126,7 @@ async fn blocked_scenario_allows_then_blocks_the_note_key(db: PgPool) -> TestRes
         vec![
             AppliedWrite {
                 action: AspAction::Allow,
-                key: field(0x31)?
+                key: field(0x06)?
             },
             AppliedWrite {
                 action: AspAction::Block,
@@ -333,7 +333,7 @@ async fn admin_can_block_and_unblock(db: PgPool) -> TestResult {
         vec![
             AppliedWrite {
                 action: AspAction::Allow,
-                key: field(0x31)?
+                key: field(0x06)?
             },
             AppliedWrite {
                 action: AspAction::Block,
@@ -397,17 +397,33 @@ async fn unknown_users_are_not_found(db: PgPool) -> TestResult {
 #[sqlx::test]
 async fn concurrent_onboardings_of_one_account_write_once(db: PgPool) -> TestResult {
     let h = harness(db);
-    let (a, b) = tokio::join!(
-        h.service.onboard(input(ALICE, 1, KycScenario::Approved)?),
-        h.service.onboard(input(ALICE, 1, KycScenario::Approved)?),
+    // Four at once, in the blocked scenario (two on-chain actions each).
+    let (a, b, c, d) = tokio::join!(
+        h.service.onboard(input(ALICE, 1, KycScenario::Blocked)?),
+        h.service.onboard(input(ALICE, 1, KycScenario::Blocked)?),
+        h.service.onboard(input(ALICE, 1, KycScenario::Blocked)?),
+        h.service.onboard(input(ALICE, 1, KycScenario::Blocked)?),
     );
-    let outcomes = [a?, b?];
+    let outcomes = [a?, b?, c?, d?];
 
     let created = outcomes
         .iter()
         .filter(|o| matches!(o, Onboarded::Created(_)))
         .count();
     assert_eq!(created, 1);
-    assert_eq!(h.chain.applied().len(), 1, "the leaf is inserted once");
+    assert_eq!(
+        h.chain.applied(),
+        vec![
+            AppliedWrite {
+                action: AspAction::Allow,
+                key: field(0x06)?
+            },
+            AppliedWrite {
+                action: AspAction::Block,
+                key: field(0x11)?
+            },
+        ],
+        "each write happens exactly once"
+    );
     Ok(())
 }

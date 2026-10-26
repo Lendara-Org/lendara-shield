@@ -74,6 +74,14 @@ pub async fn onboard(
         asp_leaf: parse_key("asp_leaf", &body.asp_leaf)?,
         scenario: body.scenario,
     };
+    // Both go into the pool's trees as BN254 field elements, in the byte
+    // order the SDK prints them (leaf big-endian, note key little-endian).
+    if !PoolField::is_canonical(&input.asp_leaf.field_be()) {
+        return Err(not_a_field_element("asp_leaf"));
+    }
+    if !PoolField::is_canonical(&input.note_public_key.field_le()) {
+        return Err(not_a_field_element("note_public_key"));
+    }
     Ok(match state.asp.onboard(input).await? {
         Onboarded::Created(view) => (StatusCode::CREATED, Json(view.into())),
         Onboarded::Existing(view) => (StatusCode::OK, Json(view.into())),
@@ -111,6 +119,13 @@ fn parse_account(raw: &str) -> Result<AccountId, ApiError> {
         code: "invalid_account",
         message: e.to_string(),
     })
+}
+
+fn not_a_field_element(field: &str) -> ApiError {
+    ApiError::BadRequest {
+        code: "invalid_key",
+        message: format!("{field} is not a valid pool field element"),
+    }
 }
 
 fn parse_key(field: &str, raw: &str) -> Result<PoolField, ApiError> {
