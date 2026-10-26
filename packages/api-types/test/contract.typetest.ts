@@ -14,13 +14,23 @@ import { isFinalIntentStatus } from "../src/index.ts";
 const SAMPLE_POOL_FIELD = "0x05a8c36ec6273fca4fed02573a4030279b2ec26f79ebf9cc784d8e6313f8fd74";
 const ACCOUNT = "GBJ3H74T4LB23V3WKE46BSWMZVOH4YWX2P5ZLQTY4EZXH3YAZZUCPFWY";
 
-// Onboarding sends public pool keys and the ASP leaf; scenario is optional.
+// Onboarding sends public pool keys, the ASP leaf and the account's
+// signature over them; scenario is optional.
 export const onboarding = {
   stellar_account: ACCOUNT,
   note_public_key: SAMPLE_POOL_FIELD,
   encryption_public_key: SAMPLE_POOL_FIELD,
   asp_leaf: SAMPLE_POOL_FIELD,
+  signature: "c2lnbmF0dXJl",
 } satisfies OnboardingRequest;
+
+// @ts-expect-error the ownership signature is required.
+export const unsigned: OnboardingRequest = {
+  stellar_account: ACCOUNT,
+  note_public_key: SAMPLE_POOL_FIELD,
+  encryption_public_key: SAMPLE_POOL_FIELD,
+  asp_leaf: SAMPLE_POOL_FIELD,
+};
 
 // @ts-expect-error spending keys are never part of the request.
 export const leaksSecret: OnboardingRequest = { ...onboarding, note_private_key: SAMPLE_POOL_FIELD };

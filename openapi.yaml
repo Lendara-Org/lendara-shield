@@ -88,6 +88,9 @@ paths:
         `asp_status: pending`. Poll `GET /v1/users/{account}` until it is final; if it stays
         `pending` (the network was unavailable), repeat this same request to resume.
 
+        The request carries the account's SEP-53 signature over the keys (see `signature`), so nobody can
+        attach their own keys to someone else's account.
+
         Idempotent: repeating the call with the same account and keys returns the existing user with `200`.
       security: []
       requestBody:
@@ -529,7 +532,7 @@ components:
 
     OnboardingRequest:
       type: object
-      required: [stellar_account, note_public_key, encryption_public_key, asp_leaf]
+      required: [stellar_account, note_public_key, encryption_public_key, asp_leaf, signature]
       properties:
         stellar_account:
           $ref: "#/components/schemas/StellarAccount"
@@ -540,6 +543,23 @@ components:
         asp_leaf:
           description: ASP membership leaf from `deriveAspUserLeaf()`.
           $ref: "#/components/schemas/PoolField"
+        signature:
+          type: string
+          description: |
+            Proof that the caller controls `stellar_account`: its [SEP-53](https://github.com/stellar/stellar-protocol/blob/master/ecosystem/sep-0053.md)
+            signature (base64, as Freighter's `signMessage` returns it) of this exact text, with the keys in
+            lowercase hex and lines separated by `\n`:
+
+            ```
+            Lendara Shield onboarding
+            network: testnet
+            account: <stellar_account>
+            note_public_key: <note_public_key>
+            encryption_public_key: <encryption_public_key>
+            asp_leaf: <asp_leaf>
+            ```
+
+            A wrong signature answers `400 invalid_signature`.
         scenario:
           $ref: "#/components/schemas/KycScenario"
 
