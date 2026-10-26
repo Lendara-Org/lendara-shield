@@ -122,6 +122,8 @@ test("the visual identity stays readable and usable across viewport widths", asy
       await page.screenshot({ path: "test-results/hero-desktop.png" });
       await page.getByRole("heading", { name: "Pagos privados. Dentro de tu producto." }).scrollIntoViewIfNeeded();
       await page.screenshot({ path: "test-results/developers-desktop.png" });
+      await page.getByRole("contentinfo").scrollIntoViewIfNeeded();
+      await page.screenshot({ path: "test-results/developers-footer.png" });
     }
     await expect(page.getByRole("heading", { level: 1 })).toHaveCSS("font-weight", "600");
     await expect(page.getByRole("main").getByRole("link", { name: "Probar la demo" }).first()).toHaveCSS("background-color", "rgb(194, 24, 82)");
