@@ -42,7 +42,7 @@ impl Background {
             Ok(report) if report.recorded > 0 => {
                 tracing::info!(
                     recorded = report.recorded,
-                    funded = report.funded,
+                    matched = report.matched,
                     "intake payments processed"
                 );
             }

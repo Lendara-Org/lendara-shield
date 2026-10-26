@@ -23,7 +23,7 @@ use super::{
     sep10::{self, Expectations},
 };
 use crate::{
-    domain::AccountId,
+    domain::{AccountId, TxHash},
     ports::{AnchorClient, AnchorDeposit, AnchorError, AnchorStatus, Clock, StartDeposit},
 };
 
@@ -272,14 +272,16 @@ impl AnchorClient for Sep24AnchorClient {
         Ok(map_status(
             &body.transaction.status,
             body.transaction.message,
+            body.transaction.stellar_transaction_id.as_deref(),
         ))
     }
 }
 
 /// SEP-24 transaction statuses, reduced to what Shield acts on.
-fn map_status(status: &str, message: Option<String>) -> AnchorStatus {
+fn map_status(status: &str, message: Option<String>, stellar_tx: Option<&str>) -> AnchorStatus {
     match status {
-        "completed" => AnchorStatus::Completed,
+        // A malformed id is treated as missing: nothing can be confirmed.
+        "completed" => AnchorStatus::Completed(stellar_tx.and_then(|h| TxHash::parse(h).ok())),
         "expired" => AnchorStatus::Expired,
         "error" | "refunded" | "no_market" | "too_small" | "too_large" => {
             AnchorStatus::Failed(message.unwrap_or_else(|| status.to_owned()))
@@ -309,6 +311,7 @@ struct TransactionResponse {
 struct TransactionStatus {
     status: String,
     message: Option<String>,
+    stellar_transaction_id: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -445,20 +448,37 @@ mod tests {
             "something_new",
         ] {
             assert_eq!(
-                map_status(pending, None),
+                map_status(pending, None, None),
                 AnchorStatus::Pending,
                 "{pending}"
             );
         }
-        assert_eq!(map_status("completed", None), AnchorStatus::Completed);
-        assert_eq!(map_status("expired", None), AnchorStatus::Expired);
+        let hash = "f6eb4a6f661d929afb62e74427e612819c856dc8e802785eb4141b3e9b63e8c1";
         assert_eq!(
-            map_status("error", Some("KYC rejected (sandbox scenario).".into())),
+            map_status("completed", None, Some(hash)),
+            AnchorStatus::Completed(TxHash::parse(hash).ok())
+        );
+        assert_eq!(
+            map_status("completed", None, None),
+            AnchorStatus::Completed(None)
+        );
+        assert_eq!(
+            map_status("completed", None, Some("not-a-hash")),
+            AnchorStatus::Completed(None),
+            "an id that is not a hash confirms nothing"
+        );
+        assert_eq!(map_status("expired", None, None), AnchorStatus::Expired);
+        assert_eq!(
+            map_status(
+                "error",
+                Some("KYC rejected (sandbox scenario).".into()),
+                None
+            ),
             AnchorStatus::Failed("KYC rejected (sandbox scenario).".into())
         );
         for failed in ["refunded", "no_market", "too_small", "too_large"] {
             assert_eq!(
-                map_status(failed, None),
+                map_status(failed, None, None),
                 AnchorStatus::Failed(failed.into()),
                 "{failed}"
             );
