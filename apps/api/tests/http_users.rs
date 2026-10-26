@@ -11,7 +11,7 @@ use sqlx::PgPool;
 const ALICE: &str = "GDZOAGBQFY65MGK5Z6RBBFCHPYB2PJDJW3UV47IWK53UQF4LFSUP6XZC";
 const NOTE_KEY: &str = "0x1111111111111111111111111111111111111111111111111111111111111111";
 const ENC_KEY: &str = "0x2222222222222222222222222222222222222222222222222222222222222222";
-const LEAF: &str = "0x3333333333333333333333333333333333333333333333333333333333333333";
+const LEAF: &str = "0x0333333333333333333333333333333333333333333333333333333333333333";
 
 fn onboarding(scenario: Option<&str>) -> Value {
     let mut body = json!({
@@ -95,7 +95,7 @@ async fn rejected_and_blocked_scenarios(db: PgPool) -> TestResult {
 
     let mut bob = onboarding(Some("blocked"));
     bob["stellar_account"] = json!("GBJ3H74T4LB23V3WKE46BSWMZVOH4YWX2P5ZLQTY4EZXH3YAZZUCPFWY");
-    bob["note_public_key"] = json!(NOTE_KEY.replace('1', "4"));
+    bob["note_public_key"] = json!(NOTE_KEY.replace('1', "2"));
     bob["asp_leaf"] = json!(LEAF.replace('3', "5"));
     let (_, _, blocked) = send(app, post_json("/v1/onboarding", &bob, None)?).await?;
     assert_eq!(blocked["kyc_status"], "approved");
@@ -124,6 +124,17 @@ async fn onboarding_validates_every_field(db: PgPool) -> TestResult {
         ("encryption_public_key", json!("not hex"), "invalid_key"),
         ("asp_leaf", json!(LEAF.to_uppercase()), "invalid_key"),
         ("scenario", json!("maybe"), "invalid_request"),
+        // Above the BN254 modulus: big-endian leaf / little-endian note key.
+        (
+            "asp_leaf",
+            json!(format!("0x{}", "f".repeat(64))),
+            "invalid_key",
+        ),
+        (
+            "note_public_key",
+            json!(format!("0x{}", "f".repeat(64))),
+            "invalid_key",
+        ),
     ];
     for (field, value, code) in cases {
         let mut body = onboarding(None);

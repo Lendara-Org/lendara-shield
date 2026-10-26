@@ -111,7 +111,7 @@ mod tests {
     use super::*;
 
     fn keys() -> Result<AspKeys, crate::domain::PoolFieldError> {
-        let field = PoolField::parse(&format!("0x{}", "ab".repeat(32)))?;
+        let field = PoolField::parse(&format!("0x{}", "0a".repeat(32)))?;
         Ok(AspKeys {
             asp_leaf: field.clone(),
             note_public_key: field,
