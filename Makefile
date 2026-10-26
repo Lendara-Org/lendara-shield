@@ -2,6 +2,7 @@
 export
 
 API_DIR := apps/api
+POOL_CLI_DIR := apps/pool-cli
 
 # Prints a notice for targets whose code lands in a later PR of the plan.
 define pending
@@ -9,8 +10,8 @@ define pending
 endef
 
 .PHONY: help install dev dev-api dev-web db-up db-down migrate setup-testnet \
-	fmt fmt-check lint lint-api lint-js lint-openapi typecheck test test-api test-js test-testnet coverage deny \
-	codegen build build-api build-js
+	fmt fmt-check lint lint-api lint-pool-cli lint-js lint-openapi typecheck test test-api test-pool-cli \
+	test-js test-testnet coverage deny codegen build build-api build-pool-cli build-js
 
 help: ## List available targets
 	@grep -hE '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*## "}; {printf "  %-15s %s\n", $$1, $$2}'
@@ -41,14 +42,19 @@ setup-testnet: ## Create and fund testnet accounts, deploy the pool (idempotent)
 
 fmt: ## Format all code
 	cd $(API_DIR) && cargo fmt
+	cd $(POOL_CLI_DIR) && cargo fmt
 
 fmt-check: ## Fail if any code is not formatted
 	cd $(API_DIR) && cargo fmt --check
+	cd $(POOL_CLI_DIR) && cargo fmt --check
 
-lint: lint-api lint-js lint-openapi ## Lint all code
+lint: lint-api lint-pool-cli lint-js lint-openapi ## Lint all code
 
 lint-api: ## Clippy with warnings as errors
 	cd $(API_DIR) && cargo clippy --all-targets --all-features -- -D warnings
+
+lint-pool-cli: ## Clippy on the pool CLI with warnings as errors
+	cd $(POOL_CLI_DIR) && cargo clippy --all-targets -- -D warnings
 
 lint-js: ## Lint TS packages
 	pnpm lint
@@ -59,10 +65,13 @@ lint-openapi: ## Validate openapi.yaml (the API contract)
 typecheck: ## Type-check TS packages
 	pnpm typecheck
 
-test: test-api test-js ## Run all tests except testnet ones (needs `make db-up`)
+test: test-api test-pool-cli test-js ## Run all tests except testnet ones (needs `make db-up`)
 
 test-api: ## API tests against local Postgres (DATABASE_URL)
 	cd $(API_DIR) && cargo test
+
+test-pool-cli: ## Unit tests of the pool CLI
+	cd $(POOL_CLI_DIR) && cargo test
 
 test-js: ## Test TS packages
 	pnpm test
@@ -74,16 +83,20 @@ test-testnet: ## Check the testnet setup on-chain, read-only (needs .env)
 coverage: ## API coverage summary; `main.rs` is wiring only and excluded
 	cd $(API_DIR) && cargo llvm-cov --ignore-filename-regex 'src/main\.rs' --summary-only
 
-deny: ## Licenses, advisories and sources of API dependencies
+deny: ## Licenses, advisories and sources of the Rust dependencies
 	cd $(API_DIR) && cargo deny check
+	cd $(POOL_CLI_DIR) && cargo deny check
 
 codegen: ## Generate TS types from openapi.yaml into packages/api-types
 	pnpm --filter @lendara/shield-api-types codegen
 
-build: build-api build-js ## Build everything
+build: build-api build-pool-cli build-js ## Build everything
 
 build-api: ## Release build of the API
 	cd $(API_DIR) && cargo build --release --locked
+
+build-pool-cli: ## Release build of the pool CLI (the API runs it)
+	cd $(POOL_CLI_DIR) && cargo build --release --locked
 
 build-js: ## Build TS packages
 	pnpm build

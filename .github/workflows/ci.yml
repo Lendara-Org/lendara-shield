@@ -60,11 +60,41 @@ jobs:
       - uses: taiki-e/install-action@1e29709c0ec63babbe8f266397a465f29a825f91 # v2.87.31
         with:
           tool: cargo-deny
-      - run: make fmt-check
+      - name: Format
+        working-directory: apps/api
+        run: cargo fmt --check
       - run: make lint-api
-      - run: make deny
+      - name: Deny
+        working-directory: apps/api
+        run: cargo deny check
       - run: make test-api
       - run: make build-api
+
+  pool-cli:
+    name: Pool CLI (fmt, clippy, deny, test, build)
+    runs-on: ubuntu-latest
+    env:
+      CARGO_TERM_COLOR: always
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install the pinned toolchain (apps/pool-cli/rust-toolchain.toml)
+        working-directory: apps/pool-cli
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: apps/pool-cli
+      - uses: taiki-e/install-action@1e29709c0ec63babbe8f266397a465f29a825f91 # v2.87.31
+        with:
+          tool: cargo-deny
+      - name: Format
+        working-directory: apps/pool-cli
+        run: cargo fmt --check
+      - run: make lint-pool-cli
+      - name: Deny
+        working-directory: apps/pool-cli
+        run: cargo deny check
+      - run: make test-pool-cli
+      - run: make build-pool-cli
 
   contract:
     name: OpenAPI contract (lint, codegen up to date)
