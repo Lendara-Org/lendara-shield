@@ -2,6 +2,7 @@
 //!
 //! `main.rs` only wires things together; everything testable lives here.
 
+pub mod adapters;
 pub mod asp;
 pub mod config;
 pub mod db;
