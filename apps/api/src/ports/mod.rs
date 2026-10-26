@@ -67,6 +67,68 @@ pub trait AspContract: Send + Sync + Debug {
     async fn status(&self, hash: &TxHash) -> Result<TxStatus, ChainError>;
 }
 
+/// What Shield asks the anchor when a ramp intent starts (SEP-24 deposit to
+/// Shield's intake account).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StartDeposit {
+    /// Asset the anchor pays out (`USDC`).
+    pub asset_code: String,
+    /// Off-chain asset the user pays with, SEP-38 format (`iso4217:CRC`).
+    pub source_asset: String,
+    /// The user's SEP-10 memo: each user is a distinct customer at the anchor.
+    pub customer_memo: i64,
+    /// The intent's SEP-24 memo: the anchor's payment to the intake carries
+    /// it, which is how the watcher matches payments to intents.
+    pub deposit_memo: i64,
+}
+
+/// A deposit the anchor started.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AnchorDeposit {
+    /// The anchor's SEP-24 transaction id.
+    pub id: String,
+    /// Interactive URL to open for the user.
+    pub interactive_url: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum AnchorError {
+    /// Network, timeout, 5xx or an unexpected response.
+    #[error("anchor unavailable: {0}")]
+    Unavailable(String),
+    /// The anchor answered but refused (4xx, failed SEP-10 validation).
+    #[error("anchor refused: {0}")]
+    Refused(String),
+}
+
+/// An anchor spoken to only through SEP-1, SEP-10 and SEP-24.
+#[async_trait]
+pub trait AnchorClient: Send + Sync + Debug {
+    /// SEP-1 home domain of the anchor.
+    fn home_domain(&self) -> &str;
+    /// Starts an interactive SEP-24 deposit to Shield's intake account.
+    async fn start_deposit(&self, request: &StartDeposit) -> Result<AnchorDeposit, AnchorError>;
+}
+
+/// Placeholder used until the SEP-24 client is configured (H6a2): every
+/// deposit fails as temporarily unavailable.
+#[derive(Debug, Clone)]
+pub struct UnconfiguredAnchorClient {
+    pub home_domain: String,
+}
+
+#[async_trait]
+impl AnchorClient for UnconfiguredAnchorClient {
+    fn home_domain(&self) -> &str {
+        &self.home_domain
+    }
+    async fn start_deposit(&self, _: &StartDeposit) -> Result<AnchorDeposit, AnchorError> {
+        Err(AnchorError::Unavailable(
+            "SEP-24 client not configured".into(),
+        ))
+    }
+}
+
 /// Source of the current time, injected so tests control it.
 pub trait Clock: Send + Sync + Debug {
     fn now(&self) -> DateTime<Utc>;
@@ -141,6 +203,24 @@ mod tests {
             Err(ChainError::Unavailable(_))
         ));
         Ok(())
+    }
+
+    #[tokio::test]
+    async fn unconfigured_anchor_is_unavailable() {
+        let anchor = UnconfiguredAnchorClient {
+            home_domain: "anchor.example".into(),
+        };
+        assert_eq!(anchor.home_domain(), "anchor.example");
+        let request = StartDeposit {
+            asset_code: "USDC".into(),
+            source_asset: "iso4217:CRC".into(),
+            customer_memo: 1,
+            deposit_memo: 1,
+        };
+        assert!(matches!(
+            anchor.start_deposit(&request).await,
+            Err(AnchorError::Unavailable(_))
+        ));
     }
 
     #[test]

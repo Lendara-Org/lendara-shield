@@ -3,6 +3,7 @@
 //! as [`StoreError::Corrupt`].
 
 pub mod asp_events;
+pub mod intents;
 pub mod users;
 
 #[derive(Debug, thiserror::Error)]
