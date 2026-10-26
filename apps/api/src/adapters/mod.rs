@@ -3,6 +3,7 @@
 
 pub mod anchor;
 pub mod horizon;
+pub mod pool_cli;
 pub mod soroban;
 
 /// The `G...` account of a secret seed, without exposing the seed.
