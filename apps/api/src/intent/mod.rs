@@ -7,6 +7,7 @@
 pub mod anchor_sync;
 pub mod matching;
 pub mod service;
+pub mod shielding;
 pub mod state;
 pub mod watcher;
 

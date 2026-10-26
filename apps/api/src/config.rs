@@ -39,6 +39,8 @@ pub struct Config {
     pub operator_secret: Option<SecretString>,
     /// Intake (omnibus) account seed: SEP-10 with the anchor, pool deposits.
     pub intake_secret: Option<SecretString>,
+    /// `apps/pool-cli` binary. `None` disables the shielding worker.
+    pub pool_cli_path: Option<PathBuf>,
 }
 
 /// Log output format.
@@ -109,6 +111,7 @@ impl Config {
             get("SHIELD_OPERATOR_SECRET").map(|raw| SecretString::from(raw.trim().to_owned()));
         let intake_secret =
             get("SHIELD_INTAKE_SECRET").map(|raw| SecretString::from(raw.trim().to_owned()));
+        let pool_cli_path = get("POOL_CLI_PATH").map(|raw| PathBuf::from(raw.trim()));
         let admin_token = get("ADMIN_TOKEN")
             .map(|raw| parse_admin_token(&raw))
             .transpose()?;
@@ -125,6 +128,7 @@ impl Config {
             horizon_url,
             operator_secret,
             intake_secret,
+            pool_cli_path,
         })
     }
 }

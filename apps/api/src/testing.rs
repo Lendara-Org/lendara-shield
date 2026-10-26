@@ -14,8 +14,8 @@ use crate::{
     domain::{PoolField, TxHash},
     ports::{
         AnchorClient, AnchorDeposit, AnchorError, AnchorStatus, AspContract, AspKeys, ChainError,
-        Clock, IncomingPayment, IntakeLedger, LedgerError, PaymentPage, PreparedTx, StartDeposit,
-        TxStatus,
+        Clock, IncomingPayment, IntakeLedger, LedgerError, PaymentPage, PoolClient, PoolError,
+        PoolTx, PreparedTx, StartDeposit, TxStatus,
     },
 };
 
@@ -327,6 +327,256 @@ impl IntakeLedger for FakeLedger {
             payments: page,
             next_cursor,
         })
+    }
+}
+
+/// How the fake pool chain answers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PoolBehaviour {
+    /// Transactions land when their sequence is the next one.
+    Healthy,
+    /// `submit` succeeds but the network never sees the transaction.
+    Drops,
+    /// `submit` times out although the transaction lands.
+    SubmitTimesOutButLands,
+    /// The transaction lands but fails (sequence consumed, nothing applied).
+    FailsOnChain,
+    /// `submit` succeeds; the transaction stays pending.
+    Pending,
+    /// `submit` is refused (e.g. stale proof); nothing lands.
+    Refuses,
+}
+
+/// One pool write the fake chain applied successfully.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PoolWrite {
+    Deposit {
+        amount: i64,
+    },
+    Transfer {
+        amount: i64,
+        note_public_key: PoolField,
+    },
+}
+
+#[derive(Debug, Clone)]
+struct FakePoolTx {
+    write: PoolWrite,
+    sequence: i64,
+    status: TxStatus,
+}
+
+#[derive(Debug)]
+struct PoolState {
+    behaviour: PoolBehaviour,
+    prepare_fails: Option<bool>,
+    intake_sequence: i64,
+    txs: std::collections::HashMap<String, FakePoolTx>,
+    applied: Vec<PoolWrite>,
+    prepares: usize,
+    submits: usize,
+    counter: u8,
+    /// `status` answers `NotFound` this many more times for landed
+    /// transactions (RPC indexing lag).
+    status_lag: usize,
+}
+
+/// In-memory pool with the real sequence rule: a transaction lands only if
+/// its sequence is exactly the intake's next one.
+#[derive(Debug)]
+pub struct FakePool(Mutex<PoolState>);
+
+impl Default for FakePool {
+    fn default() -> Self {
+        Self(Mutex::new(PoolState {
+            behaviour: PoolBehaviour::Healthy,
+            prepare_fails: None,
+            intake_sequence: 100,
+            txs: std::collections::HashMap::new(),
+            applied: Vec::new(),
+            prepares: 0,
+            submits: 0,
+            counter: 0,
+            status_lag: 0,
+        }))
+    }
+}
+
+impl FakePool {
+    pub fn set_behaviour(&self, behaviour: PoolBehaviour) {
+        lock(&self.0).behaviour = behaviour;
+    }
+
+    /// Makes `prepare_*` fail; `Some(retryable)` or `None` to recover.
+    pub fn set_prepare_fails(&self, retryable: Option<bool>) {
+        lock(&self.0).prepare_fails = retryable;
+    }
+
+    /// Landed transactions look `NotFound` for the next `calls` status
+    /// queries, while the account's sequence already moved.
+    pub fn set_status_lag(&self, calls: usize) {
+        lock(&self.0).status_lag = calls;
+    }
+
+    /// Another transaction from the intake used up the next sequence.
+    pub fn bump_sequence(&self) {
+        lock(&self.0).intake_sequence += 1;
+    }
+
+    /// Lands every pending transaction.
+    pub fn confirm_pending(&self) {
+        let mut state = lock(&self.0);
+        let pending: Vec<String> = state
+            .txs
+            .iter()
+            .filter(|(_, tx)| tx.status == TxStatus::Pending)
+            .map(|(hash, _)| hash.clone())
+            .collect();
+        for hash in pending {
+            Self::land(&mut state, &hash, true);
+        }
+    }
+
+    #[must_use]
+    pub fn applied(&self) -> Vec<PoolWrite> {
+        lock(&self.0).applied.clone()
+    }
+
+    #[must_use]
+    pub fn prepares(&self) -> usize {
+        lock(&self.0).prepares
+    }
+
+    #[must_use]
+    pub fn submits(&self) -> usize {
+        lock(&self.0).submits
+    }
+
+    fn prepare(&self, write: PoolWrite) -> Result<PoolTx, PoolError> {
+        let mut state = lock(&self.0);
+        if let Some(retryable) = state.prepare_fails {
+            return Err(PoolError {
+                code: "chain".into(),
+                message: "prover unavailable".into(),
+                retryable,
+            });
+        }
+        state.prepares += 1;
+        state.counter = state.counter.wrapping_add(1);
+        let hash = TxHash::from_bytes([state.counter; 32]);
+        // Like the SDK: the next on-chain sequence, no local reservation.
+        let sequence = state.intake_sequence + 1;
+        state.txs.insert(
+            hash.as_str().to_owned(),
+            FakePoolTx {
+                write,
+                sequence,
+                status: TxStatus::NotFound,
+            },
+        );
+        Ok(PoolTx {
+            envelope_xdr: hash.as_str().to_owned(),
+            hash,
+            sequence,
+        })
+    }
+
+    /// Includes a transaction if its sequence is next; `success` applies it.
+    fn land(state: &mut PoolState, hash: &str, success: bool) -> bool {
+        let next = state.intake_sequence + 1;
+        let Some(tx) = state.txs.get_mut(hash) else {
+            return false;
+        };
+        if tx.sequence != next || matches!(tx.status, TxStatus::Success | TxStatus::Failed(_)) {
+            return false;
+        }
+        state.intake_sequence = next;
+        if success {
+            tx.status = TxStatus::Success;
+            state.applied.push(tx.write.clone());
+        } else {
+            tx.status = TxStatus::Failed("tx_failed".into());
+        }
+        true
+    }
+}
+
+#[async_trait]
+impl PoolClient for FakePool {
+    async fn prepare_deposit(&self, amount: i64) -> Result<PoolTx, PoolError> {
+        self.prepare(PoolWrite::Deposit { amount })
+    }
+
+    async fn prepare_transfer(
+        &self,
+        amount: i64,
+        note_public_key: &PoolField,
+        _encryption_public_key: &PoolField,
+    ) -> Result<PoolTx, PoolError> {
+        self.prepare(PoolWrite::Transfer {
+            amount,
+            note_public_key: note_public_key.clone(),
+        })
+    }
+
+    async fn submit(&self, envelope_xdr: &str) -> Result<(), PoolError> {
+        let mut state = lock(&self.0);
+        state.submits += 1;
+        let refused = |message: &str| PoolError {
+            code: "sdk".into(),
+            message: message.into(),
+            retryable: false,
+        };
+        match state.behaviour {
+            PoolBehaviour::Healthy => {
+                let already = state
+                    .txs
+                    .get(envelope_xdr)
+                    .is_some_and(|tx| tx.status == TxStatus::Success);
+                if already || Self::land(&mut state, envelope_xdr, true) {
+                    Ok(())
+                } else {
+                    Err(refused("tx_bad_seq"))
+                }
+            }
+            PoolBehaviour::SubmitTimesOutButLands => {
+                Self::land(&mut state, envelope_xdr, true);
+                Err(PoolError {
+                    code: "cli_timeout".into(),
+                    message: "timed out".into(),
+                    retryable: true,
+                })
+            }
+            PoolBehaviour::FailsOnChain => {
+                Self::land(&mut state, envelope_xdr, false);
+                Ok(())
+            }
+            PoolBehaviour::Pending => {
+                if let Some(tx) = state.txs.get_mut(envelope_xdr) {
+                    tx.status = TxStatus::Pending;
+                }
+                Ok(())
+            }
+            PoolBehaviour::Drops => Ok(()),
+            PoolBehaviour::Refuses => Err(refused("simulation failed: stale ASP root")),
+        }
+    }
+
+    async fn status(&self, hash: &TxHash) -> Result<TxStatus, PoolError> {
+        let mut state = lock(&self.0);
+        let status = state
+            .txs
+            .get(hash.as_str())
+            .map_or(TxStatus::NotFound, |tx| tx.status.clone());
+        if status == TxStatus::Success && state.status_lag > 0 {
+            state.status_lag -= 1;
+            return Ok(TxStatus::NotFound);
+        }
+        Ok(status)
+    }
+
+    async fn intake_sequence(&self) -> Result<i64, PoolError> {
+        Ok(lock(&self.0).intake_sequence)
     }
 }
 

@@ -194,6 +194,48 @@ impl AnchorClient for UnconfiguredAnchorClient {
     }
 }
 
+/// A signed pool transaction (deposit or private transfer), stored before
+/// it is sent.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PoolTx {
+    pub hash: TxHash,
+    /// Base64 XDR envelope; resending it is always safe (same transaction).
+    pub envelope_xdr: String,
+    /// Sequence number: once the intake's sequence reaches it without this
+    /// hash on-chain, the transaction can never land.
+    pub sequence: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("pool {code}: {message}")]
+pub struct PoolError {
+    /// Stable code from the pool CLI (`chain`, `plan`, `not_allowed`, ...).
+    pub code: String,
+    pub message: String,
+    /// Whether the same call may succeed later.
+    pub retryable: bool,
+}
+
+/// Pool operations as Shield's intake account (the SPP prover, out of
+/// process: see `apps/pool-cli`).
+#[async_trait]
+pub trait PoolClient: Send + Sync + Debug {
+    /// Proves and signs a deposit of `amount` stroops from the intake.
+    async fn prepare_deposit(&self, amount: i64) -> Result<PoolTx, PoolError>;
+    /// Proves and signs a private transfer of `amount` stroops to raw keys.
+    async fn prepare_transfer(
+        &self,
+        amount: i64,
+        note_public_key: &PoolField,
+        encryption_public_key: &PoolField,
+    ) -> Result<PoolTx, PoolError>;
+    /// Sends a prepared transaction (no-op if the network already has it).
+    async fn submit(&self, envelope_xdr: &str) -> Result<(), PoolError>;
+    async fn status(&self, hash: &TxHash) -> Result<TxStatus, PoolError>;
+    /// Current sequence number of the intake account.
+    async fn intake_sequence(&self) -> Result<i64, PoolError>;
+}
+
 /// Source of the current time, injected so tests control it.
 pub trait Clock: Send + Sync + Debug {
     fn now(&self) -> DateTime<Utc>;

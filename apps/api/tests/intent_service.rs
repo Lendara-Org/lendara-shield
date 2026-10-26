@@ -243,6 +243,11 @@ async fn walks_the_happy_path_and_stamps_completion(db: PgPool) -> TestResult {
     let intent = service.create(request(ALICE, "10")?).await?;
     let mut conn = db.acquire().await?;
     let hash = |b: u8| TxHash::from_bytes([b; 32]);
+    let pool_tx = |b: u8| shield_api::ports::PoolTx {
+        hash: hash(b),
+        envelope_xdr: format!("envelope-{b}"),
+        sequence: i64::from(b),
+    };
 
     let steps = [
         (
@@ -254,26 +259,27 @@ async fn walks_the_happy_path_and_stamps_completion(db: PgPool) -> TestResult {
                 ..Changes::default()
             },
         ),
+        // Each step stores the transaction it is about to send.
         (
             IntentStatus::FundsReceived,
             IntentStatus::Shielding,
-            Changes::default(),
+            Changes {
+                pool_deposit: Some(pool_tx(2)),
+                ..Changes::default()
+            },
         ),
         (
             IntentStatus::Shielding,
             IntentStatus::Transferring,
             Changes {
-                pool_deposit_tx_hash: Some(hash(2)),
+                pool_transfer: Some(pool_tx(3)),
                 ..Changes::default()
             },
         ),
         (
             IntentStatus::Transferring,
             IntentStatus::Completed,
-            Changes {
-                pool_transfer_tx_hash: Some(hash(3)),
-                ..Changes::default()
-            },
+            Changes::default(),
         ),
     ];
     for (from, to, changes) in steps {
@@ -285,9 +291,41 @@ async fn walks_the_happy_path_and_stamps_completion(db: PgPool) -> TestResult {
     assert!(done.completed_at.is_some());
     assert_eq!(done.amount_asset.map(String::from).as_deref(), Some("9.99"));
     assert_eq!(done.intake_payment_tx_hash, Some(hash(1)));
-    assert_eq!(done.pool_deposit_tx_hash, Some(hash(2)));
-    assert_eq!(done.pool_transfer_tx_hash, Some(hash(3)));
+    assert_eq!(done.pool_deposit, Some(pool_tx(2)));
+    assert_eq!(done.pool_transfer, Some(pool_tx(3)));
     assert_eq!(intents::events(&db, intent.id).await?.len(), 6);
+    Ok(())
+}
+
+#[sqlx::test]
+async fn shielding_without_a_stored_deposit_is_refused(db: PgPool) -> TestResult {
+    user(&db, ALICE, 1, AspStatus::Allowed).await?;
+    let (service, _) = service(db.clone());
+    let intent = service.create(request(ALICE, "10")?).await?;
+    let mut conn = db.acquire().await?;
+    intents::transition(
+        &mut conn,
+        intent.id,
+        IntentStatus::AwaitingAnchor,
+        IntentStatus::FundsReceived,
+        Changes::default(),
+    )
+    .await?;
+
+    // The database itself refuses a `shielding` intent with no transaction.
+    let err = intents::transition(
+        &mut conn,
+        intent.id,
+        IntentStatus::FundsReceived,
+        IntentStatus::Shielding,
+        Changes::default(),
+    )
+    .await;
+    assert!(err.is_err());
+    assert_eq!(
+        service.get(intent.id).await?.status,
+        IntentStatus::FundsReceived
+    );
     Ok(())
 }
 
