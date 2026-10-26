@@ -608,7 +608,9 @@ Cada una tiene una recomendación. Si Anouk no responde y el PR no puede esperar
 - H6a1 (intents sin red) ✅ en `feat/api-ramp-intents` (26-oct): migración `intents` + `intent_events` (memo SEP-24 por secuencia, montos `numeric` leídos como texto, hash del pago del anchor único), máquina de estados pura con tests exhaustivos, `DecimalAmount`/`FiatCurrency`, puerto `AnchorClient` + fake, transiciones atómicas (`WHERE status = from`) con evento en la misma transacción, `POST/GET /v1/intents`.
 - **Decisión H6b (26-oct, Anouk):** el prover vive en un CLI aparte, `apps/pool-cli` (crate propio con el SDK de SPP, sin estado, JSON por stdin/stdout: `prepare-deposit`, `prepare-transfer`, `submit`, `status`). El API lo invoca como subproceso detrás de un puerto `PoolClient`; la máquina de estados y la idempotencia quedan en el API.
 - H6a2 (cliente del anchor) ✅ en `feat/api-anchor-client` (26-oct): SEP-1 (parser mínimo de `stellar.toml`, en caché), SEP-10 (verificación completa del challenge antes de firmar: fuente, secuencia 0, límites de tiempo, memo, `<home_domain> auth`, nonce, `web_auth_domain`, firma del `SIGNING_KEY` en la red correcta) y SEP-24 (depósito interactivo a la intake con memo `id`). Solo HTTPS (salvo localhost). **Contra el sandbox real:** intent `awaiting_anchor` con la URL del widget en 1,2 s.
-- Siguiente: H6b (pool-cli + watcher + worker de shielding). H7 (web) puede arrancar en paralelo.
+- H6b dividido en H6b1 (pool-cli) y H6b2 (watcher + worker en el API).
+- H6b1 (`apps/pool-cli`) ✅ en `feat/pool-cli` (26-oct): CLI sin estado con el SDK de SPP 0.2.1 (`keys`, `balance`, `prepare-deposit`, `prepare-transfer` a llaves crudas, `submit`, `status`), JSON por stdout, errores con `retryable`, job propio en el CI. **En testnet:** el anchor del sandbox pagó 9,3039215 USDC a la intake con memo `id: 2` (`77f556e4…`); depósito de 1 USDC al pool (`3e73673f…`) y transferencia privada a las llaves crudas de bob sin registro (`f89f71b8…`, dirección de bob 0 veces). D3 verificada.
+- Siguiente: H6b2 (puerto `PoolClient` sobre el CLI, watcher de Horizon, estado del anchor, worker idempotente, intent de punta a punta). H7 (web) puede arrancar en paralelo.
 
 ### Riesgos identificados (25-oct)
 1. **Tiempo:** 12 PRs en ~1 día. ~~Plan B del backend~~ descartado en H1.
@@ -640,6 +642,9 @@ Cada una tiene una recomendación. Si Anouk no responde y el PR no puede esperar
 - Tests de TS sin dependencias: `node --test` (Node 24 ejecuta `.ts` nativo). Los tests de tipos van en `*.typetest.ts` y los corre `tsc` con `@ts-expect-error`.
 - `stellar-strkey` oculta las llaves privadas por diseño: para codificar una (solo en tests) usar `PrivateKey(..).as_unredacted().to_string()`.
 - Sandbox: `stellar.toml` en `lendara-monorepo-fixh.vercel.app`, pero `WEB_AUTH_ENDPOINT` y `TRANSFER_SERVER_SEP0024` en `lendaraweb-production.up.railway.app`: el `web_auth_domain` del challenge es el host del endpoint, no el home domain.
+- **Las transacciones del pool (SDK) no tienen límite de tiempo** (`valid_until: null`): una tx `not_found` solo puede reemplazarse cuando la secuencia de la intake ya pasó su `sequence` (el CLI la devuelve).
+- La auditoría con GVK reporta el dueño de una nota como la llave de nota en forma little-endian (`PoolField::field_le`), igual que la block-list: así el auditor mapea notas a usuarios de Shield.
+- Para simular el pago del usuario en el sandbox sin navegador: `POST /widget-api/sessions {transaction_id, token}` (de la URL interactiva) → `POST /widget-api/transaction/confirm {fiat_currency, amount}` → `POST /widget-api/transaction/simulate-payment {scenario: "approved"}`.
 - La intake ya está en la allow-list del pool de USDC (hoja `0x1df0…08d3`, tx `ad5627d8…`); su wallet del SDK está en `SHIELD_INTAKE_WALLET_PATH`. No borrar.
 - No hacer `source .env` en bash: `STELLAR_NETWORK_PASSPHRASE` tiene espacios y `;`. El `Makefile` lo carga bien (`-include .env`); para correr algo a mano, usar `make` o exportar la variable entre comillas.
 - `make lint/test/build` corren Rust + JS; el CI usa los targets separados (`-api`, `-js`).
