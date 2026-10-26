@@ -14,3 +14,10 @@ paths = [
   '''(^|/)Cargo\.lock$''',
   '''(^|/)pnpm-lock\.yaml$''',
 ]
+
+# Stellar account public keys (G...) and contract ids (C...) are public by
+# design and appear in fixtures, docs and manifests. Only the exact strkey is
+# allowed: secret seeds (S...) and any other secret are still reported.
+[[allowlists]]
+description = "Stellar public keys and contract ids"
+regexes = ['''^[GC][A-Z2-7]{55}$''']
