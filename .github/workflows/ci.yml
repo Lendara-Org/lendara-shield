@@ -28,6 +28,8 @@ jobs:
       - run: make typecheck
       - run: make test-js
       - run: make build-js
+      - run: pnpm --filter @lendara/shield-web exec playwright install --with-deps chromium
+      - run: make test-web-e2e
 
   api:
     name: Rust API (fmt, clippy, deny, test, build)

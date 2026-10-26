@@ -3,3 +3,4 @@ packages:
   - packages/*
 allowBuilds:
   lefthook: false
+  unrs-resolver: false
