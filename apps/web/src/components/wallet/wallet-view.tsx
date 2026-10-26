@@ -7,10 +7,12 @@ import { useI18n } from "@/components/i18n";
 import { message, useSession } from "@/components/session";
 import { Button, Card, Field, Notice, TxList, inputClass } from "@/components/ui/primitives";
 import { formatAmount, parseAmount } from "@/lib/amount";
+import { useCircuitPreload } from "@/lib/pool/circuits";
 import type { PoolResult, ShieldWallet } from "@/lib/pool/types";
 import { decodeRecipient, encodeRecipient } from "@/lib/recipient";
 
 export function WalletView() {
+  useCircuitPreload();
   return <ConnectGate requireAllowed>{(wallet) => <Wallet wallet={wallet} />}</ConnectGate>;
 }
 

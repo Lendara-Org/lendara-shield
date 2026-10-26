@@ -6,6 +6,7 @@ import { useState } from "react";
 import { ConnectGate } from "@/components/connect-gate";
 import { useI18n } from "@/components/i18n";
 import { useSession } from "@/components/session";
+import { useCircuitPreload } from "@/lib/pool/circuits";
 
 import { DirectDeposit } from "./direct-deposit";
 import { RampDeposit } from "./ramp-deposit";
@@ -19,6 +20,8 @@ export function DepositFlow() {
   const rampEnabled = info?.modes.ramp.enabled ?? false;
   const [chosen, setChosen] = useState<Mode>(params.get("mode") === "direct" ? "direct" : "ramp");
   const mode: Mode = rampEnabled ? chosen : "direct";
+  // Only direct deposits prove in the browser.
+  useCircuitPreload(mode === "direct");
 
   return (
     <ConnectGate requireAllowed>
