@@ -259,14 +259,22 @@ async fn only_the_account_can_start_its_deposit(db: PgPool) -> TestResult {
     let mut garbage = intent_request("10");
     garbage["signature"] = json!("not base64!");
 
-    for (name, body, code) in [
-        ("forged", forged, "invalid_signature"),
-        ("tampered", tampered, "invalid_signature"),
-        ("garbage", garbage, "invalid_signature"),
+    for (name, body, code, text) in [
+        ("forged", forged, "invalid_signature", "over this request"),
+        (
+            "tampered",
+            tampered,
+            "invalid_signature",
+            "over this request",
+        ),
+        ("garbage", garbage, "invalid_signature", "base64-encoded"),
     ] {
         let (status, _, err) = send(app.clone(), post_json("/v1/intents", &body, None)?).await?;
         assert_eq!(status, StatusCode::BAD_REQUEST, "{name}");
         assert_eq!(err["error"], code, "{name}");
+        let message = err["message"].as_str().unwrap_or_default();
+        assert!(message.contains(text), "{name}: {message}");
+        assert!(!message.contains("keys"), "{name}: {message}");
     }
     assert!(anchor.requests().is_empty());
     Ok(())

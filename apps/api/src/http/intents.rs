@@ -13,7 +13,7 @@ use std::time::Duration;
 
 use super::extract::ApiJson;
 use crate::{
-    asp::ownership,
+    asp::ownership::{self, OwnershipError},
     domain::{AccountId, DecimalAmount, FiatCurrency, TxHash},
     error::ApiError,
     intent::{
@@ -144,7 +144,15 @@ pub async fn create(
     ownership::verify(&input.stellar_account, &message, &body.signature).map_err(|err| {
         ApiError::BadRequest {
             code: "invalid_signature",
-            message: err.to_string(),
+            // The shared text speaks of onboarding keys; say what an intent signs.
+            message: match err {
+                OwnershipError::Invalid => {
+                    "the signature is not the account's signature over this request \
+                                            (account, currency, amount, request_id and issued_at)"
+                        .into()
+                }
+                OwnershipError::Malformed => err.to_string(),
+            },
         }
     })?;
     let intent = state.intents.create(input).await?;
