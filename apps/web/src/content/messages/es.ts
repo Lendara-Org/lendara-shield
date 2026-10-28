@@ -131,6 +131,11 @@ export const es: Messages = {
     directHint: "La prueba tarda unos segundos; Freighter te pide firmar.",
     depositButton: "Depositar en el pool",
     deposited: "Depositado. Transacción del pool (ext_amount > 0):",
+    optionsTitle: "Dos formas de depositar",
+    optionRamp: (anchor) =>
+      `Con rampa, a través del anchor ${anchor} (recomendado): pagas en moneda local en la ventana del anchor. No necesitas USDC ni trustline, y tu dirección nunca aparece on-chain.`,
+    optionDirect: (asset) =>
+      `Desde tu wallet: necesitas el ${asset} del sandbox de Lendara y su trustline en Freighter. Tu dirección queda visible en ese depósito.`,
   },
   progress: {
     title: "Tu depósito privado",
