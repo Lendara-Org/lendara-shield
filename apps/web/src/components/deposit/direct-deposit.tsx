@@ -11,7 +11,15 @@ import { useTrustline } from "@/lib/hooks/use-trustline";
 import type { PoolResult, ShieldWallet } from "@/lib/pool/types";
 import type { ClassicAsset } from "@/lib/trustline";
 
-export function DirectDeposit({ wallet, asset }: { wallet: ShieldWallet; asset: ClassicAsset | undefined }) {
+export function DirectDeposit({
+  wallet,
+  asset,
+  rampEnabled,
+}: {
+  wallet: ShieldWallet;
+  asset: ClassicAsset | undefined;
+  rampEnabled: boolean;
+}) {
   const { t } = useI18n();
   const assetCode = asset?.code ?? "USDC";
   const trust = useTrustline(wallet.address, asset);
@@ -54,7 +62,7 @@ export function DirectDeposit({ wallet, asset }: { wallet: ShieldWallet; asset: 
             />
           )}
         </Field>
-        {asset && <TrustlineNotice trust={trust} asset={asset} />}
+        {asset && <TrustlineNotice trust={trust} asset={asset} showRamp={rampEnabled} />}
         <Button type="submit" busy={busy} disabled={stroops === null || trust.state === "missing"}>
           {t.deposit.depositButton}
         </Button>

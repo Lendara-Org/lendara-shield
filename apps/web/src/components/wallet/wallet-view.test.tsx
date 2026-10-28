@@ -63,7 +63,11 @@ describe("WalletView", () => {
   it("blocks the withdraw, not the private transfer, without the USDC trustline", async () => {
     server.use(rpcTrustline(false));
     const { user: ui } = await renderConnected(<WalletView />, fakeWallet());
-    expect(await screen.findByRole("alert")).toHaveTextContent("Your account has no USDC trustline");
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("Your account has no USDC trustline");
+    expect(alert).toHaveTextContent("Circle's testnet USDC");
+    // A withdraw has no ramp alternative.
+    expect(alert).not.toHaveTextContent("ramp");
     const amounts = screen.getAllByLabelText("Amount (USDC)");
     await ui.type(amounts[1] ?? document.body, "2.25");
     expect(screen.getByRole("button", { name: "Withdraw" })).toBeDisabled();

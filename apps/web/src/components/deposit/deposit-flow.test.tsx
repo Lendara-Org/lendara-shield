@@ -172,6 +172,8 @@ describe("DepositFlow from the wallet", () => {
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent("Your account has no USDC trustline");
     expect(alert).toHaveTextContent(info.pool.asset.issuer);
+    expect(alert).toHaveTextContent("only takes the Lendara sandbox USDC");
+    expect(alert).toHaveTextContent("Depositing with a ramp needs no trustline");
     await ui.type(screen.getByLabelText("Amount (USDC)"), "1.5");
     const submit = screen.getByRole("button", { name: "Deposit into the pool" });
     expect(submit).toBeDisabled();
