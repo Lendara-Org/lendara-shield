@@ -8,3 +8,7 @@
 # An account strkey with its G changed to S (invalid checksum, not a seed), testing that
 # a non-account issuer is rejected. Replaced with a contract id in the following commit.
 2345ed03414c0577d0af3182ae568d2b7d45dee5:apps/web/src/lib/trustline.test.ts:stellar-secret-seed:38
+
+# Public trustline LedgerKey XDR of a testnet account, flagged because the constant was named
+# USDC_KEY. Renamed in a following commit.
+2345ed03414c0577d0af3182ae568d2b7d45dee5:apps/web/src/lib/trustline.test.ts:generic-api-key:12

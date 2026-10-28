@@ -9,9 +9,9 @@ const ISSUER = "GBVIQ7QVTTJ4NLFTYYFPEKWYJWAMKDAOFYSR52ZGWJFSGTSVOO5H47B5";
 const OWNER = "GDMSOZPN7R4HKQOTDKA52HSB4AAMNNPJIEOFPMN43VPYZN6GQOJ3KOW7";
 const USDC = { code: "USDC", issuer: ISSUER };
 // Encoded with `stellar xdr encode --type LedgerKey` (stellar-cli 28.1.0).
-const USDC_KEY =
+const USDC_TRUSTLINE_XDR =
   "AAAAAQAAAADZJ2Xt/Hh1QdMagd0eQeAAxrXpQRxXsbzdX4y3xoOTtQAAAAFVU0RDAAAAAGqIfhWc08ass8YK8irYTYDFDA4uJR7rJrJLI05Vc7p+";
-const LONG_KEY =
+const LONG_TRUSTLINE_XDR =
   "AAAAAQAAAADZJ2Xt/Hh1QdMagd0eQeAAxrXpQRxXsbzdX4y3xoOTtQAAAAJMT05HQVNTRVQAAAAAAAAAaoh+FZzTxqyzxgryKthNgMUMDi4lHusmsksjTlVzun4=";
 
 function rpc(answer: () => Response) {
@@ -29,8 +29,8 @@ function rpc(answer: () => Response) {
 
 describe("trustlineKey", () => {
   it("matches the Stellar CLI for 4- and 12-character asset codes", () => {
-    expect(trustlineKey(OWNER, USDC)).toBe(USDC_KEY);
-    expect(trustlineKey(OWNER, { code: "LONGASSET", issuer: ISSUER })).toBe(LONG_KEY);
+    expect(trustlineKey(OWNER, USDC)).toBe(USDC_TRUSTLINE_XDR);
+    expect(trustlineKey(OWNER, { code: "LONGASSET", issuer: ISSUER })).toBe(LONG_TRUSTLINE_XDR);
   });
 
   it("rejects bad accounts, issuers and codes", () => {
@@ -51,9 +51,9 @@ describe("accountKey", () => {
 
 describe("readTrustline", () => {
   it("is present when the RPC returns the entry", async () => {
-    const keys = rpc(() => HttpResponse.json({ jsonrpc: "2.0", id: 1, result: { entries: [{ key: USDC_KEY, xdr: "AAAA" }], latestLedger: 5 } }));
+    const keys = rpc(() => HttpResponse.json({ jsonrpc: "2.0", id: 1, result: { entries: [{ key: USDC_TRUSTLINE_XDR, xdr: "AAAA" }], latestLedger: 5 } }));
     expect(await readTrustline(OWNER, USDC)).toBe("present");
-    expect(keys).toEqual([USDC_KEY]);
+    expect(keys).toEqual([USDC_TRUSTLINE_XDR]);
   });
 
   it("is missing when the RPC returns no entries, empty or omitted", async () => {
