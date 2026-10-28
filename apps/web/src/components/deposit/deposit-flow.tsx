@@ -50,7 +50,7 @@ export function DepositFlow() {
           {mode === "ramp" ? (
             <RampDeposit wallet={wallet} anchor={info?.modes.ramp.anchor_home_domain} />
           ) : (
-            <DirectDeposit wallet={wallet} assetCode={info?.pool.asset.code ?? "USDC"} />
+            <DirectDeposit wallet={wallet} asset={info?.pool.asset} />
           )}
         </div>
       )}

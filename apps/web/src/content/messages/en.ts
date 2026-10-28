@@ -168,6 +168,11 @@ export const en = {
     amount: (asset: string) => `Amount (${asset})`,
     done: "Done:",
   },
+  trustline: {
+    missing: (asset: string) => `Your account has no ${asset} trustline, so it can't hold ${asset} from this pool yet.`,
+    howTo: (asset: string) => `In Freighter (Testnet), go to Manage assets, add ${asset} with this issuer and sign. Then check again.`,
+    recheck: "Check again",
+  },
   audit: {
     title: "Audit",
     intro: "Private to the public, accountable to the auditor: the same transaction, two views.",

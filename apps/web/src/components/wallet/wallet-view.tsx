@@ -5,8 +5,10 @@ import { useCallback, useEffect, useState } from "react";
 import { ConnectGate } from "@/components/connect-gate";
 import { useI18n } from "@/components/i18n";
 import { message, useSession } from "@/components/session";
+import { TrustlineNotice } from "@/components/trustline-notice";
 import { Button, Card, Field, Notice, TxList, inputClass } from "@/components/ui/primitives";
 import { formatAmount, parseAmount } from "@/lib/amount";
+import { useTrustline } from "@/lib/hooks/use-trustline";
 import { useCircuitPreload } from "@/lib/pool/circuits";
 import type { PoolResult, ShieldWallet } from "@/lib/pool/types";
 import { decodeRecipient, encodeRecipient } from "@/lib/recipient";
@@ -20,6 +22,8 @@ function Wallet({ wallet }: { wallet: ShieldWallet }) {
   const { info } = useSession();
   const { t } = useI18n();
   const asset = info?.pool.asset.code ?? "USDC";
+  // A withdraw pays the asset back to this account, which needs its trustline.
+  const trust = useTrustline(wallet.address, info?.pool.asset);
   const [balance, setBalance] = useState<bigint | null>(null);
   const [syncing, setSyncing] = useState(true);
   const [balanceError, setBalanceError] = useState<string | null>(null);
@@ -87,6 +91,8 @@ function Wallet({ wallet }: { wallet: ShieldWallet }) {
           action={t.wallet.withdraw}
           asset={asset}
           note={t.wallet.withdrawNote}
+          blocked={trust.state === "missing"}
+          notice={info && <TrustlineNotice trust={trust} asset={info.pool.asset} />}
           run={(amount) => wallet.withdraw(amount)}
           onDone={refresh}
         />
@@ -142,6 +148,8 @@ function SpendForm({
   asset,
   note,
   withRecipient = false,
+  blocked = false,
+  notice,
   run,
   onDone,
 }: {
@@ -150,6 +158,9 @@ function SpendForm({
   asset: string;
   note: string;
   withRecipient?: boolean;
+  /** The form can't run at all (e.g. the account lacks the asset's trustline); `notice` says why. */
+  blocked?: boolean;
+  notice?: React.ReactNode;
   run: (amount: bigint, to: ReturnType<typeof decodeRecipient>) => Promise<PoolResult>;
   onDone: () => Promise<void>;
 }) {
@@ -162,7 +173,7 @@ function SpendForm({
 
   const to = withRecipient ? decodeRecipient(recipient) : null;
   const stroops = parseAmount(amount);
-  const ready = stroops !== null && (!withRecipient || to !== null);
+  const ready = !blocked && stroops !== null && (!withRecipient || to !== null);
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
@@ -208,6 +219,7 @@ function SpendForm({
             />
           )}
         </Field>
+        {notice}
         <Button type="submit" busy={busy} disabled={!ready}>
           {action}
         </Button>

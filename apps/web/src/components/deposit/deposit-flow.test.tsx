@@ -1,11 +1,12 @@
 import { screen, within } from "@testing-library/react";
 import { HttpResponse, http } from "msw";
 
+import { SOROBAN_RPC_URL } from "@/lib/config";
 import { intentMessage } from "@/lib/intent-request";
 import { fakeWallet } from "@/test/fake-wallet";
 import { ACCOUNT, HASH, completed, info, intent, user } from "@/test/fixtures";
 import { renderConnected } from "@/test/render";
-import { apiError, server, url } from "@/test/server";
+import { apiError, rpcTrustline, server, url } from "@/test/server";
 
 import { DepositFlow } from "./deposit-flow";
 
@@ -160,5 +161,37 @@ describe("DepositFlow from the wallet", () => {
     await ui.type(await screen.findByLabelText("Amount (USDC)"), "1");
     await ui.click(screen.getByRole("button", { name: "Deposit into the pool" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("allow-list entry");
+  });
+
+  it("asks for the USDC trustline and deposits once it is added", async () => {
+    searchParams = new URLSearchParams("mode=direct");
+    server.use(rpcTrustline(false));
+    const wallet = fakeWallet();
+    const { user: ui } = await renderConnected(<DepositFlow />, wallet);
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("Your account has no USDC trustline");
+    expect(alert).toHaveTextContent(info.pool.asset.issuer);
+    await ui.type(screen.getByLabelText("Amount (USDC)"), "1.5");
+    const submit = screen.getByRole("button", { name: "Deposit into the pool" });
+    expect(submit).toBeDisabled();
+
+    server.use(rpcTrustline(true));
+    await ui.click(screen.getByRole("button", { name: "Check again" }));
+    await vi.waitFor(() => expect(submit).toBeEnabled());
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    await ui.click(submit);
+    expect(wallet.deposit).toHaveBeenCalledWith(15_000_000n);
+  });
+
+  it("does not block the deposit when the RPC can't tell", async () => {
+    searchParams = new URLSearchParams("mode=direct");
+    server.use(http.post(SOROBAN_RPC_URL, () => new HttpResponse(null, { status: 503 })));
+    const wallet = fakeWallet();
+    const { user: ui } = await renderConnected(<DepositFlow />, wallet);
+    await ui.type(await screen.findByLabelText("Amount (USDC)"), "1");
+    await ui.click(screen.getByRole("button", { name: "Deposit into the pool" }));
+    expect(wallet.deposit).toHaveBeenCalledWith(10_000_000n);
+    expect(screen.queryByText(/trustline/)).not.toBeInTheDocument();
   });
 });
