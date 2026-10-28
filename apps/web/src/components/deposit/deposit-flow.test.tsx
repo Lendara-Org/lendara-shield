@@ -5,7 +5,7 @@ import { SOROBAN_RPC_URL } from "@/lib/config";
 import { intentMessage } from "@/lib/intent-request";
 import { fakeWallet } from "@/test/fake-wallet";
 import { ACCOUNT, HASH, completed, info, intent, user } from "@/test/fixtures";
-import { renderConnected } from "@/test/render";
+import { renderConnected, renderUnconnected } from "@/test/render";
 import { apiError, rpcTrustline, server, url } from "@/test/server";
 
 import { DepositFlow } from "./deposit-flow";
@@ -126,6 +126,30 @@ describe("DepositFlow with a ramp", () => {
     await ui.clear(screen.getByLabelText("Currency"));
     await ui.type(screen.getByLabelText("Currency"), "cr");
     expect(submit).toBeDisabled();
+  });
+});
+
+describe("DepositFlow before connecting", () => {
+  it("recommends the anchor's ramp, which needs no USDC, and hides it once connected", async () => {
+    const { user: ui } = renderUnconnected(<DepositFlow />);
+    const options = await screen.findByRole("heading", { name: "Two ways to deposit" });
+    const card = options.closest("section") ?? document.body;
+    expect(card).toHaveTextContent("through the anchor lendara-monorepo-fixh.vercel.app (recommended)");
+    expect(card).toHaveTextContent("You need no USDC and no trustline");
+    expect(card).toHaveTextContent("you need the Lendara sandbox USDC and its trustline");
+    await ui.click(screen.getByRole("button", { name: "Connect Freighter" }));
+    await vi.waitFor(() => expect(screen.queryByRole("heading", { name: "Two ways to deposit" })).not.toBeInTheDocument());
+  });
+
+  it("does not offer the ramp when ramp mode is disabled", async () => {
+    server.use(
+      http.get(url("/v1/info"), () =>
+        HttpResponse.json({ ...info, modes: { ...info.modes, ramp: { enabled: false, anchor_home_domain: null } } }),
+      ),
+    );
+    renderUnconnected(<DepositFlow />);
+    await vi.waitFor(() => expect(screen.getByRole("button", { name: "Connect Freighter" })).toBeEnabled());
+    expect(screen.queryByRole("heading", { name: "Two ways to deposit" })).not.toBeInTheDocument();
   });
 });
 
