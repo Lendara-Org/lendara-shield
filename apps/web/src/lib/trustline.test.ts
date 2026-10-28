@@ -35,7 +35,8 @@ describe("trustlineKey", () => {
 
   it("rejects bad accounts, issuers and codes", () => {
     expect(trustlineKey("not-an-account", USDC)).toBeNull();
-    expect(trustlineKey(OWNER, { code: "USDC", issuer: "SBVIQ7QVTTJ4NLFTYYFPEKWYJWAMKDAOFYSR52ZGWJFSGTSVOO5H47B5" })).toBeNull();
+    // A contract id is a valid strkey but not an account.
+    expect(trustlineKey(OWNER, { code: "USDC", issuer: "CAE6WLIMEMDSRSZZW7H3O7DJS2DRDV5NTR2FHE53TKGJMJOHWGKSR4QX" })).toBeNull();
     expect(trustlineKey(OWNER, { code: "", issuer: ISSUER })).toBeNull();
     expect(trustlineKey(OWNER, { code: "THIRTEENCHARS", issuer: ISSUER })).toBeNull();
   });
