@@ -91,6 +91,24 @@ The web bundle points to `https://lendara-shield.duckdns.org` (API) and `https:/
 
 **Result:** backend passed. The web passed after #41; the screens were not exercised with Freighter.
 
+## 5. API, database and regression
+
+**Pass criterion:** the tests pass, there are no new errors and the on-chain checks can be repeated.
+
+Run on `develop` at `9bb595d` (the deployed commit).
+
+| Suite | Result |
+|---|---|
+| `make test-api` against PostgreSQL 17 (temporary local cluster, same major as CI) | 268 passed, 0 failed, 3 ignored (the testnet tests below). The 99 `#[sqlx::test]` tests ran against it (sqlx created its `_sqlx_test` schema) |
+| `make test-pool-cli` | 7/7 |
+| `make test-js` | 133/133 (web, Vitest) + 2/2 (`api-types`) |
+| `make test-web-e2e` | 12/12 (Playwright, Chromium) |
+| `make fmt-check`, `make lint` (clippy `-D warnings` on API and pool-cli, ESLint, OpenAPI), `make typecheck`, `make build-js` | Clean |
+| `make codegen` | No diff: TS types match `openapi.yaml` |
+| `make test-testnet` (on the server, it needs the operator and intake keys) | Passed in all 4 deploys of the day (`185004Z`, `195845Z`, `201106Z`, `202653Z`): the 7 checks of `scripts/verify-testnet.sh` and the 3 `#[ignore]` tests (`testnet_sandbox_starts_an_interactive_deposit`, `testnet_prepares_an_allow_list_insert_without_sending_it`, `testnet_the_intake_is_initialised`) |
+
+**Result:** passed. The check *pool deployment ledger is inside the RPC retention window* will start failing around 2026-11-02 (see Findings).
+
 ## Findings
 
 1. **Deposit limit mismatch.** The pool's `MaximumDepositAmount` is `10000000000` stroops (1,000 USDC); the anchor accepts up to 10,000 USDC and the API does not check the pool limit when creating an intent. A ramp intent between 1,000 and 10,000 USDC would be paid by the anchor, refused by the pool and end in `error` with the USDC in the intake. Demo amounts (CRC 5000 ≈ 9.30 USDC) are unaffected.
