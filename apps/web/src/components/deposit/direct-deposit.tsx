@@ -3,7 +3,7 @@
 import { useState } from "react";
 
 import { useI18n } from "@/components/i18n";
-import { message } from "@/components/session";
+import { PoolErrorNotice } from "@/components/pool-error";
 import { TrustlineNotice } from "@/components/trustline-notice";
 import { Button, Card, Field, Notice, TxList, inputClass } from "@/components/ui/primitives";
 import { parseAmount } from "@/lib/amount";
@@ -25,7 +25,7 @@ export function DirectDeposit({
   const trust = useTrustline(wallet.address, asset);
   const [amount, setAmount] = useState("");
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
   const [result, setResult] = useState<PoolResult | null>(null);
   const stroops = parseAmount(amount);
 
@@ -38,7 +38,7 @@ export function DirectDeposit({
     try {
       setResult(await wallet.deposit(stroops));
     } catch (err) {
-      setError(message(err));
+      setError(err);
     } finally {
       setBusy(false);
     }
@@ -66,7 +66,7 @@ export function DirectDeposit({
         <Button type="submit" busy={busy} disabled={stroops === null || trust.state === "missing"}>
           {t.deposit.depositButton}
         </Button>
-        {error && <Notice tone="error">{error}</Notice>}
+        {error !== null && <PoolErrorNotice error={error} asset={assetCode} />}
         {result && (
           <Notice tone="ok">
             <p className="mb-1">{t.deposit.deposited}</p>

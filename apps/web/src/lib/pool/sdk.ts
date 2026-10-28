@@ -10,6 +10,7 @@ import circuitLock from "stellar-private-payments/circuits/circuits.json";
 
 import { SDK_BASE_PATH, SOROBAN_RPC_URL } from "../config";
 import { circuitsBaseUrl, preloadPoolCircuits } from "./circuits";
+import { type PoolOperation, classifyPoolFailure } from "./errors";
 import { FreighterSigner, connectFreighter } from "./freighter-signer";
 import { withOneProverRetry } from "./retry";
 import { PoolOperationError, type PoolResult, type RecipientKeys, type ShieldWallet, type WalletConnector } from "./types";
@@ -53,13 +54,18 @@ function sppRuntime() {
   return runtime;
 }
 
-function done(result: Spp.PoolExecuteResult): PoolResult {
+function done(operation: PoolOperation, result: Spp.PoolExecuteResult): PoolResult {
   if (result.status !== "ok") {
     const message =
       result.status === "aspNotReady"
         ? "The pool has not seen your allow-list entry yet. Try again in a minute."
         : (result.message ?? "The pool rejected the operation.");
-    throw new PoolOperationError(result.status, message);
+    throw new PoolOperationError(
+      result.status,
+      message,
+      classifyPoolFailure(operation, result.status, result.message ?? ""),
+      [...result.hashes],
+    );
   }
   return { hashes: [...result.hashes] };
 }
@@ -108,19 +114,20 @@ export function sppConnector(networkPassphrase: string): WalletConnector {
         // the prover's 30 s budget, and a proving timeout is retried once.
         async deposit(amount: bigint) {
           const [opened] = await Promise.all([openPool(), preloadPoolCircuits()]);
-          return done(await withOneProverRetry(() => opened.deposit(amount)));
+          return done("deposit", await withOneProverRetry(() => opened.deposit(amount)));
         },
         async transfer(to: RecipientKeys, amount: bigint) {
           const [opened] = await Promise.all([openPool(), preloadPoolCircuits()]);
           await client.sync();
           return done(
+            "transfer",
             await withOneProverRetry(() => opened.transferToKeys(to.notePublicKey, to.encryptionPublicKey, amount)),
           );
         },
         async withdraw(amount: bigint) {
           const [opened] = await Promise.all([openPool(), preloadPoolCircuits()]);
           await client.sync();
-          return done(await withOneProverRetry(() => opened.withdraw(amount)));
+          return done("withdraw", await withOneProverRetry(() => opened.withdraw(amount)));
         },
       };
     },

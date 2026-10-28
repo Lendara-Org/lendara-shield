@@ -3,6 +3,7 @@ import { HttpResponse, http } from "msw";
 
 import { SOROBAN_RPC_URL } from "@/lib/config";
 import { intentMessage } from "@/lib/intent-request";
+import { PoolOperationError } from "@/lib/pool/types";
 import { fakeWallet } from "@/test/fake-wallet";
 import { ACCOUNT, HASH, completed, info, intent, user } from "@/test/fixtures";
 import { renderConnected, renderUnconnected } from "@/test/render";
@@ -185,6 +186,27 @@ describe("DepositFlow from the wallet", () => {
     await ui.type(await screen.findByLabelText("Amount (USDC)"), "1");
     await ui.click(screen.getByRole("button", { name: "Deposit into the pool" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("allow-list entry");
+  });
+
+  it("explains a short public balance in the page's language", async () => {
+    searchParams = new URLSearchParams("mode=direct");
+    const failure = new PoolOperationError("failed", "HostError: Error(Contract, #10)", "insufficientPublic");
+    const wallet = fakeWallet({ deposit: () => Promise.reject(failure) });
+    const { user: ui } = await renderConnected(<DepositFlow />, wallet, "es");
+    await ui.type(await screen.findByLabelText("Monto (USDC)"), "50");
+    await ui.click(screen.getByRole("button", { name: "Depositar en el pool" }));
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("Tu cuenta no tiene tanto USDC");
+    expect(alert).not.toHaveTextContent("HostError");
+  });
+
+  it("says nothing was sent when the user declines to sign", async () => {
+    searchParams = new URLSearchParams("mode=direct");
+    const failure = new PoolOperationError("failed", "wallet request rejected by user", "rejected");
+    const { user: ui } = await renderConnected(<DepositFlow />, fakeWallet({ deposit: () => Promise.reject(failure) }));
+    await ui.type(await screen.findByLabelText("Amount (USDC)"), "1");
+    await ui.click(screen.getByRole("button", { name: "Deposit into the pool" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("You declined the signature in Freighter, so nothing was sent.");
   });
 
   it("asks for the USDC trustline and deposits once it is added", async () => {

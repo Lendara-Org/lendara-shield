@@ -1,3 +1,5 @@
+import type { PoolFailureKind } from "./errors";
+
 /**
  * What the pages need from the user's wallet and the privacy pool. The real
  * implementation (`./sdk.ts`) runs Freighter and the SPP browser SDK; tests
@@ -42,11 +44,16 @@ export interface WalletConnector {
   connect(): Promise<ShieldWallet>;
 }
 
-/** A pool operation the SDK reported as not done. */
+/**
+ * A pool operation the SDK reported as not done. `hashes` are the steps that
+ * reached the network before it failed (a spend can take several).
+ */
 export class PoolOperationError extends Error {
   constructor(
     readonly status: string,
     message: string,
+    readonly kind: PoolFailureKind = "other",
+    readonly hashes: readonly string[] = [],
   ) {
     super(message);
     this.name = "PoolOperationError";
