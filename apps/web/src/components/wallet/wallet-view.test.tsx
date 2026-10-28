@@ -1,8 +1,9 @@
 import { screen } from "@testing-library/react";
 import { HttpResponse, http } from "msw";
 
+import { PoolOperationError } from "@/lib/pool/types";
 import { fakeWallet } from "@/test/fake-wallet";
-import { ACCOUNT, ENC_KEY, NOTE_KEY, user } from "@/test/fixtures";
+import { ACCOUNT, ENC_KEY, HASH, NOTE_KEY, user } from "@/test/fixtures";
 import { renderConnected } from "@/test/render";
 import { rpcTrustline, server, url } from "@/test/server";
 
@@ -74,6 +75,41 @@ describe("WalletView", () => {
     await ui.type(screen.getByLabelText("Recipient's private address"), recipientAddress);
     await ui.type(amounts[0] ?? document.body, "1");
     expect(screen.getByRole("button", { name: "Send" })).toBeEnabled();
+  });
+
+  it("does not let the user spend more than the synced private balance", async () => {
+    const wallet = fakeWallet();
+    const { user: ui } = await renderConnected(<WalletView />, wallet);
+    await screen.findByText(/9\.3039215/);
+    const amounts = screen.getAllByLabelText("Amount (USDC)");
+    await ui.type(amounts[1] ?? document.body, "10");
+    expect(screen.getByText("That is more than your private balance (9.3039215 USDC).")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Withdraw" })).toBeDisabled();
+    await ui.clear(amounts[1] ?? document.body);
+    await ui.type(amounts[1] ?? document.body, "9.3039215");
+    expect(screen.getByRole("button", { name: "Withdraw" })).toBeEnabled();
+  });
+
+  it("explains a short private balance and lists the steps that were already sent", async () => {
+    const failure = new PoolOperationError("failed", "transaction planning rejected: no combination possible", "insufficientPrivate", [HASH("ab")]);
+    const { user: ui } = await renderConnected(<WalletView />, fakeWallet({ transfer: () => Promise.reject(failure) }));
+    await screen.findByText(/9\.3039215/);
+    await ui.type(screen.getByLabelText("Recipient's private address"), recipientAddress);
+    await ui.type(screen.getAllByLabelText("Amount (USDC)")[0] ?? document.body, "1");
+    await ui.click(screen.getByRole("button", { name: "Send" }));
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("Your private balance can't cover that amount.");
+    expect(alert).not.toHaveTextContent("no combination possible");
+    expect(alert).toHaveTextContent("These transactions were sent before it failed:");
+    expect(alert.querySelector("a")).toHaveAttribute("href", expect.stringContaining(HASH("ab")));
+  });
+
+  it("shows the SDK's own text for a failure it can't explain", async () => {
+    const { user: ui } = await renderConnected(<WalletView />, fakeWallet({ withdraw: () => Promise.reject(new Error("RPC timed out")) }));
+    await screen.findByText(/9\.3039215/);
+    await ui.type(screen.getAllByLabelText("Amount (USDC)")[1] ?? document.body, "1");
+    await ui.click(screen.getByRole("button", { name: "Withdraw" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("RPC timed out");
   });
 
   it("reports a failed sync", async () => {

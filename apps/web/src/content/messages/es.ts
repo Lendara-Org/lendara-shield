@@ -175,6 +175,16 @@ export const es: Messages = {
     amount: (asset) => `Monto (${asset})`,
     done: "Listo:",
   },
+  poolError: {
+    rejected: () => "Rechazaste la firma en Freighter, así que no se envió nada.",
+    insufficientPrivate: (asset) => `Tu saldo privado no alcanza para ese monto. Sincronízalo y prueba con menos ${asset}.`,
+    insufficientPublic: (asset) =>
+      `Tu cuenta no tiene tanto ${asset} (el del sandbox de Lendara). No se envió nada. Prueba con un monto menor o deposita con rampa.`,
+    trustlineMissing: (asset) => `Tu cuenta no tiene trustline al ${asset} de este pool. Agrégalo en Freighter y vuelve a intentar.`,
+    aspNotReady: () => "El pool todavía no ve tu entrada en la allow-list. Vuelve a intentar en un minuto.",
+    sentBefore: "Estas transacciones se enviaron antes de que fallara:",
+    overBalance: (balance, asset) => `Es más que tu saldo privado (${balance} ${asset}).`,
+  },
   trustline: {
     missing: (asset) => `Tu cuenta no tiene un trustline de ${asset}, así que todavía no puede tener ${asset} de este pool.`,
     issuerOnly: (asset) =>

@@ -173,6 +173,16 @@ export const en = {
     amount: (asset: string) => `Amount (${asset})`,
     done: "Done:",
   },
+  poolError: {
+    rejected: () => "You declined the signature in Freighter, so nothing was sent.",
+    insufficientPrivate: (asset: string) => `Your private balance can't cover that amount. Sync it and try a smaller amount of ${asset}.`,
+    insufficientPublic: (asset: string) =>
+      `Your account doesn't have that much ${asset} (the Lendara sandbox one). Nothing was sent. Try a smaller amount or deposit with a ramp.`,
+    trustlineMissing: (asset: string) => `Your account has no trustline to this pool's ${asset}. Add it in Freighter and try again.`,
+    aspNotReady: () => "The pool has not seen your allow-list entry yet. Try again in a minute.",
+    sentBefore: "These transactions were sent before it failed:",
+    overBalance: (balance: string, asset: string) => `That is more than your private balance (${balance} ${asset}).`,
+  },
   trustline: {
     missing: (asset: string) => `Your account has no ${asset} trustline, so it can't hold ${asset} from this pool yet.`,
     issuerOnly: (asset: string) =>

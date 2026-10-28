@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { ConnectGate } from "@/components/connect-gate";
 import { useI18n } from "@/components/i18n";
+import { PoolErrorNotice } from "@/components/pool-error";
 import { message, useSession } from "@/components/session";
 import { TrustlineNotice } from "@/components/trustline-notice";
 import { Button, Card, Field, Notice, TxList, inputClass } from "@/components/ui/primitives";
@@ -82,6 +83,7 @@ function Wallet({ wallet }: { wallet: ShieldWallet }) {
           action={t.wallet.send}
           asset={asset}
           withRecipient
+          balance={balance}
           note={t.wallet.sendNote}
           run={(amount, to) => (to ? wallet.transfer(to, amount) : Promise.reject(new Error("Missing recipient")))}
           onDone={refresh}
@@ -91,6 +93,7 @@ function Wallet({ wallet }: { wallet: ShieldWallet }) {
           action={t.wallet.withdraw}
           asset={asset}
           note={t.wallet.withdrawNote}
+          balance={balance}
           blocked={trust.state === "missing"}
           notice={info && <TrustlineNotice trust={trust} asset={info.pool.asset} />}
           run={(amount) => wallet.withdraw(amount)}
@@ -148,6 +151,7 @@ function SpendForm({
   asset,
   note,
   withRecipient = false,
+  balance,
   blocked = false,
   notice,
   run,
@@ -158,6 +162,8 @@ function SpendForm({
   asset: string;
   note: string;
   withRecipient?: boolean;
+  /** The last synced private balance, if any: a larger amount can't be spent. */
+  balance: bigint | null;
   /** The form can't run at all (e.g. the account lacks the asset's trustline); `notice` says why. */
   blocked?: boolean;
   notice?: React.ReactNode;
@@ -168,12 +174,13 @@ function SpendForm({
   const [recipient, setRecipient] = useState("");
   const [amount, setAmount] = useState("");
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
   const [result, setResult] = useState<PoolResult | null>(null);
 
   const to = withRecipient ? decodeRecipient(recipient) : null;
   const stroops = parseAmount(amount);
-  const ready = !blocked && stroops !== null && (!withRecipient || to !== null);
+  const overBalance = stroops !== null && balance !== null && stroops > balance;
+  const ready = !blocked && !overBalance && stroops !== null && (!withRecipient || to !== null);
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
@@ -186,7 +193,7 @@ function SpendForm({
       setAmount("");
       await onDone();
     } catch (err) {
-      setError(message(err));
+      setError(err);
     } finally {
       setBusy(false);
     }
@@ -220,10 +227,11 @@ function SpendForm({
           )}
         </Field>
         {notice}
+        {overBalance && balance !== null && <Notice tone="warn">{t.poolError.overBalance(formatAmount(balance), asset)}</Notice>}
         <Button type="submit" busy={busy} disabled={!ready}>
           {action}
         </Button>
-        {error && <Notice tone="error">{error}</Notice>}
+        {error !== null && <PoolErrorNotice error={error} asset={asset} />}
         {result && (
           <Notice tone="ok">
             <p className="mb-1">{t.wallet.done}</p>
