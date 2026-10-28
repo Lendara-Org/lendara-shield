@@ -62,6 +62,19 @@ Reference ledger: `5437355` (2026-10-28T18:00:15Z).
 
 The web bundle points to `https://lendara-shield.duckdns.org` (API) and `https://soroban-testnet.stellar.org` (RPC); no `localhost` URLs.
 
+## 3. Trustline with a new account
+
+**Pass criterion:** the trustline appears in the account's on-chain state and the system correctly detects whether it exists.
+
+| Step | Result |
+|---|---|
+| New account (friendbot) | `GDMSOZPN7R4HKQOTDKA52HSB4AAMNNPJIEOFPMN43VPYZN6GQOJ3KOW7`: 10,000 XLM, 0 subentries, no USDC |
+| Before the trustline | SAC `balance` fails with `Error(Contract, #13)` "trustline entry is missing"; RPC `getLedgerEntries` returns no entry |
+| `change_trust` USDC:`GBVIQ7QV…H47B5` (signed with the Stellar CLI) | [`71981e00…`](https://stellar.expert/explorer/testnet/tx/71981e00b38b8e6738074184585a01156b7b397bd6ecc71a5710c9fa5e8fce7b), successful, ledger 5437699, fee 100 stroops |
+| After | 1 subentry, USDC from the right issuer, balance 0, authorized; SAC `balance` returns `"0"`; RPC returns the entry |
+
+**Result:** on-chain, passed. Detection was missing in the system (nothing checked the trustline; a direct deposit failed only at simulation). Fixed in #37 and deployed (`eba56dd`): direct deposit and withdraw read the trustline from the RPC and block the form with instructions when it is missing. **Pending:** signing the trustline with Freighter and checking the notice by hand on the live web.
+
 ## Findings
 
 1. **Deposit limit mismatch.** The pool's `MaximumDepositAmount` is `10000000000` stroops (1,000 USDC); the anchor accepts up to 10,000 USDC and the API does not check the pool limit when creating an intent. A ramp intent between 1,000 and 10,000 USDC would be paid by the anchor, refused by the pool and end in `error` with the USDC in the intake. Demo amounts (CRC 5000 ≈ 9.30 USDC) are unaffected.
