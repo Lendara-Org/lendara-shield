@@ -172,7 +172,10 @@ export const es: Messages = {
   },
   trustline: {
     missing: (asset) => `Tu cuenta no tiene un trustline de ${asset}, así que todavía no puede tener ${asset} de este pool.`,
+    issuerOnly: (asset) =>
+      `Este pool solo acepta el ${asset} del sandbox de Lendara, del emisor de abajo. El ${asset} de cualquier otro emisor, como el ${asset} de testnet de Circle, no sirve.`,
     howTo: (asset) => `En Freighter (Testnet), entra en Gestionar activos, agrega ${asset} con este emisor y firma. Después vuelve a comprobar.`,
+    rampInstead: "Depositar con rampa no necesita trustline: tu cuenta nunca recibe los USDC.",
     recheck: "Comprobar de nuevo",
   },
   audit: {
