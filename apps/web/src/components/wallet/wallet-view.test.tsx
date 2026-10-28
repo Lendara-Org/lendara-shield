@@ -4,7 +4,7 @@ import { HttpResponse, http } from "msw";
 import { fakeWallet } from "@/test/fake-wallet";
 import { ACCOUNT, ENC_KEY, NOTE_KEY, user } from "@/test/fixtures";
 import { renderConnected } from "@/test/render";
-import { server, url } from "@/test/server";
+import { rpcTrustline, server, url } from "@/test/server";
 
 import { WalletView } from "./wallet-view";
 
@@ -58,6 +58,18 @@ describe("WalletView", () => {
     await ui.type(amounts[1] ?? document.body, "2.25");
     await ui.click(screen.getByRole("button", { name: "Withdraw" }));
     expect(wallet.withdraw).toHaveBeenCalledWith(22_500_000n);
+  });
+
+  it("blocks the withdraw, not the private transfer, without the USDC trustline", async () => {
+    server.use(rpcTrustline(false));
+    const { user: ui } = await renderConnected(<WalletView />, fakeWallet());
+    expect(await screen.findByRole("alert")).toHaveTextContent("Your account has no USDC trustline");
+    const amounts = screen.getAllByLabelText("Amount (USDC)");
+    await ui.type(amounts[1] ?? document.body, "2.25");
+    expect(screen.getByRole("button", { name: "Withdraw" })).toBeDisabled();
+    await ui.type(screen.getByLabelText("Recipient's private address"), recipientAddress);
+    await ui.type(amounts[0] ?? document.body, "1");
+    expect(screen.getByRole("button", { name: "Send" })).toBeEnabled();
   });
 
   it("reports a failed sync", async () => {

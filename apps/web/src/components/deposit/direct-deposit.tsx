@@ -4,12 +4,17 @@ import { useState } from "react";
 
 import { useI18n } from "@/components/i18n";
 import { message } from "@/components/session";
+import { TrustlineNotice } from "@/components/trustline-notice";
 import { Button, Card, Field, Notice, TxList, inputClass } from "@/components/ui/primitives";
 import { parseAmount } from "@/lib/amount";
+import { useTrustline } from "@/lib/hooks/use-trustline";
 import type { PoolResult, ShieldWallet } from "@/lib/pool/types";
+import type { ClassicAsset } from "@/lib/trustline";
 
-export function DirectDeposit({ wallet, assetCode }: { wallet: ShieldWallet; assetCode: string }) {
+export function DirectDeposit({ wallet, asset }: { wallet: ShieldWallet; asset: ClassicAsset | undefined }) {
   const { t } = useI18n();
+  const assetCode = asset?.code ?? "USDC";
+  const trust = useTrustline(wallet.address, asset);
   const [amount, setAmount] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -18,7 +23,7 @@ export function DirectDeposit({ wallet, assetCode }: { wallet: ShieldWallet; ass
 
   async function deposit(event: React.FormEvent) {
     event.preventDefault();
-    if (stroops === null) return;
+    if (stroops === null || trust.state === "missing") return;
     setBusy(true);
     setError(null);
     setResult(null);
@@ -49,7 +54,8 @@ export function DirectDeposit({ wallet, assetCode }: { wallet: ShieldWallet; ass
             />
           )}
         </Field>
-        <Button type="submit" busy={busy} disabled={stroops === null}>
+        {asset && <TrustlineNotice trust={trust} asset={asset} />}
+        <Button type="submit" busy={busy} disabled={stroops === null || trust.state === "missing"}>
           {t.deposit.depositButton}
         </Button>
         {error && <Notice tone="error">{error}</Notice>}

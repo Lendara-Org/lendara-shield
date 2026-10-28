@@ -4,3 +4,11 @@
 # Public ASP leaf of a throwaway spike account, flagged because the constant was named KEY.
 # Renamed in the following commit.
 9d01f9fdc1f9d95ef85bd60ba02610dd408111d0:packages/api-types/test/contract.typetest.ts:generic-api-key:14
+
+# An account strkey with its G changed to S (invalid checksum, not a seed), testing that
+# a non-account issuer is rejected. Replaced with a contract id in the following commit.
+2345ed03414c0577d0af3182ae568d2b7d45dee5:apps/web/src/lib/trustline.test.ts:stellar-secret-seed:38
+
+# Public trustline LedgerKey XDR of a testnet account, flagged because the constant was named
+# USDC_KEY. Renamed in a following commit.
+2345ed03414c0577d0af3182ae568d2b7d45dee5:apps/web/src/lib/trustline.test.ts:generic-api-key:12

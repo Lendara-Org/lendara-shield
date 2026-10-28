@@ -182,6 +182,8 @@ Every page lives under `/<lang>/` (`en`, `es`): `/` redirects by the browser's l
 
 Routes: `/` (what Shield is), `/docs` (overview, protocol, quickstart, API, scenarios, security), `/onboard`, `/deposit` (ramp with a live intent timeline, or direct with a visible-address warning), `/wallet` (private balance, private address `shield:<note key>:<encryption key>`, transfer, withdraw), `/audit`. Freighter and the SPP SDK sit behind the `ShieldWallet` interface so pages are tested with a fake.
 
+Direct deposit and withdraw first read the account's trustline to the pool's asset from the Stellar RPC (`getLedgerEntries`, `lib/trustline.ts`; the CSP only allows the API and the RPC, and the web has no Stellar SDK). A missing trustline blocks the form and says how to add it in Freighter; an RPC failure blocks nothing.
+
 ## 7. Conventions and quality
 
 ### Rust

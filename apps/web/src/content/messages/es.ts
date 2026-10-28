@@ -170,6 +170,11 @@ export const es: Messages = {
     amount: (asset) => `Monto (${asset})`,
     done: "Listo:",
   },
+  trustline: {
+    missing: (asset) => `Tu cuenta no tiene un trustline de ${asset}, así que todavía no puede tener ${asset} de este pool.`,
+    howTo: (asset) => `En Freighter (Testnet), entra en Gestionar activos, agrega ${asset} con este emisor y firma. Después vuelve a comprobar.`,
+    recheck: "Comprobar de nuevo",
+  },
   audit: {
     title: "Auditoría",
     intro: "Privado para el público, auditable para el auditor: la misma transacción, dos vistas.",
