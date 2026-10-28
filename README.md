@@ -18,7 +18,9 @@ Built for **HackMeridian 2026** (Genesis track).
 | API | <https://lendara-shield.duckdns.org/v1/info> · health: <https://lendara-shield.duckdns.org/health> |
 | SEP-24 anchor used by ramp mode | Lendara sandbox, home domain `lendara-monorepo-fixh.vercel.app` |
 
-Both modes are enabled: ramp (through the sandbox anchor) and direct. Use [Freighter](https://www.freighter.app/) set to **Testnet**.
+Both modes are enabled: ramp (through the sandbox anchor) and direct. Use [Freighter](https://www.freighter.app/) set to **Testnet**. Direct deposits and withdraws need a trustline to the sandbox USDC (issuer `GBVIQ7QVTTJ4NLFTYYFPEKWYJWAMKDAOFYSR52ZGWJFSGTSVOO5H47B5`): the web checks it and says how to add it in Freighter. Ramp mode needs no trustline, since the user's account never receives USDC.
+
+> The public RPC keeps about 7 days of history and proving needs the pool's full history. This pool (deployed at ledger 5,395,126 on 2026-10-26) leaves that window around **2026-11-02**; after that it needs SPP's bootnode or a redeploy.
 
 ## The problem
 
@@ -87,6 +89,8 @@ The private balance then shows `9.3039215 USDC` on `/en/wallet`, and `/en/audit`
 
 Kira's public USDC balance went from 9.3039215 to 7.8039215 (−2 deposited, +0.5 withdrawn).
 
+**Re-verified on 2026-10-28** (read-only, plus one trustline on a fresh account): web, API, anchor and contracts share the same configuration, and the intake completed 5 ramp intents with no USDC left in custody. See [docs/testing/2026-10-28-testnet-verification.md](docs/testing/2026-10-28-testnet-verification.md).
+
 **Testnet deployment** (SPP `sdk-v0.2.1`, policy `allowlist-blocklist` + `gvk-traceable`, deployed at ledger 5,395,126):
 
 | Contract or account | Address |
@@ -146,6 +150,8 @@ Checks: `make lint`, `make test` (Postgres needed), `make test-web-e2e`, and `ma
 4. **See your private balance.** On `/en/wallet`, the USDC is there. Only you, and the auditor, can see it.
 5. **Audit.** On `/en/audit`, paste `AUDITOR_TOKEN`. The same transaction appears side by side. The explorer sees *"signed by Shield, amount hidden, recipient not visible"*; the auditor sees *"9.30 USDC to you"*.
 
+To try direct mode, choose *From my wallet* on `/en/deposit`. Your account needs testnet USDC from the sandbox and its trustline; without the trustline the form is blocked and explains how to add it.
+
 Try the gatekeeper too: onboard another account with **Rejected** (it never enters the allow-list) or **Blocked** (frozen by the ASP). In the anchor's widget, card **4000 0000 0000 0002** (*Rejected (KYC)*) ends the intent in `error` without touching the pool. All scenarios are listed in [docs/scenarios.md](docs/scenarios.md).
 
 ## Documentation
@@ -157,6 +163,7 @@ The web app has developer docs in English and Spanish at `/en/docs` and `/es/doc
 - [Threat model](docs/threat-model.md): what is private, from whom, and the honest limits
 - [Scenarios](docs/scenarios.md): KYC and anchor outcomes and what Shield does with each
 - [SPP spike](docs/spikes/spp.md): what we verified about Stellar Private Payments before building
+- [Testnet verifications](docs/testing/): dated checks of the live deployment, the anchor and the contracts
 - [Demo video script](docs/demo-script.md)
 - [AGENTS.md](AGENTS.md): conventions and context for contributors and their AI assistants
 
