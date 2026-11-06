@@ -14,7 +14,7 @@ Repositorio: [github.com/Lendara-Org/lendara-shield](https://github.com/Lendara-
 
 ## 1. Resumen
 
-Lendara Shield le da a cualquier producto en Stellar pagos privados con cumplimiento a través de una sola API. Wallets, anchors, apps de pago y usuarios individuales obtienen saldos privados, un Association Set que ellos controlan y divulgación solo para el auditor, sin construir ellos mismos la infraestructura de privacidad. El fondeo también queda privado: el dinero que llega desde una fuente externa puede llegar a un saldo privado sin que la dirección del usuario aparezca nunca on-chain.
+Lendara Shield les da a las wallets y los anchors de Stellar pagos privados con cumplimiento a través de una sola API. Sus usuarios obtienen saldos privados; el integrador controla quién es elegible (el Association Set) y solo un auditor autorizado puede ver los detalles, sin que nadie tenga que construir la infraestructura de privacidad desde cero. El fondeo también queda privado: el dinero que llega desde una fuente externa puede llegar a un saldo privado sin que la dirección del usuario aparezca nunca on-chain.
 
 Shield es la implementación de referencia del **Shield Protocol**: la capa de operador que necesita un privacy pool con cumplimiento y que ningún producto debería tener que construir solo. Corre sobre [Stellar Private Payments (SPP)](https://developers.stellar.org/docs/build/apps/privacy), la implementación de Privacy Pools de Nethermind para Stellar (circuitos Circom, pruebas Groth16 verificadas en contratos Soroban), y no agrega criptografía nueva.
 
@@ -41,7 +41,7 @@ Estado: ambos modos corren de punta a punta en Stellar testnet ([sección 9](#9.
 | Rol | Responsabilidad |
 | --- | --- |
 | **Usuario** | Tiene una wallet de Stellar. Deriva las llaves del pool (llave de nota, llave de cifrado) en el navegador; las llaves de gasto nunca salen de ahí. |
-| **App integradora** | Cualquier producto que usa Shield: una wallet, un anchor, una app de pagos o el cliente propio de una persona. Decide cuáles de sus usuarios son elegibles según su propia política de cumplimiento y llama a la API de Shield. |
+| **App integradora** | Una wallet o un anchor que usa Shield. Las personas individuales son sus usuarios finales y solo llegan a Shield a través de él. Decide cuáles de sus usuarios son elegibles según su propia política de cumplimiento y llama a la API de Shield. |
 | **Operador de Shield (ASP)** | Administra los contratos de allow-list y block-list del pool y paga las comisiones de esas escrituras. |
 | **Intake de Shield (ómnibus)** | En modo rampa, recibe los fondos externos, los deposita en el pool y los transfiere en privado al usuario. |
 | **Auditor** | Tiene la Global View Key del pool; descifra cada nota. |
@@ -180,7 +180,7 @@ Los logs llevan ids de intent y plantillas de ruta, nunca "dirección + monto". 
 4. Shield (como ASP) y el auditor son partes de confianza: la concesión de cumplimiento de un pool con permisos.
 5. SPP es una developer preview con contratos sin auditar; el admin del pool en testnet es una sola llave.
 6. Generar pruebas requiere el historial completo de eventos del pool; el RPC público guarda unos 7 días, así que producción necesita un RPC de archivo o el bootnode de SPP.
-7. **El registro no amarra la hoja del ASP a la llave del usuario.** Shield recibe `asp_leaf`, pero no puede comprobar que sea igual a `H(note_public_key, membership_blinding)`, porque el blinding se queda en el navegador. Un usuario podría registrar la hoja de otra llave que controla y seguir usando el pool después de ser bloqueado (la block-list tiene la llave registrada, no la que está detrás de la hoja). También podría registrar la llave de otra persona y prestarle acceso al pool sin que haya pasado el KYC. En los dos casos el auditor no puede relacionar esas notas con una cuenta. Se corrige en el tramo 1: el navegador envía el blinding, y Shield recalcula la hoja y rechaza cualquier diferencia antes de insertarla. Shield ya conoce la llave, así que esto no revela nada nuevo.
+7. **El registro no amarra la hoja del ASP a la llave del usuario.** Shield recibe `asp_leaf`, pero no puede comprobar que sea igual a `H(note_public_key, membership_blinding)`, porque el blinding se queda en el navegador. Un usuario podría registrar la hoja de otra llave que controla y seguir usando el pool después de ser bloqueado (la block-list tiene la llave registrada, no la que está detrás de la hoja). También podría registrar la llave de otra persona y prestarle acceso al pool sin que el integrador la haya aprobado. En los dos casos el auditor no puede relacionar esas notas con una cuenta. Se corrige en el tramo 1: el navegador envía el blinding, y Shield recalcula la hoja y rechaza cualquier diferencia antes de insertarla. Shield ya conoce la llave, así que esto no revela nada nuevo.
 
 ## 8. Shield Protocol nivel 2 (borrador)
 
@@ -229,7 +229,7 @@ Shield se diferencia en dos puntos. Opera SPP como una capa de cumplimiento comp
 | [LumenShade](https://communityfund.stellar.org/dashboard/projects/rec3veejDmuuYhhnP) (SCF #37) | Un protocolo de privacy pools con sus propios circuitos | El mismo modelo que SPP; Shield no compite en la capa de circuitos, la opera y la integra |
 | [Private & compliant payments on Stellar](https://communityfund.stellar.org/dashboard/submissions/recJbAw5nnUU1ZUmb) (SCF #40) | Montos y saldos confidenciales con divulgación selectiva, partiendo de un coprocesador off-chain | Shield oculta las contrapartes, no solo los montos, y mantiene la generación y la verificación de pruebas en Stellar a través de SPP |
 | [Zarf](https://communityfund.stellar.org/submissions/rec81hKwglu2sUT1N) (SCF #42) | Distribución privada de tokens a direcciones de email con pruebas ZK sobre tokens de inicio de sesión | Un caso de uso distinto (distribuciones); Shield cubre pagos privados continuos y fondeo privado |
-| [Confidential Tokens](https://stellar.org/blog/developers/developer-preview-confidential-tokens-on-stellar) (OpenZeppelin, developer preview de la SDF) | Un wrapper sobre tokens SEP-41 que oculta saldos y montos; las direcciones siguen visibles | Complementario: Confidential Tokens sirve flujos con contrapartes conocidas donde el monto es privado; Shield sirve flujos donde las contrapartes son privadas |
+| [Confidential Tokens](https://stellar.org/blog/developers/developer-preview-confidential-tokens-on-stellar) (OpenZeppelin, developer preview de la SDF) | Un wrapper sobre tokens SEP-41 que oculta saldos y montos; las direcciones siguen visibles | Complementario: Confidential Tokens sirve flujos con contrapartes conocidas donde el monto es privado; Shield sirve flujos donde las contrapartes son privadas. Después de este award, la capa de cumplimiento de Shield se extiende a Confidential Tokens (ver el [Roadmap](roadmap.md)) |
 
 ## 12. Dependencias y riesgos
 

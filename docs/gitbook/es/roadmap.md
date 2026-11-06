@@ -22,8 +22,12 @@ Ambos modos ya corren de punta a punta en Stellar testnet. Los tres tramos lleva
 
 | Tramo | Construye |
 | --- | --- |
-| **1 — Testnet lista para developers** | Relayer con fee-bump (los usuarios del modo directo ya no son visibles como firmantes) · API keys por proyecto, permisos acotados y sesiones, incluida la decisión de elegibilidad del integrador a través de su key · SDK de TypeScript generado desde `openapi.yaml` |
-| **2 — Preparación para producción** | Llaves de operador, ómnibus y de vista en un KMS/HSM con rotación · divulgación selectiva por nota para los usuarios y un portal de auditor basado en roles con registros de acceso · integración con una segunda fuente de fondeo |
+| **1 — Testnet lista para developers** | Hoja del ASP amarrada a la llave registrada (cierra el límite conocido 7) · relayer con fee-bump (los usuarios del modo directo ya no son visibles como firmantes) · API keys por proyecto, permisos acotados y sesiones, incluida la decisión de elegibilidad del integrador a través de su key · SDK de TypeScript generado desde `openapi.yaml` |
+| **2 — Preparación para producción** | Shield Protocol nivel 2: especificación completa e implementación de referencia en el anchor SEP-24 de Lendara (depósitos directos al pool, sin paso de custodia) · llaves de operador, ómnibus y de vista en un KMS/HSM con rotación · divulgación selectiva por nota para los usuarios y un portal de auditor basado en roles con registros de acceso · resolución de los fondos de usuarios bloqueados (reanudar, devolver al anchor o retener) con registro de auditoría · integración con una segunda fuente de fondeo |
 | **3 — Mainnet** | Despliegue en mainnet con RPC de archivo, monitoreo y alertas · refuerzo del anonymity set (agrupación, redondeo, demoras) · primera integración con una wallet de terceros |
+
+## Después de este award: una capa de cumplimiento para las dos primitivas de privacidad
+
+Stellar tiene dos herramientas de privacidad complementarias. **Stellar Private Payments** oculta quién le paga a quién; **Confidential Tokens** oculta montos y saldos, mientras las direcciones siguen visibles. Los tramos del SCF construyen el Shield Protocol primero sobre SPP. Después, la misma capa de cumplimiento (la decisión de elegibilidad del integrador, el rol de ASP y la divulgación solo para el auditor) se extiende a Confidential Tokens, para que wallets y anchors puedan ofrecer contrapartes privadas o montos privados con la misma API. Esto no forma parte del presupuesto solicitado.
 
 Cómo encaja cada ítem en el sistema está en [Arquitectura técnica](technical-architecture.md). Los límites que resuelve cada uno están en el [Modelo de amenazas](threat-model.md).
