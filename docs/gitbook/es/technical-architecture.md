@@ -195,7 +195,7 @@ Borrador completo: [Shield Protocol](shield-protocol.md). El tramo 2 entrega la 
 
 ## 9. Lo que existe hoy (testnet, verificable)
 
-En la corrida de rampa del 2026-10-26, la dirección del usuario aparece 0 veces entre el pago del anchor, el depósito y la transferencia (verificado en Horizon: transacciones, operaciones y efectos). El intent se completó 60 s después de crearse, sin ningún paso manual. Las verificaciones posteriores están en [Verificación en testnet](testnet-verification.md).
+En la corrida de rampa del 2026-10-26, la dirección del usuario aparece 0 veces entre el pago del anchor, el depósito y la transferencia (verificado en Horizon: transacciones, operaciones y efectos). El intent se completó 60 s después de crearse, sin ningún paso manual. Las verificaciones posteriores están en [Verificación en testnet](testnet-verification.md). Las transacciones de abajo pertenecen al primer pool: superó la ventana de historial de 7 días del RPC público y se redesplegó el 2026-11-06, y ahora el bootnode de SPP sirve los eventos más viejos.
 
 | Evidencia | Enlace |
 | --- | --- |
@@ -204,9 +204,10 @@ En la corrida de rampa del 2026-10-26, la dirección del usuario aparece 0 veces
 | Rampa: depósito en el pool (`ext_amount > 0`) | [57756b31…26e1](https://stellar.expert/explorer/testnet/tx/57756b312631f526779dcbbf555833b72e95f0f3c0be3f153f0fc33d986026e1) |
 | Rampa: transferencia privada (`ext_amount = 0`) | [86edced9…6420](https://stellar.expert/explorer/testnet/tx/86edced9f47e3f8582272b74ddcc998af18fd22e5b6cdaf76f6e399dad046420) |
 | Directo: transferencia privada desde el navegador | [84c898a0…ca41](https://stellar.expert/explorer/testnet/tx/84c898a0ce46c0005a1eb476a5e71b3e500c53949b33a96978bc3a62f5ceca41) |
-| Contrato del pool (USDC) | [CAB6FI43…KR4](https://stellar.expert/explorer/testnet/contract/CAB6FI43BVMPMAXYCLVZ7R5DYQY3IUJF3G7JMSBEXJHWO7LEUE3H4KR4) |
-| Allow-list del ASP | [CCCFDS2I…CHVG](https://stellar.expert/explorer/testnet/contract/CCCFDS2IABWNR7VEFH5F3OUGNBMNPVMD5UOA7V6V4ZCBTM3UEMRYCHVG) |
-| Block-list del ASP | [CAO3DGTQ…B53C](https://stellar.expert/explorer/testnet/contract/CAO3DGTQTVZ2A7XVKKZDHOR7CTTPOYV4U3YLK5UDCUSQBUE6RBEVB53C) |
+| Pool de esa corrida (2026-10-26, ledger 5.395.126) | [CDD66GL3…C7OF](https://stellar.expert/explorer/testnet/contract/CDD66GL3HT5JLRIB5BHAV36XFSEAGRXMGRJJ4VK747ODBXEJ77YAC7OF) |
+| Pool actual (USDC, redesplegado el 2026-11-06, ledger 5.591.375) | [CAB6FI43…KR4](https://stellar.expert/explorer/testnet/contract/CAB6FI43BVMPMAXYCLVZ7R5DYQY3IUJF3G7JMSBEXJHWO7LEUE3H4KR4) |
+| Allow-list actual del ASP | [CCCFDS2I…CHVG](https://stellar.expert/explorer/testnet/contract/CCCFDS2IABWNR7VEFH5F3OUGNBMNPVMD5UOA7V6V4ZCBTM3UEMRYCHVG) |
+| Block-list actual del ASP | [CAO3DGTQ…B53C](https://stellar.expert/explorer/testnet/contract/CAO3DGTQTVZ2A7XVKKZDHOR7CTTPOYV4U3YLK5UDCUSQBUE6RBEVB53C) |
 
 ## 10. Lo que construye cada tramo
 

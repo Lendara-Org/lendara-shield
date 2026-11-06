@@ -195,7 +195,7 @@ Full draft: [Shield Protocol](shield-protocol.md). Tranche 2 delivers the comple
 
 ## 9. What exists today (testnet, verifiable)
 
-In the ramp run of 2026-10-26, the user's address appears 0 times across the anchor payment, the deposit and the transfer (checked on Horizon: transactions, operations and effects). The intent completed 60 s after creation with no manual step. Later checks are in [Testnet verification](testnet-verification.md).
+In the ramp run of 2026-10-26, the user's address appears 0 times across the anchor payment, the deposit and the transfer (checked on Horizon: transactions, operations and effects). The intent completed 60 s after creation with no manual step. Later checks are in [Testnet verification](testnet-verification.md). The transactions below belong to the first pool; it outlived the public RPC's 7-day history window and was redeployed on 2026-11-06, with SPP's bootnode now serving the older events.
 
 | Evidence | Link |
 | --- | --- |
@@ -204,9 +204,10 @@ In the ramp run of 2026-10-26, the user's address appears 0 times across the anc
 | Ramp: pool deposit (`ext_amount > 0`) | [57756b31…26e1](https://stellar.expert/explorer/testnet/tx/57756b312631f526779dcbbf555833b72e95f0f3c0be3f153f0fc33d986026e1) |
 | Ramp: private transfer (`ext_amount = 0`) | [86edced9…6420](https://stellar.expert/explorer/testnet/tx/86edced9f47e3f8582272b74ddcc998af18fd22e5b6cdaf76f6e399dad046420) |
 | Direct: private transfer from the browser | [84c898a0…ca41](https://stellar.expert/explorer/testnet/tx/84c898a0ce46c0005a1eb476a5e71b3e500c53949b33a96978bc3a62f5ceca41) |
-| Pool contract (USDC) | [CAB6FI43…KR4](https://stellar.expert/explorer/testnet/contract/CAB6FI43BVMPMAXYCLVZ7R5DYQY3IUJF3G7JMSBEXJHWO7LEUE3H4KR4) |
-| ASP allow-list | [CCCFDS2I…CHVG](https://stellar.expert/explorer/testnet/contract/CCCFDS2IABWNR7VEFH5F3OUGNBMNPVMD5UOA7V6V4ZCBTM3UEMRYCHVG) |
-| ASP block-list | [CAO3DGTQ…B53C](https://stellar.expert/explorer/testnet/contract/CAO3DGTQTVZ2A7XVKKZDHOR7CTTPOYV4U3YLK5UDCUSQBUE6RBEVB53C) |
+| Pool of that run (2026-10-26, ledger 5,395,126) | [CDD66GL3…C7OF](https://stellar.expert/explorer/testnet/contract/CDD66GL3HT5JLRIB5BHAV36XFSEAGRXMGRJJ4VK747ODBXEJ77YAC7OF) |
+| Current pool (USDC, redeployed 2026-11-06, ledger 5,591,375) | [CAB6FI43…KR4](https://stellar.expert/explorer/testnet/contract/CAB6FI43BVMPMAXYCLVZ7R5DYQY3IUJF3G7JMSBEXJHWO7LEUE3H4KR4) |
+| Current ASP allow-list | [CCCFDS2I…CHVG](https://stellar.expert/explorer/testnet/contract/CCCFDS2IABWNR7VEFH5F3OUGNBMNPVMD5UOA7V6V4ZCBTM3UEMRYCHVG) |
+| Current ASP block-list | [CAO3DGTQ…B53C](https://stellar.expert/explorer/testnet/contract/CAO3DGTQTVZ2A7XVKKZDHOR7CTTPOYV4U3YLK5UDCUSQBUE6RBEVB53C) |
 
 ## 10. What each tranche builds
 
