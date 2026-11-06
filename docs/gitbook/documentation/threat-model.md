@@ -1,6 +1,6 @@
 # Threat model
 
-What Lendara Shield hides, from whom, and the limits we know about. This is a hackathon build on **testnet**, over a developer-preview protocol with **unaudited contracts**.
+What Lendara Shield hides, from whom, and the limits we know about. Shield runs on **testnet**, over a developer-preview protocol with **unaudited contracts**. Tranche 2 extends this document into a STRIDE-style threat model with a monitoring plan for production.
 
 ## Who sees what
 
@@ -31,18 +31,18 @@ What Lendara Shield hides, from whom, and the limits we know about. This is a ha
 
 ## Known limits (said before anyone asks)
 
-1. **Amount and timing correlation at the ramp.** The anchor's payment to Shield and Shield's pool deposit carry the **same amount** within seconds, and the testnet anonymity set is tiny. An observer cannot see the user's address, but can link "this anchor payment" to "this deposit". Mitigation, not built yet: batched deposits, rounded amounts and random delays from the omnibus account (plan item P4).
+1. **Amount and timing correlation at the ramp.** The anchor's payment to Shield and Shield's pool deposit carry the **same amount** within seconds, and the testnet anonymity set is tiny. An observer cannot see the user's address, but can link "this anchor payment" to "this deposit". Mitigation, not built yet: batched deposits, rounded amounts and random delays from the omnibus account (Tranche 3).
 2. **The funding source knows the user and the amount.** That is inherent to any party that takes the payment. Shield removes the public link, not the funding source's knowledge.
-3. **Direct mode reveals the signer.** Whoever signs a pool transaction is its source account, so in direct mode the user's address shows up as a pool user on every transfer (amounts and recipients stay hidden). Mitigation: a fee-bump relayer (P3). The web says this next to the button.
+3. **Direct mode reveals the signer.** Whoever signs a pool transaction is its source account, so in direct mode the user's address shows up as a pool user on every transfer (amounts and recipients stay hidden). Mitigation: a fee-bump relayer (Tranche 1). The web says this next to the button.
 4. **Custody.** In ramp mode Shield's omnibus account briefly holds the user's funds, and Shield holds the pool keys of that intermediate note. That is the same trust model as any custodial ramp step; the protocol's level 2 (anchors depositing natively into the pool) removes it.
 5. **The asset issuer can still act.** The sandbox USDC issuer has neither `AUTH_REVOCABLE` nor `AUTH_CLAWBACK_ENABLED` today, but it is not `AUTH_IMMUTABLE`: it could enable them later and freeze or claw back the pool's balance. The issuer also appears as a visible account in every transfer of its asset.
 6. **Shield and the auditor are trusted parties.** Shield knows which account owns which keys (it is the ASP); the auditor can decrypt everything. That is the compliance trade-off of a permissioned pool. Splitting the roles across independent parties is future work.
 7. **Unaudited, developer-preview contracts.** Stellar Private Payments `sdk-v0.2.1`. The pool admin is a single key (no multisig) on testnet.
 8. **History window and the bootnode.** Proving needs the pool's full event history; the public RPC keeps about 7 days. Shield runs SPP's bootnode for the older events (the first pool outlived the window before it existed and was redeployed on 6 November). Clients trust the bootnode for that history: it could omit or forge old events or point the handoff at the wrong ledger, so a wrong answer makes proofs fail rather than steal funds (the contracts verify every proof). It also sees the IP and timing of every client that syncs through it. Anyone can run their own bootnode or an archival RPC instead.
-9. **`GET /v1/users/{account}` is public.** It tells anyone whether an account onboarded with Shield, its eligibility and allow-list status, and the hash of its allow-list insertion: the same "this address uses the pool" signal we avoided by not using SPP's public key registry. Fix (not built yet): require a session derived from the account's signature to read its status. A signature on every read is not an option: the web polls this endpoint while onboarding is pending, so it needs sessions first (P2). `GET /v1/intents/{id}` is also unauthenticated, but needs the intent's random id and returns no account and no interactive URL.
+9. **`GET /v1/users/{account}` is public.** It tells anyone whether an account onboarded with Shield, its eligibility and allow-list status, and the hash of its allow-list insertion: the same "this address uses the pool" signal we avoided by not using SPP's public key registry. Fix (not built yet): require a session derived from the account's signature to read its status. A signature on every read is not an option: the web polls this endpoint while onboarding is pending, so it needs sessions first (Tranche 1). `GET /v1/intents/{id}` is also unauthenticated, but needs the intent's random id and returns no account and no interactive URL.
 10. **Browser trust.** The circuit lock is pinned when the web app is built, so circuit artifacts served next to it are checked against it, but users still trust the app and whoever serves it. A Content-Security-Policy limits scripts, workers and network access to the app's origin, Shield's API, the RPC and the bootnode; it still allows inline scripts, because Next inlines them in statically rendered pages.
 11. **The rate limit is per client IP.** Behind a reverse proxy every client shares the proxy's address, so the limit becomes global. An attacker with many addresses can still onboard many fresh accounts (each costs the operator an on-chain write).
 
-## Out of scope for the hackathon
+## Not built yet
 
-Production hosting, key management (HSM/KMS), proxy-aware or global rate limiting, sessions and project API keys (P2), the relayer (P3), anonymity-set hardening (P4), per-note selective disclosure for users (P5).
+Sessions and project API keys and the relayer (Tranche 1); key management in a KMS/HSM and per-note selective disclosure for users (Tranche 2); production hosting and anonymity-set hardening (Tranche 3); proxy-aware or global rate limiting.

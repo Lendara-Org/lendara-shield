@@ -191,7 +191,7 @@ Level 2 lets a funding source deposit **directly** into the pool to the user's k
 * **Interactive deposit** with `destination_type: "shielded"` and `shielded_recipient: <note_public_key>:<encryption_public_key>` instead of `account`. The anchor must reject recipients whose leaf is not in the allow-list.
 * **Settlement:** the distribution account calls the pool's deposit with an output note to the recipient and reports the pool transaction hash in `GET /transaction`.
 
-Full draft: [Shield Protocol](shield-protocol.md). Tranche 2 delivers the complete specification and a reference implementation in Lendara's SEP-24 anchor.
+Full draft: [Shield Protocol](shield-protocol.md). Tranche 2 delivers the complete specification, which any SEP-24 anchor can adopt, with Lendara's anchor as the first reference implementation.
 
 ## 9. What exists today (testnet, verifiable)
 
@@ -214,7 +214,7 @@ In the ramp run of 2026-10-26, the user's address appears 0 times across the anc
 | Tranche | Builds on the architecture above |
 | --- | --- |
 | **1 — Developer-ready testnet** | ASP leaf bound to the registered key (closes known limit 7) · fee-bump relayer (direct-mode users no longer visible as signers) · project API keys, scoped permissions and sessions, including the integrator's eligibility decision through its key · TypeScript SDK generated from `openapi.yaml` |
-| **2 — Production readiness** | Shield Protocol level 2: complete specification and reference implementation in Lendara's SEP-24 anchor (direct deposits into the pool, no custody step) · operator, omnibus and view keys in a KMS/HSM with rotation · per-note selective disclosure for users and a role-based auditor portal with access logs · resolution of blocked users' funds (resume, return to the anchor or hold) with an audit log · integration with a second funding source |
+| **2 — Production readiness** | Shield Protocol level 2: complete specification that any SEP-24 anchor can adopt, with Lendara's anchor as the first reference implementation (direct deposits into the pool, no custody step) · operator, omnibus and view keys in a KMS/HSM with rotation · per-note selective disclosure for users and a role-based auditor portal with access logs · resolution of blocked users' funds (resume, return to the anchor or hold) with an audit log · integration with a second funding source · threat model (STRIDE-style) and monitoring plan for the production deployment |
 | **3 — Mainnet** | Mainnet deployment with archival RPC, monitoring and alerts · anonymity-set hardening (batching, rounding, delays) · first third-party wallet integration |
 
 See the [Roadmap](roadmap.md) for what is already done.
