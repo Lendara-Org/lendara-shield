@@ -8,9 +8,12 @@
 #   - the asset's SAC is deployed and is the pool's token
 #   - the pool is allowlist-blocklist + gvk-traceable with the expected KDF domain
 #   - SPP's own verify-deployment.sh passes against the recorded manifest
-#   - the pool is still inside the RPC retention window (no bootnode needed)
+#   - with SHIELD_BOOTNODE_URL: the bootnode serves the pool's allow-list
+#     events (or hands off to the RPC); without it: the pool is still inside
+#     the RPC retention window
 #
-# Env: the variables written by scripts/setup-testnet.sh (see .env).
+# Env: the variables written by scripts/setup-testnet.sh (see .env), and
+#      SHIELD_BOOTNODE_URL (optional).
 
 set -euo pipefail
 
@@ -73,6 +76,20 @@ inside_retention_window() {
   ((deployed >= oldest))
 }
 
+# The bootnode answers the allow-list's events from the deployment ledger,
+# or hands off (-32002) to the RPC; "not ready" (-32004) or "invalid" fail.
+bootnode_serves_pool() {
+  local membership deployed response
+  membership=$(jq -r '.asp_membership' "$MANIFEST")
+  deployed=$(jq -r '.pools[0].deploymentLedger' "$MANIFEST")
+  response=$(curl -fsS -X POST "$SHIELD_BOOTNODE_URL" -H 'Content-Type: application/json' -d "$(
+    jq -nc --arg c "$membership" --argjson l "$deployed" '{jsonrpc: "2.0", id: 1, method: "getEvents",
+      params: {startLedger: $l, filters: [{type: "contract", topics: [["**"]], contractIds: [$c]}],
+        pagination: {limit: 1}}}'
+  )")
+  jq -e '.result.events != null or .error.code == -32002' <<<"$response"
+}
+
 printf 'Lendara Shield testnet checks (%s)\n' "$MANIFEST"
 check "operator holds at least $MIN_XLM XLM" has_xlm shield-operator
 check "intake holds at least $MIN_XLM XLM" has_xlm shield-intake
@@ -80,7 +97,11 @@ check "intake trusts $RAMP_ASSET_CODE:$RAMP_ASSET_ISSUER" intake_trusts_asset
 check "SAC $SHIELD_ASSET_CONTRACT answers" sac_answers
 check "pool is allowlist-blocklist + gvk-traceable on the SAC" pool_config_matches
 check "SPP verify-deployment.sh" spp_verify
-check "pool deployment ledger is inside the RPC retention window" inside_retention_window
+if [[ -n ${SHIELD_BOOTNODE_URL:-} ]]; then
+  check "bootnode $SHIELD_BOOTNODE_URL serves the pool's allow-list events" bootnode_serves_pool
+else
+  check "pool deployment ledger is inside the RPC retention window" inside_retention_window
+fi
 
 if ((failures > 0)); then
   printf '\n%d check(s) failed\n' "$failures"
