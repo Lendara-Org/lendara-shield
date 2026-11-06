@@ -228,5 +228,8 @@ export const es: Messages = {
     amountHidden: "Nada: monto oculto",
     notPool: "No es una transacción del pool",
     unknownKey: (key) => `Llave desconocida ${key}`,
+    intakeOwner: "Shield · intake",
+    intakeOwnerHint:
+      "Cuenta ómnibus de Shield: guarda un depósito por rampa entre el pago del anchor y la transferencia privada al usuario.",
   },
 };

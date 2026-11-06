@@ -7,7 +7,7 @@ import { useI18n } from "@/components/i18n";
 import { message } from "@/components/session";
 import { Card, Notice, TxLink } from "@/components/ui/primitives";
 import { api } from "@/lib/api";
-import { isChange, otherVisible, owner, publicAmount } from "@/lib/audit";
+import { isChange, otherVisible, owner, ownerHint, publicAmount } from "@/lib/audit";
 import { shorten } from "@/lib/explorer";
 
 type PublicView = { tx: PublicTransaction } | { error: string } | null;
@@ -86,6 +86,18 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
   );
 }
 
+/** The owner's name; the intake also gets a visible explanation for the auditor. */
+function Owner({ note }: { note: AuditNote }) {
+  const { t } = useI18n();
+  const hint = ownerHint(t.audit, note);
+  return (
+    <>
+      <span className={hint ? "font-medium" : "font-mono"}>{owner(t.audit, note)}</span>
+      {hint && <span className="block text-sm text-gray">{hint}</span>}
+    </>
+  );
+}
+
 function Notes({ tx, notes, asset, empty }: { tx: AuditTransaction; notes: AuditNote[]; asset: string; empty: string }) {
   const { t } = useI18n();
   if (notes.length === 0) return <span className="text-gray">{empty}</span>;
@@ -93,7 +105,7 @@ function Notes({ tx, notes, asset, empty }: { tx: AuditTransaction; notes: Audit
     <ul className="space-y-1">
       {notes.map((note) => (
         <li key={`${note.owner_note_public_key}:${note.amount}`}>
-          <span className="font-mono">{owner(t.audit, note)}</span> · {note.amount} {asset}
+          <Owner note={note} /> · {note.amount} {asset}
           {notes === tx.outputs && isChange(tx, note) && <span className="text-gray"> {t.audit.change}</span>}
         </li>
       ))}

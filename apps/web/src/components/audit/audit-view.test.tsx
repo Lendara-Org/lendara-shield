@@ -23,7 +23,8 @@ const txs: AuditTransaction[] = [
     tx_hash: HASH("2fe1"),
     kind: "transfer",
     ext_amount: "0",
-    inputs: [{ owner_note_public_key: key("1d"), owner_kind: "user", owner_stellar_account: INTAKE, amount: "9.3039215" }],
+    // The ramp's private transfer spends the intake's note: not a user, but not unknown either.
+    inputs: [{ owner_note_public_key: key("1d"), owner_kind: "intake", owner_stellar_account: null, amount: "9.3039215" }],
     outputs: [{ owner_note_public_key: key("c0"), owner_kind: "user", owner_stellar_account: CAROL, amount: "9.3039215" }],
   },
   {
@@ -88,6 +89,10 @@ describe("AuditView", () => {
     expect(within(explorer).getByText("Not visible")).toBeInTheDocument();
     expect(within(explorer).queryByText(/GCWQUS/)).not.toBeInTheDocument();
     expect(within(auditor).getByText("GCWQUS…3GQK")).toBeInTheDocument();
+    // The intake's note is named and explained, never shown as an unknown key.
+    expect(within(auditor).getByText("Shield · intake")).toBeInTheDocument();
+    expect(within(auditor).getByText(/Shield's omnibus account/)).toBeInTheDocument();
+    expect(within(auditor).queryByText(/Unknown key/)).not.toBeInTheDocument();
 
     // A direct-mode transfer: the signer is visible; the auditor sees the recipient and the change.
     await user.click(screen.getByRole("button", { name: /363a/ }));

@@ -226,6 +226,9 @@ export const en = {
     amountHidden: "Nothing: amount hidden",
     notPool: "Not a pool transaction",
     unknownKey: (key: string) => `Unknown key ${key}`,
+    intakeOwner: "Shield · intake",
+    intakeOwnerHint:
+      "Shield's omnibus account: it holds a ramp deposit between the anchor's payment and the private transfer to the user.",
   },
 };
 
