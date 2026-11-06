@@ -1,0 +1,11 @@
+$schema: https://api.gitbook.com/gitbook-docs.yaml
+site:
+  title: Lendara Shield
+  structure:
+    - type: space
+      key: documentation
+      title: Documentation
+      path: documentation
+      default: true
+      content:
+        directory: ./documentation
