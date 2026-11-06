@@ -45,8 +45,8 @@ test("the audit compares the explorer with the auditor", async ({ page }) => {
                 tx_hash: hash,
                 kind: "transfer",
                 ext_amount: "0",
-                inputs: [{ owner_note_public_key: `0x${"1d".repeat(32)}`, owner_stellar_account: intake, amount: "9.3039215" }],
-                outputs: [{ owner_note_public_key: `0x${"c0".repeat(32)}`, owner_stellar_account: carol, amount: "9.3039215" }],
+                inputs: [{ owner_note_public_key: `0x${"1d".repeat(32)}`, owner_kind: "intake", owner_stellar_account: null, amount: "9.3039215" }],
+                outputs: [{ owner_note_public_key: `0x${"c0".repeat(32)}`, owner_kind: "user", owner_stellar_account: carol, amount: "9.3039215" }],
               },
             ],
           },
@@ -73,6 +73,9 @@ test("the audit compares the explorer with the auditor", async ({ page }) => {
   await page.getByRole("button", { name: "Open the audit" }).click();
   await expect(page.getByText("Nothing: amount hidden")).toBeVisible();
   await expect(page.getByText("GCWQUS…3GQK")).toBeVisible();
+  // The ramp's private transfer spends the intake's note: named, never an unknown key.
+  await expect(page.getByText("Shield · intake")).toBeVisible();
+  await expect(page.getByText(/Unknown key/)).toHaveCount(0);
   await page.setViewportSize({ width: 375, height: 1000 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });

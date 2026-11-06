@@ -2,7 +2,7 @@ import type { AuditTransaction } from "@lendara/shield-api-types";
 
 import { messages } from "@/content/messages";
 
-import { isChange, movedAmount, otherVisible, owner, publicAmount } from "./audit";
+import { isChange, movedAmount, otherVisible, owner, ownerHint, publicAmount } from "./audit";
 
 const en = messages.en.audit;
 const es = messages.es.audit;
@@ -38,6 +38,31 @@ describe("audit wording", () => {
     expect(owner(en, { owner_note_public_key: key, owner_kind: "user", owner_stellar_account: "GBJ3H74T4LB23V3WKE46BSWMZVOH4YWX2P5ZLQTY4EZXH3YAZZUCPFWY", amount: "1" })).toBe("GBJ3H7…PFWY");
     expect(owner(en, { owner_note_public_key: key, owner_kind: "unknown", owner_stellar_account: null, amount: "1" })).toBe("Unknown key 0xa2a2a2…a2a2");
     expect(owner(es, { owner_note_public_key: key, owner_kind: "unknown", owner_stellar_account: null, amount: "1" })).toBe("Llave desconocida 0xa2a2a2…a2a2");
+  });
+
+  it("names Shield's intake and explains it, in both languages", () => {
+    const intake = { owner_note_public_key: `0x${"bc".repeat(32)}`, owner_kind: "intake" as const, owner_stellar_account: null, amount: "1" };
+    expect(owner(en, intake)).toBe("Shield · intake");
+    expect(owner(es, intake)).toBe("Shield · intake");
+    expect(ownerHint(en, intake)).toMatch(/omnibus account/);
+    expect(ownerHint(es, intake)).toMatch(/Cuenta ómnibus/);
+  });
+
+  it("still names owners when an older API sends no owner_kind", () => {
+    // The web may be deployed before the API that adds the field.
+    const legacy = (account: string | null) =>
+      ({ owner_note_public_key: `0x${"a2".repeat(32)}`, owner_stellar_account: account, amount: "1" }) as unknown as Parameters<typeof owner>[1];
+    expect(owner(en, legacy("GBJ3H74T4LB23V3WKE46BSWMZVOH4YWX2P5ZLQTY4EZXH3YAZZUCPFWY"))).toBe("GBJ3H7…PFWY");
+    expect(owner(en, legacy(null))).toBe("Unknown key 0xa2a2a2…a2a2");
+    expect(ownerHint(en, legacy(null))).toBeUndefined();
+  });
+
+  it("explains only the intake", () => {
+    const key = `0x${"a2".repeat(32)}`;
+    expect(ownerHint(en, { owner_note_public_key: key, owner_kind: "unknown", owner_stellar_account: null, amount: "1" })).toBeUndefined();
+    expect(
+      ownerHint(en, { owner_note_public_key: key, owner_kind: "user", owner_stellar_account: "GBJ3H74T4LB23V3WKE46BSWMZVOH4YWX2P5ZLQTY4EZXH3YAZZUCPFWY", amount: "1" }),
+    ).toBeUndefined();
   });
 
   it("lists visible accounts besides the signer", () => {
