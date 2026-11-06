@@ -111,12 +111,13 @@ async fn decrypts_and_attributes_every_note_to_its_user(db: PgPool) -> TestResul
     assert_eq!(txs[2]["ext_amount"], "9.3039215");
     assert_eq!(txs[2]["tx_hash"], hash(0xd4).as_str());
     assert_eq!(txs[2]["outputs"][0]["owner_stellar_account"], INTAKE);
+    assert_eq!(txs[2]["outputs"][0]["owner_kind"], "user");
 
     assert_eq!(txs[1]["kind"], "transfer");
     assert_eq!(txs[1]["ext_amount"], "0");
     assert_eq!(
         txs[1]["outputs"][0],
-        json!({"owner_note_public_key": BOB_KEY, "owner_stellar_account": BOB, "amount": "9.3039215"})
+        json!({"owner_note_public_key": BOB_KEY, "owner_kind": "user", "owner_stellar_account": BOB, "amount": "9.3039215"})
     );
 
     assert_eq!(txs[0]["kind"], "withdraw");
@@ -130,6 +131,74 @@ async fn decrypts_and_attributes_every_note_to_its_user(db: PgPool) -> TestResul
         txs[0]["inputs"][0]["owner_stellar_account"],
         json!(null),
         "not a Shield user"
+    );
+    assert_eq!(txs[0]["inputs"][0]["owner_kind"], "unknown");
+    Ok(())
+}
+
+#[sqlx::test]
+async fn labels_the_intakes_notes_instead_of_calling_them_unknown(db: PgPool) -> TestResult {
+    // The intake is not a Shield user: only its note key tells it apart.
+    register(&db, BOB, BOB_KEY, 1).await?;
+    let auditor = Arc::new(FakeAuditor::with(history()));
+    auditor.set_intake_key(field(INTAKE_KEY));
+    let app = audit_app(db, Some(auditor), Arc::new(FakeExplorer::default()))?;
+
+    let (status, _, body) = send(app, audit_request("", Some(AUDITOR_TOKEN))?).await?;
+    assert_eq!(status, StatusCode::OK);
+    let txs = body["transactions"].as_array().ok_or("transactions")?;
+    let deposit = &txs[2]["outputs"][0];
+    assert_eq!(deposit["owner_kind"], "intake");
+    assert_eq!(deposit["owner_stellar_account"], json!(null));
+    assert_eq!(deposit["owner_note_public_key"], INTAKE_KEY);
+    assert_eq!(txs[1]["inputs"][0]["owner_kind"], "intake");
+    assert_eq!(txs[1]["outputs"][0]["owner_kind"], "user");
+    assert_eq!(txs[0]["inputs"][0]["owner_kind"], "unknown");
+    Ok(())
+}
+
+#[sqlx::test]
+async fn a_user_who_registered_the_intakes_key_is_not_shown_as_its_owner(db: PgPool) -> TestResult {
+    // Onboarding proves the account, not that the note key is its own: an
+    // account may register the intake's public note key.
+    register(&db, BOB, BOB_KEY, 1).await?;
+    register(&db, INTAKE, INTAKE_KEY, 2).await?;
+    let auditor = Arc::new(FakeAuditor::with(history()));
+    auditor.set_intake_key(field(INTAKE_KEY));
+    let app = audit_app(db, Some(auditor), Arc::new(FakeExplorer::default()))?;
+
+    let (_, _, body) = send(app, audit_request("", Some(AUDITOR_TOKEN))?).await?;
+    let deposit = &body["transactions"][2]["outputs"][0];
+    assert_eq!(deposit["owner_kind"], "intake");
+    assert_eq!(deposit["owner_stellar_account"], json!(null));
+    assert_eq!(
+        body["transactions"][1]["outputs"][0]["owner_stellar_account"],
+        BOB
+    );
+    Ok(())
+}
+
+#[sqlx::test]
+async fn an_unreadable_intake_key_only_leaves_its_notes_unknown_and_is_retried(
+    db: PgPool,
+) -> TestResult {
+    let auditor = Arc::new(FakeAuditor::with(history()));
+    let app = audit_app(db, Some(auditor.clone()), Arc::new(FakeExplorer::default()))?;
+
+    // The lookup fails: the audit still answers, with the intake's notes unknown.
+    let (status, _, body) = send(app.clone(), audit_request("", Some(AUDITOR_TOKEN))?).await?;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        body["transactions"][2]["outputs"][0]["owner_kind"],
+        "unknown"
+    );
+
+    // Once the key can be read, the next request labels them.
+    auditor.set_intake_key(field(INTAKE_KEY));
+    let (_, _, body) = send(app, audit_request("", Some(AUDITOR_TOKEN))?).await?;
+    assert_eq!(
+        body["transactions"][2]["outputs"][0]["owner_kind"],
+        "intake"
     );
     Ok(())
 }

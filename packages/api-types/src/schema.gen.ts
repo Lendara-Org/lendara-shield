@@ -438,7 +438,15 @@ export interface components {
         };
         AuditNote: {
             owner_note_public_key: components["schemas"]["PoolField"];
-            /** @description Resolved from Shield's records (Shield is the ASP). `null` if the key is not a Shield user. */
+            /**
+             * @description Who owns the note, as Shield knows it: `user` (a Shield user, see `owner_stellar_account`),
+             *     `intake` (Shield's omnibus account, which holds a ramp deposit between the anchor's payment and
+             *     the private transfer to the user) or `unknown` (a key that is neither, e.g. a transfer to someone
+             *     outside Shield).
+             * @enum {string}
+             */
+            owner_kind: "user" | "intake" | "unknown";
+            /** @description Resolved from Shield's records (Shield is the ASP). `null` unless `owner_kind` is `user`. */
             owner_stellar_account: components["schemas"]["StellarAccount"] | null;
             amount: components["schemas"]["DecimalAmount"];
         };

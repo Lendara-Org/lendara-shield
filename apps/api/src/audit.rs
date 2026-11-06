@@ -44,11 +44,37 @@ impl TxKind {
     }
 }
 
+/// Who owns a decrypted note, as Shield knows it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OwnerKind {
+    /// A Shield user (its account is known).
+    User,
+    /// Shield's omnibus account: it holds a ramp deposit between the
+    /// anchor's payment and the private transfer to the user. Without this
+    /// label the auditor would see it as an unknown key.
+    Intake,
+    /// Neither, e.g. a transfer to someone outside Shield.
+    Unknown,
+}
+
+impl OwnerKind {
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::User => "user",
+            Self::Intake => "intake",
+            Self::Unknown => "unknown",
+        }
+    }
+}
+
 /// A decrypted note attributed to a Shield user when possible.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AuditNoteView {
     /// The owner's note public key as users register it.
     pub owner_note_public_key: PoolField,
+    pub owner_kind: OwnerKind,
+    /// `Some` exactly when `owner_kind` is [`OwnerKind::User`].
     pub owner_stellar_account: Option<AccountId>,
     pub amount: String,
 }
@@ -80,6 +106,8 @@ pub struct AuditService {
     explorer: Option<Arc<dyn Explorer>>,
     /// Ledger → the pool transaction in it. Ledgers never change.
     hashes: Arc<Mutex<HashMap<u32, Option<TxHash>>>>,
+    /// The intake's note key, once known. It never changes for a wallet.
+    intake_key: Arc<Mutex<Option<PoolField>>>,
 }
 
 impl AuditService {
@@ -94,6 +122,7 @@ impl AuditService {
             auditor,
             explorer,
             hashes: Arc::default(),
+            intake_key: Arc::default(),
         }
     }
 
@@ -111,6 +140,7 @@ impl AuditService {
             .map(registered_key)
             .collect();
         let accounts = users::accounts_by_note_keys(&self.db, &owners).await?;
+        let intake = self.intake_key(auditor.as_ref()).await;
 
         let mut views = Vec::with_capacity(txs.len());
         for tx in txs {
@@ -122,8 +152,21 @@ impl AuditService {
                     .iter()
                     .map(|note| {
                         let key = registered_key(note);
+                        // The intake's key, confirmed by its own wallet, wins
+                        // over user records: onboarding proves the account,
+                        // not that the note key is its own, so anyone could
+                        // register the intake's public key as theirs.
+                        let (owner_kind, account) = if intake.as_ref() == Some(&key) {
+                            (OwnerKind::Intake, None)
+                        } else {
+                            match accounts.get(&key) {
+                                Some(account) => (OwnerKind::User, Some(account.clone())),
+                                None => (OwnerKind::Unknown, None),
+                            }
+                        };
                         AuditNoteView {
-                            owner_stellar_account: accounts.get(&key).cloned(),
+                            owner_kind,
+                            owner_stellar_account: account,
                             owner_note_public_key: key,
                             amount: format_stroops(i128::from(note.stroops)),
                         }
@@ -149,6 +192,30 @@ impl AuditService {
             .transaction(hash)
             .await
             .map_err(|e| AuditError::Unavailable(e.0))
+    }
+
+    /// The intake's note key. A failed lookup only labels its notes
+    /// `unknown` for this request; it is retried on the next one.
+    async fn intake_key(&self, auditor: &dyn PoolAuditor) -> Option<PoolField> {
+        if let Some(known) = self.known_intake_key().clone() {
+            return Some(known);
+        }
+        match auditor.intake_note_key().await {
+            Ok(key) => {
+                *self.known_intake_key() = Some(key.clone());
+                Some(key)
+            }
+            Err(err) => {
+                tracing::warn!(code = %err.code, message = %err.message, "could not read the intake's note key");
+                None
+            }
+        }
+    }
+
+    fn known_intake_key(&self) -> std::sync::MutexGuard<'_, Option<PoolField>> {
+        self.intake_key
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
     }
 
     /// The pool transaction in `ledger` when exactly one is there. A lookup

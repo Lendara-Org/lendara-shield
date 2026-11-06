@@ -150,6 +150,43 @@ async fn audits_with_the_view_key_file_and_parses_notes() -> TestResult {
 }
 
 #[tokio::test]
+async fn the_auditor_reads_the_intakes_note_key_from_pool_cli_keys() -> TestResult {
+    let script = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/fake-pool-cli.sh");
+    let auditor = |mode: &str| -> Result<CliPoolClient, Box<dyn std::error::Error>> {
+        Ok(CliPoolClient::new(
+            script.clone(),
+            vec![
+                ("SHIELD_CIRCUITS_DIR".into(), mode.into()),
+                ("PATH".into(), std::env::var("PATH")?),
+            ],
+            Duration::from_secs(10),
+            SorobanRpc::new("http://127.0.0.1:1")?,
+            [0; 32],
+        ))
+    };
+    // The fake CLI's `keys` answers 0x22…22 as the note key.
+    let key = PoolAuditor::intake_note_key(&auditor("ok")?).await?;
+    assert_eq!(key.as_str(), format!("0x{}", "22".repeat(32)));
+
+    let err = PoolAuditor::intake_note_key(&auditor("error")?)
+        .await
+        .err()
+        .ok_or("expected an error")?;
+    assert!(!err.code.is_empty());
+
+    // A successful run with output that is not keys is a retryable protocol error.
+    for mode in ["garbage", "wrong-shape"] {
+        let err = PoolAuditor::intake_note_key(&auditor(mode)?)
+            .await
+            .err()
+            .ok_or("expected an error")?;
+        assert_eq!(err.code, "cli_protocol", "{mode}");
+        assert!(err.retryable, "{mode}");
+    }
+    Ok(())
+}
+
+#[tokio::test]
 async fn the_workers_instance_never_gets_the_view_key() -> TestResult {
     // Built like the shielding worker's client: no SHIELD_GVK_KEY_FILE.
     let err = client("ok", Duration::from_secs(10))?
