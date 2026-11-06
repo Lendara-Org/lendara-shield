@@ -1,6 +1,6 @@
 # Shield Protocol — draft 0.1
 
-> Status: **draft**, written for HackMeridian 2026. Level 1 is implemented by Lendara Shield on testnet. Level 2 is a proposal and is **not** implemented.
+> Status: **draft 0.1**. Level 1 is implemented by Lendara Shield on testnet. Level 2 is a proposal and is **not** implemented.
 
 The Shield Protocol lets a funding source deliver money **into a privacy pool** instead of to a user's public address, while eligibility, allow-listing and audit stay with accountable parties. It is named without the "Lendara" brand so any integrator can adopt it. The first funding source it specifies is a SEP-24 anchor.
 
