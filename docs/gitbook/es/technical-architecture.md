@@ -204,9 +204,9 @@ En la corrida de rampa del 2026-10-26, la dirección del usuario aparece 0 veces
 | Rampa: depósito en el pool (`ext_amount > 0`) | [57756b31…26e1](https://stellar.expert/explorer/testnet/tx/57756b312631f526779dcbbf555833b72e95f0f3c0be3f153f0fc33d986026e1) |
 | Rampa: transferencia privada (`ext_amount = 0`) | [86edced9…6420](https://stellar.expert/explorer/testnet/tx/86edced9f47e3f8582272b74ddcc998af18fd22e5b6cdaf76f6e399dad046420) |
 | Directo: transferencia privada desde el navegador | [84c898a0…ca41](https://stellar.expert/explorer/testnet/tx/84c898a0ce46c0005a1eb476a5e71b3e500c53949b33a96978bc3a62f5ceca41) |
-| Contrato del pool (USDC) | [CDD66GL3…C7OF](https://stellar.expert/explorer/testnet/contract/CDD66GL3HT5JLRIB5BHAV36XFSEAGRXMGRJJ4VK747ODBXEJ77YAC7OF) |
-| Allow-list del ASP | [CCETAQAR…26GB](https://stellar.expert/explorer/testnet/contract/CCETAQARCUMNMCLJKQM6UNY2QJDOJZYGI54MXA3FMPJY4VJDMN2L26GB) |
-| Block-list del ASP | [CCWU7V5H…NLKT](https://stellar.expert/explorer/testnet/contract/CCWU7V5HXV6NKPJ3UEZMTGFWK3V35YO42AQTPSXPN2GSDK3RXLICNLKT) |
+| Contrato del pool (USDC) | [CAB6FI43…KR4](https://stellar.expert/explorer/testnet/contract/CAB6FI43BVMPMAXYCLVZ7R5DYQY3IUJF3G7JMSBEXJHWO7LEUE3H4KR4) |
+| Allow-list del ASP | [CCCFDS2I…CHVG](https://stellar.expert/explorer/testnet/contract/CCCFDS2IABWNR7VEFH5F3OUGNBMNPVMD5UOA7V6V4ZCBTM3UEMRYCHVG) |
+| Block-list del ASP | [CAO3DGTQ…B53C](https://stellar.expert/explorer/testnet/contract/CAO3DGTQTVZ2A7XVKKZDHOR7CTTPOYV4U3YLK5UDCUSQBUE6RBEVB53C) |
 
 ## 10. Lo que construye cada tramo
 

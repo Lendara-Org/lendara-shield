@@ -20,7 +20,7 @@ Built for **HackMeridian 2026** (Genesis track).
 
 Both modes are enabled: ramp (through the sandbox anchor) and direct. Use [Freighter](https://www.freighter.app/) set to **Testnet**. Direct deposits and withdraws need a trustline to the sandbox USDC (issuer `GBVIQ7QVTTJ4NLFTYYFPEKWYJWAMKDAOFYSR52ZGWJFSGTSVOO5H47B5`): the web checks it and says how to add it in Freighter. Ramp mode needs no trustline, since the user's account never receives USDC.
 
-> The public RPC keeps about 7 days of history and proving needs the pool's full history. This pool (deployed at ledger 5,395,126 on 2026-10-26) leaves that window around **2026-11-02**; after that it needs SPP's bootnode or a redeploy.
+> Proving needs the pool's full event history and the public RPC keeps about 7 days of it. Shield runs SPP's bootnode at <https://lendara-shield.duckdns.org/bootnode> for the older events; the API, `pool-cli` and the web read from it when `SHIELD_BOOTNODE_URL` / `NEXT_PUBLIC_BOOTNODE_URL` are set. The pool was redeployed on 2026-11-06 because the first one (2026-10-26) outlived the window before the bootnode existed.
 
 ## The problem
 
@@ -91,14 +91,14 @@ Kira's public USDC balance went from 9.3039215 to 7.8039215 (−2 deposited, +0.
 
 **Re-verified on 2026-10-28** (read-only, plus one trustline on a fresh account): web, API, anchor and contracts share the same configuration, and the intake completed 5 ramp intents with no USDC left in custody. See [docs/testing/2026-10-28-testnet-verification.md](docs/testing/2026-10-28-testnet-verification.md).
 
-**Testnet deployment** (SPP `sdk-v0.2.1`, policy `allowlist-blocklist` + `gvk-traceable`, deployed at ledger 5,395,126):
+**Testnet deployment** (SPP `sdk-v0.2.1`, policy `allowlist-blocklist` + `gvk-traceable`, deployed at ledger 5,591,375 on 2026-11-06; the hashes above are from the first pool, `CDD66GL3…C7OF`, deployed at ledger 5,395,126):
 
 | Contract or account | Address |
 |---|---|
-| Privacy pool (USDC) | [`CDD66GL3…C7OF`](https://stellar.expert/explorer/testnet/contract/CDD66GL3HT5JLRIB5BHAV36XFSEAGRXMGRJJ4VK747ODBXEJ77YAC7OF) |
+| Privacy pool (USDC) | [`CAB6FI43…KR4`](https://stellar.expert/explorer/testnet/contract/CAB6FI43BVMPMAXYCLVZ7R5DYQY3IUJF3G7JMSBEXJHWO7LEUE3H4KR4) |
 | USDC (SAC of the sandbox anchor's asset) | [`CAE6WLIM…R4QX`](https://stellar.expert/explorer/testnet/contract/CAE6WLIMEMDSRSZZW7H3O7DJS2DRDV5NTR2FHE53TKGJMJOHWGKSR4QX) |
-| ASP allow-list (membership) | [`CCETAQAR…26GB`](https://stellar.expert/explorer/testnet/contract/CCETAQARCUMNMCLJKQM6UNY2QJDOJZYGI54MXA3FMPJY4VJDMN2L26GB) |
-| ASP block-list (non-membership) | [`CCWU7V5H…NLKT`](https://stellar.expert/explorer/testnet/contract/CCWU7V5HXV6NKPJ3UEZMTGFWK3V35YO42AQTPSXPN2GSDK3RXLICNLKT) |
+| ASP allow-list (membership) | [`CCCFDS2I…CHVG`](https://stellar.expert/explorer/testnet/contract/CCCFDS2IABWNR7VEFH5F3OUGNBMNPVMD5UOA7V6V4ZCBTM3UEMRYCHVG) |
+| ASP block-list (non-membership) | [`CAO3DGTQ…B53C`](https://stellar.expert/explorer/testnet/contract/CAO3DGTQTVZ2A7XVKKZDHOR7CTTPOYV4U3YLK5UDCUSQBUE6RBEVB53C) |
 | Operator (pool and ASP admin) | [`GCCWXZJT…2GTE`](https://stellar.expert/explorer/testnet/account/GCCWXZJTF7XMEISC2CXLO6SWETJHE4YBBNVXSMRYOWH7RUOEN2YGGVTE) |
 | Shield's omnibus account (intake) | [`GC5VXVUO…EHPQ`](https://stellar.expert/explorer/testnet/account/GC5VXVUOU6OHZVZ3KZNFK5CJNOEDQUMOOZI32VHYHYV64GBHVCPTEHPQ) |
 
