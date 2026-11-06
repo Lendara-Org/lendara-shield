@@ -21,6 +21,23 @@ describe("contentSecurityPolicy", () => {
     expect(production["connect-src"]).toEqual(["'self'", "https://api.shield.example", "https://soroban-testnet.stellar.org"]);
   });
 
+  it("adds a bootnode's origin only when one is configured", () => {
+    const withBootnode = directives(
+      contentSecurityPolicy({
+        apiBaseUrl: "https://shield.example",
+        sorobanRpcUrl: "https://soroban-testnet.stellar.org",
+        bootnodeUrl: "https://bootnode.example/bootnode",
+        development: false,
+      }),
+    );
+    expect(withBootnode["connect-src"]).toEqual([
+      "'self'",
+      "https://shield.example",
+      "https://soroban-testnet.stellar.org",
+      "https://bootnode.example",
+    ]);
+  });
+
   it("runs only the app's own code and the SDK's WebAssembly", () => {
     expect(production["script-src"]).toEqual(["'self'", "'unsafe-inline'", "'wasm-unsafe-eval'"]);
     expect(production["script-src"]).not.toContain("'unsafe-eval'");

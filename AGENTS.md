@@ -184,6 +184,8 @@ Routes: `/` (what Shield is), `/docs` (overview, protocol, quickstart, API, scen
 
 Direct deposit and withdraw first read the account's trustline to the pool's asset from the Stellar RPC (`getLedgerEntries`, `lib/trustline.ts`; the CSP only allows the API and the RPC, and the web has no Stellar SDK). A missing trustline blocks the form and says how to add it in Freighter; an RPC failure blocks nothing.
 
+The browser SDK syncs pool events older than the RPC's ~7-day window from SPP's bootnode when `NEXT_PUBLIC_BOOTNODE_URL` is set (`lib/pool/bootnode.ts`; its origin is added to the CSP). Without it, a pool older than the window fails at load with a message naming the variable.
+
 ## 7. Conventions and quality
 
 ### Rust

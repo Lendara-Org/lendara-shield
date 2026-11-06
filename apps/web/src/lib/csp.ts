@@ -2,9 +2,9 @@
  * Content-Security-Policy of the web app (set in `next.config.ts`).
  *
  * The app loads its code, the SPP SDK, its WASM, workers and circuits from
- * its own origin, and talks only to Shield's API and the Stellar RPC. The
- * policy keeps it that way: no other script, frame, plugin or form target,
- * and data can only be sent to those two origins.
+ * its own origin, and talks only to Shield's API, the Stellar RPC and, if
+ * configured, SPP's bootnode. The policy keeps it that way: no other script,
+ * frame, plugin or form target, and data can only be sent to those origins.
  *
  * Limits: `script-src` needs `'unsafe-inline'` because Next inlines its
  * hydration scripts in statically rendered pages (no per-request nonce), and
@@ -15,6 +15,8 @@
 export interface CspOptions {
   apiBaseUrl: string;
   sorobanRpcUrl: string;
+  /** SPP bootnode the SDK reads old pool events from, if any. */
+  bootnodeUrl?: string | undefined;
   development: boolean;
 }
 
@@ -23,9 +25,15 @@ function origin(url: string): string {
   return new URL(url).origin;
 }
 
-export function contentSecurityPolicy({ apiBaseUrl, sorobanRpcUrl, development }: CspOptions): string {
+export function contentSecurityPolicy({ apiBaseUrl, sorobanRpcUrl, bootnodeUrl, development }: CspOptions): string {
   const script = ["'self'", "'unsafe-inline'", "'wasm-unsafe-eval'", ...(development ? ["'unsafe-eval'"] : [])];
-  const connect = ["'self'", origin(apiBaseUrl), origin(sorobanRpcUrl), ...(development ? ["ws:"] : [])];
+  const connect = [
+    "'self'",
+    origin(apiBaseUrl),
+    origin(sorobanRpcUrl),
+    ...(bootnodeUrl ? [origin(bootnodeUrl)] : []),
+    ...(development ? ["ws:"] : []),
+  ];
   return [
     "default-src 'self'",
     `script-src ${script.join(" ")}`,
