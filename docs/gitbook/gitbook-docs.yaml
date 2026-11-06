@@ -9,3 +9,11 @@ site:
       default: true
       content:
         directory: ./documentation
+        language: en
+    - type: space
+      key: documentation-es
+      title: Documentación (ES)
+      path: es
+      content:
+        directory: ./es
+        language: es
