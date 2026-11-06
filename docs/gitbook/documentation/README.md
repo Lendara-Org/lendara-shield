@@ -55,7 +55,6 @@ Real testnet transactions for both modes are listed in [Technical Architecture, 
 [Lendara](https://github.com/Lendara-Org):
 
 * **Anouk Rímola** — [LinkedIn](https://www.linkedin.com/in/anouk-r%C3%ADmola-b9915a223/)
-* **Bárbara Olivera** — [LinkedIn](https://www.linkedin.com/in/barbaraolivera/)
 * **María Elisa Araya** — [LinkedIn](https://www.linkedin.com/in/arayamariaelisa/)
 * **Karen Giannetto** — [LinkedIn](https://www.linkedin.com/in/karen-giannetto/)
 
