@@ -361,6 +361,65 @@ async fn a_handoff_below_the_deployment_ledger_resumes_at_the_deployment_ledger(
 }
 
 #[tokio::test]
+async fn an_empty_bootnode_page_with_a_cursor_keeps_reading_until_the_handoff() -> TestResult {
+    // The archive is catching up: an empty page that is not its end.
+    let bootnode = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(body_partial_json(json!({
+            "method": "getEvents",
+            "params": { "startLedger": DEPLOYMENT_LEDGER },
+        })))
+        .respond_with(page(&[], "b1"))
+        .mount(&bootnode)
+        .await;
+    Mock::given(method("POST"))
+        .and(body_partial_json(json!({
+            "method": "getEvents",
+            "params": { "pagination": { "cursor": "b1" } },
+        })))
+        .respond_with(rpc_error(
+            -32002,
+            "Continue syncing on your RPC endpoint",
+            &json!({ "reason": "retention_threshold", "fromLedger": HANDOFF_LEDGER }),
+        ))
+        .mount(&bootnode)
+        .await;
+    let rpc = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(body_partial_json(json!({
+            "method": "getEvents",
+            "params": { "startLedger": HANDOFF_LEDGER },
+        })))
+        .respond_with(page(&[leaf_added()], "r1"))
+        .mount(&rpc)
+        .await;
+    let check = client("ok", &rpc.uri())?
+        .with_bootnode(Some(SorobanRpc::new(bootnode.uri())?))
+        .check_intake(&membership()?, DEPLOYMENT_LEDGER)
+        .await?;
+    assert!(check.allow_listed);
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_bootnode_cursor_that_does_not_move_ends_its_scan() -> TestResult {
+    let bootnode = MockServer::start().await;
+    Mock::given(method("POST"))
+        .respond_with(page(&[], "stuck"))
+        .mount(&bootnode)
+        .await;
+    let server = rpc().await;
+    let check = client("ok", &server.uri())?
+        .with_bootnode(Some(SorobanRpc::new(bootnode.uri())?))
+        .check_intake(&membership()?, DEPLOYMENT_LEDGER)
+        .await?;
+    assert!(check.allow_listed);
+    // The first page and one repeat of the same cursor, then the RPC.
+    assert_eq!(bootnode.received_requests().await.map_or(0, |r| r.len()), 2);
+    Ok(())
+}
+
+#[tokio::test]
 async fn check_reports_a_leaf_missing_from_both_the_bootnode_and_the_rpc() -> TestResult {
     let bootnode = handing_off_bootnode().await;
     let rpc = MockServer::start().await;

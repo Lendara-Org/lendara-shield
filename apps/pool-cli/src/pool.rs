@@ -7,7 +7,7 @@ use std::collections::VecDeque;
 use serde_json::{Value, json};
 use stellar_private_payments::{
     CircuitStore, Client, Error as SdkError, LocalProver, LocalSigner, LocalStorage, PrivatePool,
-    ProverHandle, SignerHandle,
+    ProverHandle, RetentionGap, SignerHandle,
     chain::{LocalSigner as Keypair, RpcClient},
     circuit_lock,
     gvk::{GvkAudit, GvkTxAudit},
@@ -331,13 +331,22 @@ fn read(path: &str) -> Result<String, CliError> {
 fn sdk(err: &SdkError) -> CliError {
     let message = err.to_string();
     match err {
-        SdkError::Rpc(_) => CliError::new("chain", message, true),
-        SdkError::RetentionGap(_) => CliError::new("retention_gap", message, false),
-        // The wallet's ASP index is a few ledgers behind the chain: it
-        // catches up on its own, so the caller should wait, not give up.
-        SdkError::MembershipSync(AspMembershipSync::SyncRequired(_)) => {
+        // A bootnode request that failed (network, bad answer) may succeed
+        // on retry like any RPC call; it counts as an attempt.
+        SdkError::Rpc(_) | SdkError::RetentionGap(RetentionGap::BootnodeFailed(_)) => {
+            CliError::new("chain", message, true)
+        }
+        // Waits, not failures, so the caller does not spend an attempt: the
+        // wallet's ASP index is a few ledgers behind the chain, or the
+        // bootnode is still archiving (`-32004`). Both catch up on their own;
+        // counting them would send funded intents to `error`.
+        SdkError::MembershipSync(AspMembershipSync::SyncRequired(_))
+        | SdkError::RetentionGap(RetentionGap::BootnodeNotReady(_)) => {
             CliError::new("sync_required", message, true)
         }
+        // The RPC lacks the history and no bootnode is configured: retrying
+        // cannot help until SHIELD_BOOTNODE_URL is set.
+        SdkError::RetentionGap(_) => CliError::new("retention_gap", message, false),
         SdkError::MembershipSync(_) => CliError::new("not_allowed", message, false),
         SdkError::AccountNotFound { .. } | SdkError::InvalidConfig(_) => {
             CliError::new("config", message, false)
@@ -352,6 +361,28 @@ fn sdk(err: &SdkError) -> CliError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_bootnode_that_is_not_ready_is_waited_for_without_spending_an_attempt() {
+        let err = sdk(&SdkError::RetentionGap(RetentionGap::BootnodeNotReady(
+            "archive not ready".into(),
+        )));
+        assert_eq!((err.error, err.retryable), ("sync_required", true));
+    }
+
+    #[test]
+    fn a_failed_bootnode_request_is_a_retryable_chain_failure() {
+        let err = sdk(&SdkError::RetentionGap(RetentionGap::BootnodeFailed(
+            "connection refused".into(),
+        )));
+        assert_eq!((err.error, err.retryable), ("chain", true));
+    }
+
+    #[test]
+    fn missing_history_without_a_bootnode_is_not_retryable() {
+        let err = sdk(&SdkError::RetentionGap(RetentionGap::SyncGap));
+        assert_eq!((err.error, err.retryable), ("retention_gap", false));
+    }
 
     #[test]
     fn an_unset_or_blank_bootnode_means_none_and_a_set_one_is_trimmed() {
