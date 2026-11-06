@@ -76,12 +76,23 @@ Even `getLatestLedger`, the cheapest call, averaged 4.6 s. Measured directly wit
 
 With ~0.1 s requests, the sync and the state read happen within a fraction of a second, so they rarely straddle a ledger close, and the precondition passed every time in this sample. A fast RPC makes the race unlikely, not impossible: a refusal is still retried as before.
 
+**5. Live ramp run on the demo after switching to Gateway.fm** (fresh test account, sandbox card approved, ~21:14 UTC). Times from Horizon, independently checked by Codex:
+
+| Interval | Before (SDF RPC, 18:23–18:38) | After (Gateway.fm, 21:14) |
+|---|---|---|
+| Anchor payment → pool deposit | 300 s | 20 s |
+| Pool deposit → private transfer | 570 s | 20 s |
+| **Anchor payment → private transfer** | **870 s** | **40 s** |
+| `SyncRequired` waits in the API log | 18 | 0 |
+
+Transactions after the switch: `7b93d63f…` (anchor → intake), `2d1f020b…` (pool deposit, `ext_amount` = the anchor's 1.4607843 USDC), `2e45d1d9…` (private transfer, `ext_amount` = 0). The user's address appears in none of them. One run on each side, so it shows the size of the change, not a distribution.
+
 ## Conclusions
 
 - **Cause:** the public SDF testnet RPC was slow (seconds per request, erratic). Shield's shielding path makes about nine sequential requests per proof, so the slowness became ~42-second attempts that lost the race against the ledger close time most of the time.
 - **Ruled out by the evidence:** the Stellar network (it kept closing ledgers and confirming our transactions), and the cost of starting a fresh `pool-cli` process (opening the SDK client takes ~7 s).
 - **Not measured, so not ruled out for the original incident:** contention on the wallet lock shared by the shielding worker and the auditor (the standalone `pool-cli` runs above bypass it; one 13 s audit request ran before the waits began), and bootnode delays. The SDK's membership check is intended upstream (its `main` branch has the same check), but checking the ASP root before the ledger gap would refuse less often, so the SDK's design also shapes how often the race is lost.
-- **Fix:** point `SOROBAN_RPC_URL` (API and `pool-cli`) and `NEXT_PUBLIC_SOROBAN_RPC_URL` (browser) at a fast, healthy RPC that holds the pool's history. Both are configuration, and the web's CSP follows the variable. The bootnode's upstream RPC is configured separately (`BOOTNODE_UPSTREAM_RPC_URL`, otherwise the manifest's `rpcUrl`) and does not follow these variables. A self-hosted `stellar-rpc` would remove the third-party dependency and could keep more than 7 days of history.
+- **Fix:** point `SOROBAN_RPC_URL` (API and `pool-cli`) and `NEXT_PUBLIC_SOROBAN_RPC_URL` (browser) at a fast, healthy RPC that holds the pool's history. Both are configuration, and the web's CSP follows the variable. The bootnode's upstream RPC is configured separately (`BOOTNODE_UPSTREAM_RPC_URL`, otherwise the manifest's `rpcUrl`) and does not follow these variables. A self-hosted `stellar-rpc` would remove the third-party dependency and could keep more than 7 days of history; it is on the roadmap as H11 (AGENTS.md §10).
 - **Not adopted:** retrying `SyncRequired` inside one `pool-cli` run (the experimental branch). With a slow RPC it did not break the race, and 10 attempts × 42 s exceeds the API's 180 s budget for a `pool-cli` run. A timeout counts as a failed attempt and could send a funded intent to `error`, which `SyncRequired` never does. With a fast RPC it is not needed.
 
 ## Reproduce
