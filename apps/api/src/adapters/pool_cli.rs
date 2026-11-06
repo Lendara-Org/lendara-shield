@@ -19,13 +19,14 @@ use crate::{
 };
 
 /// Variables forwarded to the CLI (same names as the API's `.env`).
-pub const FORWARDED_ENV: [&str; 6] = [
+pub const FORWARDED_ENV: [&str; 7] = [
     "SHIELD_INTAKE_SECRET",
     "SHIELD_DEPLOYMENT_FILE",
     "SHIELD_INTAKE_WALLET_PATH",
     "SHIELD_CIRCUITS_LOCK_FILE",
     "SHIELD_CIRCUITS_DIR",
     "SOROBAN_RPC_URL",
+    "SHIELD_BOOTNODE_URL",
 ];
 
 /// Extra variable of the auditor's instance: the Global View Key file.
@@ -40,6 +41,8 @@ pub struct CliPoolClient {
     env: Vec<(String, String)>,
     timeout: Duration,
     rpc: SorobanRpc,
+    /// SPP bootnode for pool events older than the RPC keeps.
+    bootnode: Option<SorobanRpc>,
     intake: [u8; 32],
     /// Held while the CLI runs: every instance opens the same SDK wallet
     /// (SQLite), so runs that share a wallet must share this lock.
@@ -61,9 +64,18 @@ impl CliPoolClient {
             env,
             timeout,
             rpc,
+            bootnode: None,
             intake,
             wallet: Arc::default(),
         }
+    }
+
+    /// Reads the allow-list's older events from `bootnode` (see
+    /// [`allow_list::contains_leaf`]).
+    #[must_use]
+    pub fn with_bootnode(mut self, bootnode: Option<SorobanRpc>) -> Self {
+        self.bootnode = bootnode;
+        self
     }
 
     /// Serialises this instance's runs with others holding the same lock.
@@ -156,10 +168,15 @@ impl CliPoolClient {
         let value = self.run(&["keys"]).await?;
         let keys: Keys = serde_json::from_value(value)
             .map_err(|e| failure("cli_protocol", format!("unexpected keys output: {e}"), true))?;
-        let allow_listed =
-            allow_list::contains_leaf(&self.rpc, membership, from_ledger, &keys.asp_leaf)
-                .await
-                .map_err(|e| failure("chain", e.to_string(), true))?;
+        let allow_listed = allow_list::contains_leaf(
+            &self.rpc,
+            self.bootnode.as_ref(),
+            membership,
+            from_ledger,
+            &keys.asp_leaf,
+        )
+        .await
+        .map_err(|e| failure("chain", e.to_string(), true))?;
         Ok(IntakeCheck {
             asp_leaf: keys.asp_leaf,
             note_public_key: keys.note_public_key,

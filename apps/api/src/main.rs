@@ -240,6 +240,7 @@ fn shielding_worker(
         SorobanRpc::new(config.soroban_rpc_url.clone())?,
         stellar_strkey::ed25519::PublicKey::from_string(intake.as_str())?.0,
     )
+    .with_bootnode(bootnode(config)?)
     .sharing_wallet(wallet.clone());
     tracing::info!(binary = %binary.display(), "shielding worker enabled");
     tokio::spawn(check_intake(pool_client.clone(), deployment.clone()));
@@ -273,6 +274,16 @@ async fn check_intake(client: CliPoolClient, deployment: PoolDeployment) {
     }
 }
 
+/// The SPP bootnode, if configured, for allow-list events older than the
+/// RPC keeps.
+fn bootnode(config: &Config) -> Result<Option<SorobanRpc>, BoxError> {
+    Ok(config
+        .bootnode_url
+        .clone()
+        .map(SorobanRpc::new)
+        .transpose()?)
+}
+
 /// `shield-api init-intake`: needs `POOL_CLI_PATH`, the intake and the
 /// operator (who signs `insert_leaf`). No database.
 async fn init_intake(config: &Config, deployment: &PoolDeployment) -> Result<(), BoxError> {
@@ -291,7 +302,8 @@ async fn init_intake(config: &Config, deployment: &PoolDeployment) -> Result<(),
         pool_cli::DEFAULT_TIMEOUT,
         SorobanRpc::new(config.soroban_rpc_url.clone())?,
         stellar_strkey::ed25519::PublicKey::from_string(intake.as_str())?.0,
-    );
+    )
+    .with_bootnode(bootnode(config)?);
     let clock: Arc<dyn Clock> = Arc::new(SystemClock);
     let asp = asp_contract(config, deployment, clock)?;
     match intake::init_intake(

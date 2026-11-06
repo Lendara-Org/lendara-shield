@@ -29,6 +29,8 @@ struct Env {
     deployment_file: String,
     wallet_path: String,
     rpc_url: String,
+    /// SPP bootnode for pool events older than the RPC's ~7-day window.
+    bootnode_url: Option<String>,
 }
 
 impl Env {
@@ -38,15 +40,23 @@ impl Env {
             deployment_file: require("SHIELD_DEPLOYMENT_FILE")?,
             wallet_path: require("SHIELD_INTAKE_WALLET_PATH")?,
             rpc_url: std::env::var("SOROBAN_RPC_URL").unwrap_or_else(|_| DEFAULT_RPC_URL.into()),
+            bootnode_url: optional("SHIELD_BOOTNODE_URL"),
         })
     }
 }
 
 fn require(name: &str) -> Result<String, CliError> {
-    std::env::var(name)
-        .ok()
-        .filter(|v| !v.trim().is_empty())
-        .ok_or_else(|| CliError::new("config", format!("{name} is not set"), false))
+    optional(name).ok_or_else(|| CliError::new("config", format!("{name} is not set"), false))
+}
+
+/// `name`, unless unset or blank.
+fn optional(name: &str) -> Option<String> {
+    non_blank(std::env::var(name).ok())
+}
+
+/// `value` trimmed; `None` if it is missing or blank.
+fn non_blank(value: Option<String>) -> Option<String> {
+    value.map(|v| v.trim().to_owned()).filter(|v| !v.is_empty())
 }
 
 /// An open SDK session as the intake account.
@@ -93,10 +103,15 @@ async fn open(needs_prover: bool) -> Result<Session, CliError> {
             storage.into(),
             ProverHandle::from(prover),
             config,
-            None,
+            env.bootnode_url.clone(),
         )
     } else {
-        Client::init_readonly(&env.rpc_url, storage.into(), config, None)
+        Client::init_readonly(
+            &env.rpc_url,
+            storage.into(),
+            config,
+            env.bootnode_url.clone(),
+        )
     }
     .map_err(|e| sdk(&e))?;
 
@@ -337,6 +352,16 @@ fn sdk(err: &SdkError) -> CliError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_unset_or_blank_bootnode_means_none_and_a_set_one_is_trimmed() {
+        assert_eq!(non_blank(None), None);
+        assert_eq!(non_blank(Some("  ".into())), None);
+        assert_eq!(
+            non_blank(Some(" https://bootnode.example/bootnode \n".into())),
+            Some("https://bootnode.example/bootnode".into())
+        );
+    }
 
     #[test]
     fn a_wallet_behind_the_chain_is_a_retryable_sync_wait() {

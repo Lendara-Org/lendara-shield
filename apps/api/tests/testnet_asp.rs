@@ -65,11 +65,18 @@ async fn testnet_the_intake_is_initialised() -> TestResult {
         std::env::var("SOROBAN_RPC_URL")
             .unwrap_or_else(|_| "https://soroban-testnet.stellar.org".into()),
     )?;
+    // With SHIELD_BOOTNODE_URL, the older events come from the real bootnode.
+    let bootnode = std::env::var("SHIELD_BOOTNODE_URL")
+        .ok()
+        .filter(|url| !url.trim().is_empty())
+        .map(SorobanRpc::new)
+        .transpose()?;
     // The real event history decodes, and a leaf nobody inserted is absent.
     let nobody = PoolField::parse(&format!("0x{}", "11".repeat(32)))?;
     assert!(
         !allow_list::contains_leaf(
             &rpc,
+            bootnode.as_ref(),
             &deployment.asp_membership,
             deployment.deployment_ledger,
             &nobody
@@ -87,7 +94,8 @@ async fn testnet_the_intake_is_initialised() -> TestResult {
         pool_cli::DEFAULT_TIMEOUT,
         rpc,
         stellar_strkey::ed25519::PublicKey::from_string(intake.as_str())?.0,
-    );
+    )
+    .with_bootnode(bootnode);
     let check = client
         .check_intake(&deployment.asp_membership, deployment.deployment_ledger)
         .await

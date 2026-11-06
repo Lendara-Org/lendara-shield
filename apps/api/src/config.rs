@@ -44,6 +44,10 @@ pub struct Config {
     pub auditor_token: Option<SecretString>,
     /// Stellar RPC used for Soroban calls.
     pub soroban_rpc_url: String,
+    /// SPP bootnode serving pool events older than the RPC's ~7-day window.
+    /// `None` reads every event from the RPC (fine for a pool younger than
+    /// that window).
+    pub bootnode_url: Option<String>,
     /// Horizon, to read the intake's payments.
     pub horizon_url: String,
     /// ASP admin (operator) seed. `None` leaves on-chain ASP writes off.
@@ -129,6 +133,9 @@ impl Config {
             .map(|raw| parse_url("SOROBAN_RPC_URL", raw.trim()))
             .transpose()?
             .unwrap_or_else(|| DEFAULT_SOROBAN_RPC_URL.to_owned());
+        let bootnode_url = get("SHIELD_BOOTNODE_URL")
+            .map(|raw| parse_url("SHIELD_BOOTNODE_URL", raw.trim()))
+            .transpose()?;
         let horizon_url = get("HORIZON_URL")
             .map(|raw| parse_url("HORIZON_URL", raw.trim()))
             .transpose()?
@@ -166,6 +173,7 @@ impl Config {
             admin_token,
             auditor_token,
             soroban_rpc_url,
+            bootnode_url,
             horizon_url,
             operator_secret,
             intake_secret,
@@ -456,14 +464,28 @@ mod tests {
     }
 
     #[test]
-    fn rpc_and_horizon_need_https_except_on_this_machine() -> Result<(), ConfigError> {
+    fn the_bootnode_is_optional_and_loses_its_trailing_slash() -> Result<(), ConfigError> {
+        assert!(load(&[("DATABASE_URL", DB_URL)])?.bootnode_url.is_none());
+        let config = load(&[
+            ("DATABASE_URL", DB_URL),
+            ("SHIELD_BOOTNODE_URL", "https://bootnode.example/bootnode/"),
+        ])?;
+        assert_eq!(
+            config.bootnode_url.as_deref(),
+            Some("https://bootnode.example/bootnode")
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn rpc_horizon_and_bootnode_need_https_except_on_this_machine() -> Result<(), ConfigError> {
         for local in [
             "http://localhost:8000",
             "http://127.0.0.1:8000",
             "http://[::1]:8000",
             "https://rpc.example",
         ] {
-            for name in ["SOROBAN_RPC_URL", "HORIZON_URL"] {
+            for name in ["SOROBAN_RPC_URL", "HORIZON_URL", "SHIELD_BOOTNODE_URL"] {
                 load(&[("DATABASE_URL", DB_URL), (name, local)])?;
             }
         }
@@ -473,7 +495,7 @@ mod tests {
             "http://10.0.0.5:8000",
             "ftp://rpc.example",
         ] {
-            for name in ["SOROBAN_RPC_URL", "HORIZON_URL"] {
+            for name in ["SOROBAN_RPC_URL", "HORIZON_URL", "SHIELD_BOOTNODE_URL"] {
                 let err = load(&[("DATABASE_URL", DB_URL), (name, remote)]).err();
                 assert!(
                     matches!(err, Some(ConfigError::Invalid { name: n, .. }) if n == name),
