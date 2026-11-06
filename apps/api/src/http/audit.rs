@@ -47,6 +47,7 @@ struct AuditTransaction {
 #[derive(Debug, Serialize)]
 struct AuditNote {
     owner_note_public_key: PoolField,
+    owner_kind: &'static str,
     owner_stellar_account: Option<AccountId>,
     amount: String,
 }
@@ -130,6 +131,7 @@ impl From<AuditNoteView> for AuditNote {
     fn from(view: AuditNoteView) -> Self {
         Self {
             owner_note_public_key: view.owner_note_public_key,
+            owner_kind: view.owner_kind.as_str(),
             owner_stellar_account: view.owner_stellar_account,
             amount: view.amount,
         }

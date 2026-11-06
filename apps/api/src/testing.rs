@@ -632,6 +632,8 @@ pub struct FakeAuditor {
     txs: Mutex<Vec<AuditedTx>>,
     fails: Mutex<bool>,
     limits: Mutex<Vec<usize>>,
+    /// The intake's note key; `None` makes the lookup fail.
+    intake_key: Mutex<Option<PoolField>>,
 }
 
 impl FakeAuditor {
@@ -652,6 +654,11 @@ impl FakeAuditor {
     pub fn limits(&self) -> Vec<usize> {
         lock(&self.limits).clone()
     }
+
+    /// The key [`PoolAuditor::intake_note_key`] answers; unset, it fails.
+    pub fn set_intake_key(&self, key: PoolField) {
+        *lock(&self.intake_key) = Some(key);
+    }
 }
 
 #[async_trait]
@@ -666,6 +673,14 @@ impl PoolAuditor for FakeAuditor {
             });
         }
         Ok(lock(&self.txs).iter().take(limit).cloned().collect())
+    }
+
+    async fn intake_note_key(&self) -> Result<PoolField, PoolError> {
+        lock(&self.intake_key).clone().ok_or_else(|| PoolError {
+            code: "sdk".into(),
+            message: "sdk: no privacy keys found".into(),
+            retryable: true,
+        })
     }
 }
 

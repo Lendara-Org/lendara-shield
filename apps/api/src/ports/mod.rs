@@ -272,6 +272,10 @@ pub struct AuditedTx {
 pub trait PoolAuditor: Send + Sync + Debug {
     /// The newest `limit` pool transactions, newest first.
     async fn audit(&self, limit: usize) -> Result<Vec<AuditedTx>, PoolError>;
+
+    /// The intake's own note public key, in the form users register theirs,
+    /// so the auditor can tell Shield's omnibus notes from unknown keys.
+    async fn intake_note_key(&self) -> Result<PoolField, PoolError>;
 }
 
 /// What anyone sees about a transaction on a public explorer.

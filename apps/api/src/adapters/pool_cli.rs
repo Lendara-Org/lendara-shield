@@ -275,6 +275,13 @@ impl PoolAuditor for CliPoolClient {
             .map(TryInto::try_into)
             .collect()
     }
+
+    async fn intake_note_key(&self) -> Result<PoolField, PoolError> {
+        let value = self.run(&["keys"]).await?;
+        let keys: Keys = serde_json::from_value(value)
+            .map_err(|e| failure("cli_protocol", format!("unexpected keys output: {e}"), true))?;
+        Ok(keys.note_public_key)
+    }
 }
 
 fn failure(code: &str, message: String, retryable: bool) -> PoolError {
