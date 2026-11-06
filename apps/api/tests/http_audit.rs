@@ -158,6 +158,27 @@ async fn labels_the_intakes_notes_instead_of_calling_them_unknown(db: PgPool) ->
 }
 
 #[sqlx::test]
+async fn a_user_who_registered_the_intakes_key_is_not_shown_as_its_owner(db: PgPool) -> TestResult {
+    // Onboarding proves the account, not that the note key is its own: an
+    // account may register the intake's public note key.
+    register(&db, BOB, BOB_KEY, 1).await?;
+    register(&db, INTAKE, INTAKE_KEY, 2).await?;
+    let auditor = Arc::new(FakeAuditor::with(history()));
+    auditor.set_intake_key(field(INTAKE_KEY));
+    let app = audit_app(db, Some(auditor), Arc::new(FakeExplorer::default()))?;
+
+    let (_, _, body) = send(app, audit_request("", Some(AUDITOR_TOKEN))?).await?;
+    let deposit = &body["transactions"][2]["outputs"][0];
+    assert_eq!(deposit["owner_kind"], "intake");
+    assert_eq!(deposit["owner_stellar_account"], json!(null));
+    assert_eq!(
+        body["transactions"][1]["outputs"][0]["owner_stellar_account"],
+        BOB
+    );
+    Ok(())
+}
+
+#[sqlx::test]
 async fn an_unreadable_intake_key_only_leaves_its_notes_unknown_and_is_retried(
     db: PgPool,
 ) -> TestResult {

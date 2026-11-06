@@ -9,6 +9,8 @@ hash=$(printf 'ab%.0s' $(seq 32))
 
 case "$mode" in
   garbage) echo "not json"; exit 0 ;;
+  # Valid JSON that is not what the command promises.
+  wrong-shape) echo '{"account":"GA","note_public_key":"not a field"}'; exit 0 ;;
   crash) exit 3 ;;
   slow) sleep 5 ;;
   error) echo '{"error":"not_allowed","message":"ASP membership sync required","retryable":false}'; exit 1 ;;

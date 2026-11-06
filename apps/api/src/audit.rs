@@ -152,11 +152,17 @@ impl AuditService {
                     .iter()
                     .map(|note| {
                         let key = registered_key(note);
-                        let account = accounts.get(&key).cloned();
-                        let owner_kind = match (&account, &intake) {
-                            (Some(_), _) => OwnerKind::User,
-                            (None, Some(intake)) if *intake == key => OwnerKind::Intake,
-                            (None, _) => OwnerKind::Unknown,
+                        // The intake's key, confirmed by its own wallet, wins
+                        // over user records: onboarding proves the account,
+                        // not that the note key is its own, so anyone could
+                        // register the intake's public key as theirs.
+                        let (owner_kind, account) = if intake.as_ref() == Some(&key) {
+                            (OwnerKind::Intake, None)
+                        } else {
+                            match accounts.get(&key) {
+                                Some(account) => (OwnerKind::User, Some(account.clone())),
+                                None => (OwnerKind::Unknown, None),
+                            }
                         };
                         AuditNoteView {
                             owner_kind,
