@@ -77,9 +77,11 @@ inside_retention_window() {
 }
 
 # The bootnode answers the allow-list's events from the deployment ledger,
-# or hands off (-32002) to the RPC; "not ready" (-32004) or "invalid" fail.
+# or hands off (-32002, with the ledger to resume at) to an RPC that still
+# holds that ledger. "Not ready" (-32004), "invalid" or a handoff without a
+# ledger fail.
 bootnode_serves_pool() {
-  local membership deployed response
+  local membership deployed response handoff oldest
   membership=$(jq -r '.asp_membership' "$MANIFEST")
   deployed=$(jq -r '.pools[0].deploymentLedger' "$MANIFEST")
   response=$(curl -fsS -X POST "$SHIELD_BOOTNODE_URL" -H 'Content-Type: application/json' -d "$(
@@ -87,7 +89,14 @@ bootnode_serves_pool() {
       params: {startLedger: $l, filters: [{type: "contract", topics: [["**"]], contractIds: [$c]}],
         pagination: {limit: 1}}}'
   )")
-  jq -e '.result.events != null or .error.code == -32002' <<<"$response"
+  jq -e '.result.events != null or (.error.code == -32002 and (.error.data.fromLedger | type) == "number")' \
+    <<<"$response" >/dev/null || return 1
+  handoff=$(jq -r '.error.data.fromLedger // empty' <<<"$response")
+  [[ -z $handoff ]] && return 0
+  oldest=$(curl -fsS -X POST "$RPC" -H 'Content-Type: application/json' \
+    -d '{"jsonrpc":"2.0","id":1,"method":"getHealth"}' | jq -r '.result.oldestLedger')
+  # The RPC resumes at the later of the handoff and the deployment ledger.
+  (((handoff > deployed ? handoff : deployed) >= oldest))
 }
 
 printf 'Lendara Shield testnet checks (%s)\n' "$MANIFEST"
