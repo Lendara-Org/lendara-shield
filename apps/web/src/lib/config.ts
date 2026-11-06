@@ -6,6 +6,14 @@ export const API_BASE_URL = (process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://loc
 /** Stellar RPC the browser SDK syncs and proves against. */
 export const SOROBAN_RPC_URL = process.env.NEXT_PUBLIC_SOROBAN_RPC_URL ?? "https://soroban-testnet.stellar.org";
 
+const bootnode = process.env.NEXT_PUBLIC_BOOTNODE_URL?.trim();
+
+/**
+ * SPP bootnode serving pool events older than the RPC's ~7-day window,
+ * without a trailing slash; `undefined` if not configured.
+ */
+export const BOOTNODE_URL = bootnode ? bootnode.replace(/\/$/, "") : undefined;
+
 /** Where `scripts/stage-web-sdk.sh` serves the pool SDK and the deployment. */
 export const SDK_BASE_PATH = "/spp";
 

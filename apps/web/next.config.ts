@@ -6,6 +6,7 @@ import { API_REFERENCE_CSP, contentSecurityPolicy } from "./src/lib/csp";
 const csp = contentSecurityPolicy({
   apiBaseUrl: process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8080",
   sorobanRpcUrl: process.env.NEXT_PUBLIC_SOROBAN_RPC_URL ?? "https://soroban-testnet.stellar.org",
+  bootnodeUrl: process.env.NEXT_PUBLIC_BOOTNODE_URL?.trim() || undefined,
   development: process.env.NODE_ENV === "development",
 });
 

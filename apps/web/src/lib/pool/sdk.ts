@@ -8,7 +8,8 @@ import type * as Spp from "stellar-private-payments";
 // Pinned at build time: artifacts fetched at runtime are checked against it.
 import circuitLock from "stellar-private-payments/circuits/circuits.json";
 
-import { SDK_BASE_PATH, SOROBAN_RPC_URL } from "../config";
+import { BOOTNODE_URL, SDK_BASE_PATH, SOROBAN_RPC_URL } from "../config";
+import { bootnodeOption } from "./bootnode";
 import { circuitsBaseUrl, preloadPoolCircuits } from "./circuits";
 import { type PoolOperation, classifyPoolFailure } from "./errors";
 import { FreighterSigner, connectFreighter } from "./freighter-signer";
@@ -32,15 +33,14 @@ async function loadRuntime() {
   if (!poolContract) throw new Error("The deployment has no pool.");
 
   const storage = await sdk.Storage.open();
-  if (await sdk.bootnodeRequired(SOROBAN_RPC_URL, storage, { contractConfig })) {
-    throw new Error("The pool is older than the RPC's history window: a bootnode is required.");
-  }
+  const bootnode = await bootnodeOption(BOOTNODE_URL, () => sdk.bootnodeRequired(SOROBAN_RPC_URL, storage, { contractConfig }));
   const client = await sdk.Client.new({
     rpcUrl: SOROBAN_RPC_URL,
     storage,
     contractConfig,
     circuitsBaseUrl: circuitsBaseUrl(origin),
     circuitLock,
+    ...bootnode,
   });
   return { sdk, client, poolContract };
 }
