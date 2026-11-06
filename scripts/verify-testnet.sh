@@ -19,7 +19,8 @@ set -euo pipefail
 
 readonly NETWORK=testnet
 readonly HORIZON=https://horizon-testnet.stellar.org
-readonly RPC=https://soroban-testnet.stellar.org
+# The RPC the deployment uses (same variable as the API and pool-cli).
+readonly RPC=${SOROBAN_RPC_URL:-https://soroban-testnet.stellar.org}
 readonly KDF_DOMAIN="Lendara Shield"
 readonly MIN_XLM=5
 

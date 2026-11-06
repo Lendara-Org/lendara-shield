@@ -1,8 +1,8 @@
-# Slow shielding on testnet: the public RPC, not the SDK (2026-11-06)
+# Slow shielding on testnet: the public RPC's latency (2026-11-06)
 
-**Summary.** A ramp deposit sometimes took up to 15 minutes to reach the user's private balance. The cause was the latency of the public SDF testnet RPC (`https://soroban-testnet.stellar.org`), which answered each request in 0.3 to 10+ seconds that day. Every proof needs about nine sequential RPC requests, so one attempt took about 42 seconds. That was long enough for the chain to close several ledgers mid-attempt, which made the SDK ask for a resync and retry. With a fast RPC (Gateway.fm's public testnet endpoint, about 0.1 s per request), the same preparation took 14–17 seconds and passed on the first attempt every time.
+**Summary.** A ramp deposit sometimes took up to 15 minutes to reach the user's private balance. The measured cause was the latency of the public SDF testnet RPC (`https://soroban-testnet.stellar.org`), which answered each request in 0.3 to 10+ seconds that day. Every proof needs about nine sequential RPC requests, so one attempt took about 42 seconds. In the middle of each attempt, between the wallet's sync and its read of the ASP state, the chain often closed new ledgers, and the SDK then asked for a resync and a retry. With a fast RPC (Gateway.fm's public testnet endpoint, about 0.1 s per request), the same preparation took 14–17 seconds and passed on the first attempt every time.
 
-Neither the Stellar network nor the SPP SDK was broken: the chain closed ledgers every ~5 seconds and confirmed all of our transactions throughout, and the SDK behaved as designed. A shared, free, public endpoint was slow, and Shield multiplies any per-request latency by nine.
+Neither the Stellar network nor the SPP SDK was broken: the chain closed ledgers every ~5 seconds and confirmed all of our transactions throughout, and the SDK's refusal is intended behaviour. A shared, free, public endpoint was slow, and Shield multiplies any per-request latency by nine.
 
 ## What we saw
 
@@ -28,7 +28,7 @@ An earlier run of the same flow took about 3 minutes. Funds were never at risk: 
 
 So `SyncRequired(Some(1))` does not mean "one user is missing". It means the chain moved past the wallet's index between steps 1 and 2. That is expected and retryable. The SDK's own high-level executor, its web SDK and its CLI all retry it in-process, up to 50 times every 200 ms. Shield calls the lower-level `prove_next` on purpose, so the API can persist each transaction hash before submitting (AGENTS.md §5.3), and hands each refusal back to the worker.
 
-Whether an attempt passes is therefore a race between the length of one attempt and the ledger close time (~5 s). The length of one attempt is set by the RPC's latency.
+Whether an attempt passes is therefore a race between the ledger close time (~5 s) and the interval from the end of the sync (step 1) to the ASP state read (step 2). Proving, simulation and signing come later and do not affect the check. That interval, and the cost of every retry, are set by the RPC's latency.
 
 ## Measurements
 
@@ -39,7 +39,7 @@ All runs prepare a private transfer from a test wallet with `pool-cli prepare-tr
 | | |
 |---|---|
 | Time per preparation | 76, 125, 147, 173, 185, 190, 275 and 510 s |
-| `prove_next` attempts | 26: 8 ok, 18 `SyncRequired` (3 of 8 runs passed on the first try) |
+| `prove_next` attempts | 26: 8 ok (~31 %), 18 `SyncRequired`; 3 of 8 runs passed on the first try |
 | Duration of one attempt | ~42 s, the same whether it passed or was refused |
 | `gap` | 1–5 ledgers (mostly 2–3), never growing |
 
@@ -74,16 +74,18 @@ Even `getLatestLedger`, the cheapest call, averaged 4.6 s. Measured directly wit
 | `SyncRequired` refusals | 18 | **0** |
 | Duration of one attempt | ~42 s | **~5 s** |
 
-With ~0.1 s requests, an attempt ends before the next ledger closes and the precondition passes.
+With ~0.1 s requests, the sync and the state read happen within a fraction of a second, so they rarely straddle a ledger close, and the precondition passed every time in this sample. A fast RPC makes the race unlikely, not impossible: a refusal is still retried as before.
 
 ## Conclusions
 
 - **Cause:** the public SDF testnet RPC was slow (seconds per request, erratic). Shield's shielding path makes about nine sequential requests per proof, so the slowness became ~42-second attempts that lost the race against the ledger close time most of the time.
-- **Not the cause:** the Stellar network (it kept closing ledgers and confirming our transactions), the SPP SDK (its refusal is intended and documented; upstream `main` has the same check), the stateless `pool-cli` process (opening the SDK client costs ~7 s), the bootnode, or the audit's shared wallet lock.
-- **Fix:** point `SOROBAN_RPC_URL` (API and `pool-cli`) and `NEXT_PUBLIC_SOROBAN_RPC_URL` (browser) at a fast RPC. Both are configuration, and the web's CSP follows the variable. A self-hosted `stellar-rpc` would remove the third-party dependency and could keep more than 7 days of history.
+- **Ruled out by the evidence:** the Stellar network (it kept closing ledgers and confirming our transactions), and the cost of starting a fresh `pool-cli` process (opening the SDK client takes ~7 s).
+- **Not measured, so not ruled out for the original incident:** contention on the wallet lock shared by the shielding worker and the auditor (the standalone `pool-cli` runs above bypass it; one 13 s audit request ran before the waits began), and bootnode delays. The SDK's membership check is intended upstream (its `main` branch has the same check), but checking the ASP root before the ledger gap would refuse less often, so the SDK's design also shapes how often the race is lost.
+- **Fix:** point `SOROBAN_RPC_URL` (API and `pool-cli`) and `NEXT_PUBLIC_SOROBAN_RPC_URL` (browser) at a fast, healthy RPC that holds the pool's history. Both are configuration, and the web's CSP follows the variable. The bootnode's upstream RPC is configured separately (`BOOTNODE_UPSTREAM_RPC_URL`, otherwise the manifest's `rpcUrl`) and does not follow these variables. A self-hosted `stellar-rpc` would remove the third-party dependency and could keep more than 7 days of history.
 - **Not adopted:** retrying `SyncRequired` inside one `pool-cli` run (the experimental branch). With a slow RPC it did not break the race, and 10 attempts × 42 s exceeds the API's 180 s budget for a `pool-cli` run. A timeout counts as a failed attempt and could send a funded intent to `error`, which `SyncRequired` never does. With a fast RPC it is not needed.
 
 ## Reproduce
 
 - Per-attempt trace: build `pool-cli` from `fix/api-pool-cli-sync-retry` and set `SHIELD_SYNC_TRACE_FILE=/path/trace.jsonl`. Each line has the event (`open` or `prove_next`), its duration, the outcome and `gap`, and the RPC's ledger right after. No keys, notes or amounts.
+- Independent check (Codex, ~21:06 UTC): Gateway.fm and SDF returned the same network passphrase, the same ledger hash at an overlapping ledger, the same 7 allow-list events and the same contract ledger entry, and Gateway.fm answers browser CORS preflights (`Access-Control-Allow-Origin: *`).
 - RPC latency: `curl -w '%{time_total}\n' -X POST <rpc> -H 'Content-Type: application/json' -d '{"jsonrpc":"2.0","id":1,"method":"getLatestLedger"}'`, a few times in a row. Fast endpoints answer in about 0.1–0.3 s; anything in seconds will slow shielding down.
