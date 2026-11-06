@@ -5,6 +5,7 @@
 
 mod command;
 mod pool;
+mod sync_retry;
 
 use std::{io::Write, process::ExitCode};
 

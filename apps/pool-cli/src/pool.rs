@@ -18,7 +18,10 @@ use stellar_private_payments::{
     zk::gvk::GvkAuditedNote,
 };
 
-use crate::command::{CliError, Command, describe, hex};
+use crate::{
+    command::{CliError, Command, describe, hex},
+    sync_retry::{self, SyncRetry},
+};
 
 pub const TESTNET_PASSPHRASE: &str = "Test SDF Network ; September 2015";
 const DEFAULT_RPC_URL: &str = "https://soroban-testnet.stellar.org";
@@ -286,7 +289,16 @@ async fn prepare(
             false,
         ));
     }
-    let mut prepared = pool.prove_next(&mut plan).await.map_err(|e| sdk(&e))?;
+    // A refused `SyncRequired` is retried here, as the SDK's own executor
+    // does, instead of costing the worker a new process per retry.
+    let mut retry = SyncRetry::new(sync_retry::MAX_ATTEMPTS, sync_retry::PAUSE);
+    let mut prepared = loop {
+        match pool.prove_next(&mut plan).await {
+            Ok(prepared) => break prepared,
+            Err(err) if retry.retry_after(&err).await => {}
+            Err(err) => return Err(sdk(&err)),
+        }
+    };
     pool.simulate(&mut prepared).await.map_err(|e| sdk(&e))?;
     let signed = pool.sign(&prepared).await.map_err(|e| sdk(&e))?;
     let described = describe(&signed.signed_xdr, TESTNET_PASSPHRASE)?;
