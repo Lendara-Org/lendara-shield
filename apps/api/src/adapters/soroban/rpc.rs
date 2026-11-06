@@ -23,6 +23,10 @@ pub enum RpcError {
     /// JSON-RPC error object.
     #[error("RPC error {code}: {message}")]
     Rpc { code: i64, message: String },
+    /// A bootnode's `getEvents` reached the RPC's retention window: continue
+    /// on the main RPC from `from_ledger` (SPP's `docs/src/bootnode.md`).
+    #[error("bootnode handoff: continue on the RPC from ledger {from_ledger}")]
+    Handoff { from_ledger: u32 },
     /// The response did not have the documented shape.
     #[error("unexpected RPC response: {0}")]
     Decode(String),
@@ -177,7 +181,10 @@ impl SorobanRpc {
         cursor: Option<&str>,
         limit: u32,
     ) -> Result<EventsPage, RpcError> {
-        let filters = json!([{ "type": "contract", "contractIds": [contract] }]);
+        // Every event of the contract. SPP's bootnode accepts only this
+        // filter (`topics: [["**"]]`), and the RPC reads it the same way.
+        let filters =
+            json!([{ "type": "contract", "topics": [["**"]], "contractIds": [contract] }]);
         let params = match cursor {
             Some(cursor) => json!({
                 "filters": filters,
@@ -242,10 +249,7 @@ impl SorobanRpc {
             .await
             .map_err(|e| RpcError::Decode(e.to_string()))?;
         match (envelope.result, envelope.error) {
-            (_, Some(error)) => Err(RpcError::Rpc {
-                code: error.code,
-                message: error.message,
-            }),
+            (_, Some(error)) => Err(error.into()),
             (Some(result), None) => Ok(result),
             (None, None) => Err(RpcError::Decode("neither result nor error".into())),
         }
@@ -272,6 +276,29 @@ struct JsonRpcResponse<T> {
 struct JsonRpcError {
     code: i64,
     message: String,
+    #[serde(default)]
+    data: Option<Value>,
+}
+
+/// JSON-RPC error code of a bootnode's retention handoff.
+const HANDOFF_CODE: i64 = -32002;
+
+impl From<JsonRpcError> for RpcError {
+    fn from(error: JsonRpcError) -> Self {
+        let from_ledger = error
+            .data
+            .as_ref()
+            .and_then(|data| data.get("fromLedger"))
+            .and_then(Value::as_u64)
+            .and_then(|ledger| u32::try_from(ledger).ok());
+        match (error.code, from_ledger) {
+            (HANDOFF_CODE, Some(from_ledger)) => Self::Handoff { from_ledger },
+            (code, _) => Self::Rpc {
+                code,
+                message: error.message,
+            },
+        }
+    }
 }
 
 #[derive(Deserialize)]
