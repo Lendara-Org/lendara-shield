@@ -157,6 +157,7 @@ La suite de tests corre contra una cadena falsa que aplica la regla de secuencia
 
 * El auditor consulta `GET /v1/audit/transactions`. Solo el proceso `pool-cli` del auditor recibe la Global View Key, que descifra cada nota. El ASP relaciona las llaves de nota con las cuentas.
 * Bloquear inserta la llave del usuario en la block-list. Los intents sin fondear de un usuario bloqueado terminan en `rejected`. Uno fondeado se detiene antes de su depósito, de su transferencia o de una transferencia rearmada, y termina en `error` con los fondos en custodia de Shield (la cuenta ómnibus, o la nota propia de Shield después del depósito) para revisión manual. No se envía nada a la llave congelada.
+* Hoy el paso siguiente es manual. El tramo 2 lo convierte en un procedimiento definido: después de la revisión, el operador reanuda el intent (si se levanta el bloqueo), devuelve los fondos al anchor o los retiene. Cada decisión queda en un registro de auditoría de solo agregar, con quién decidió, cuándo, por qué y los hashes de las transacciones resultantes.
 
 Todos los resultados están en [Escenarios](scenarios.md).
 
@@ -179,7 +180,7 @@ Los logs llevan ids de intent y plantillas de ruta, nunca "dirección + monto". 
 4. Shield (como ASP) y el auditor son partes de confianza: la concesión de cumplimiento de un pool con permisos.
 5. SPP es una developer preview con contratos sin auditar; el admin del pool en testnet es una sola llave.
 6. Generar pruebas requiere el historial completo de eventos del pool; el RPC público guarda unos 7 días, así que producción necesita un RPC de archivo o el bootnode de SPP.
-7. El registro no verifica que el `asp_leaf` enviado corresponda a `note_public_key`, porque el blinding de pertenencia se queda en el navegador. Un usuario podría registrar una hoja de una llave no vinculada a su cuenta, lo que debilita la relación llave-cuenta del auditor.
+7. **El registro no amarra la hoja del ASP a la llave del usuario.** Shield recibe `asp_leaf`, pero no puede comprobar que sea igual a `H(note_public_key, membership_blinding)`, porque el blinding se queda en el navegador. Un usuario podría registrar la hoja de otra llave que controla y seguir usando el pool después de ser bloqueado (la block-list tiene la llave registrada, no la que está detrás de la hoja). También podría registrar la llave de otra persona y prestarle acceso al pool sin que haya pasado el KYC. En los dos casos el auditor no puede relacionar esas notas con una cuenta. Se corrige en el tramo 1: el navegador envía el blinding, y Shield recalcula la hoja y rechaza cualquier diferencia antes de insertarla. Shield ya conoce la llave, así que esto no revela nada nuevo.
 
 ## 8. Shield Protocol nivel 2 (borrador)
 
@@ -190,7 +191,7 @@ El nivel 2 permite que una fuente de fondeo deposite **directo** en el pool a la
 * **Depósito interactivo** con `destination_type: "shielded"` y `shielded_recipient: <note_public_key>:<encryption_public_key>` en vez de `account`. El anchor debe rechazar los destinatarios cuya hoja no está en la allow-list.
 * **Liquidación:** la cuenta de distribución llama al depósito del pool con una nota de salida para el destinatario y reporta el hash de la transacción del pool en `GET /transaction`.
 
-Borrador completo: [Shield Protocol](shield-protocol.md).
+Borrador completo: [Shield Protocol](shield-protocol.md). El tramo 2 entrega la especificación completa y una implementación de referencia en el anchor SEP-24 de Lendara.
 
 ## 9. Lo que existe hoy (testnet, verificable)
 
@@ -211,8 +212,8 @@ En la corrida de rampa del 2026-10-26, la dirección del usuario aparece 0 veces
 
 | Tramo | Construye sobre la arquitectura de arriba |
 | --- | --- |
-| **1 — Testnet lista para developers** | Relayer con fee-bump (los usuarios del modo directo ya no son visibles como firmantes) · API keys por proyecto, permisos acotados y sesiones, incluida la decisión de elegibilidad del integrador a través de su key · SDK de TypeScript generado desde `openapi.yaml` |
-| **2 — Preparación para producción** | Llaves de operador, ómnibus y de vista en un KMS/HSM con rotación · divulgación selectiva por nota para los usuarios y un portal de auditor basado en roles con registros de acceso · integración con una segunda fuente de fondeo |
+| **1 — Testnet lista para developers** | Hoja del ASP amarrada a la llave registrada (cierra el límite conocido 7) · relayer con fee-bump (los usuarios del modo directo ya no son visibles como firmantes) · API keys por proyecto, permisos acotados y sesiones, incluida la decisión de elegibilidad del integrador a través de su key · SDK de TypeScript generado desde `openapi.yaml` |
+| **2 — Preparación para producción** | Shield Protocol nivel 2: especificación completa e implementación de referencia en el anchor SEP-24 de Lendara (depósitos directos al pool, sin paso de custodia) · llaves de operador, ómnibus y de vista en un KMS/HSM con rotación · divulgación selectiva por nota para los usuarios y un portal de auditor basado en roles con registros de acceso · resolución de los fondos de usuarios bloqueados (reanudar, devolver al anchor o retener) con registro de auditoría · integración con una segunda fuente de fondeo |
 | **3 — Mainnet** | Despliegue en mainnet con RPC de archivo, monitoreo y alertas · refuerzo del anonymity set (agrupación, redondeo, demoras) · primera integración con una wallet de terceros |
 
 Consulta el [Roadmap](roadmap.md) para ver lo que ya está hecho.

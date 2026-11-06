@@ -157,6 +157,7 @@ The test suite runs against a fake chain that enforces Stellar's sequence rule, 
 
 * The auditor queries `GET /v1/audit/transactions`. Only the auditor's `pool-cli` process receives the Global View Key, which decrypts every note. The ASP maps note keys to accounts.
 * Blocking inserts the user's key into the block-list. Unfunded intents of a blocked user end `rejected`. A funded one is stopped before its deposit, its transfer or a rebuilt transfer, and ends `error` with the funds in Shield's custody (the omnibus account, or Shield's own note after the deposit) for manual review. Nothing is sent to the frozen key.
+* What happens next is a manual step today. Tranche 2 makes it a defined procedure: after review, the operator either resumes the intent (if the block is lifted), returns the funds to the anchor, or holds them. Every decision is written to an append-only audit log with who decided, when, why and the resulting transaction hashes.
 
 All outcomes are listed in [Scenarios](scenarios.md).
 
@@ -179,7 +180,7 @@ Logs carry intent ids and route templates, never "address + amount". The web app
 4. Shield (as ASP) and the auditor are trusted parties: the compliance trade-off of a permissioned pool.
 5. SPP is a developer preview with unaudited contracts; the testnet pool admin is a single key.
 6. Proving needs the pool's full event history; the public RPC keeps about 7 days, so production needs an archival RPC or SPP's bootnode.
-7. Registration does not verify that the submitted `asp_leaf` matches `note_public_key`, because the membership blinding stays in the browser. A user could register a leaf for a key not tied to their account, weakening the auditor's key-to-account mapping.
+7. **Registration does not bind the ASP leaf to the user's key.** Shield receives `asp_leaf` but cannot check that it equals `H(note_public_key, membership_blinding)`, because the blinding stays in the browser. A user could register a leaf for a different key they control and keep using the pool after being blocked (the block-list holds the registered key, not the key behind the leaf). They could also register someone else's key and lend pool access to a person who never passed KYC. In both cases the auditor cannot map those notes to an account. Fixed in Tranche 1: the browser sends the blinding, and Shield recomputes the leaf and rejects any mismatch before inserting it. Shield already knows the key, so this reveals nothing new.
 
 ## 8. Shield Protocol level 2 (specification draft)
 
@@ -190,7 +191,7 @@ Level 2 lets a funding source deposit **directly** into the pool to the user's k
 * **Interactive deposit** with `destination_type: "shielded"` and `shielded_recipient: <note_public_key>:<encryption_public_key>` instead of `account`. The anchor must reject recipients whose leaf is not in the allow-list.
 * **Settlement:** the distribution account calls the pool's deposit with an output note to the recipient and reports the pool transaction hash in `GET /transaction`.
 
-Full draft: [Shield Protocol](shield-protocol.md).
+Full draft: [Shield Protocol](shield-protocol.md). Tranche 2 delivers the complete specification and a reference implementation in Lendara's SEP-24 anchor.
 
 ## 9. What exists today (testnet, verifiable)
 
@@ -211,8 +212,8 @@ In the ramp run of 2026-10-26, the user's address appears 0 times across the anc
 
 | Tranche | Builds on the architecture above |
 | --- | --- |
-| **1 — Developer-ready testnet** | Fee-bump relayer (direct-mode users no longer visible as signers) · project API keys, scoped permissions and sessions, including the integrator's eligibility decision through its key · TypeScript SDK generated from `openapi.yaml` |
-| **2 — Production readiness** | Operator, omnibus and view keys in a KMS/HSM with rotation · per-note selective disclosure for users and a role-based auditor portal with access logs · integration with a second funding source |
+| **1 — Developer-ready testnet** | ASP leaf bound to the registered key (closes known limit 7) · fee-bump relayer (direct-mode users no longer visible as signers) · project API keys, scoped permissions and sessions, including the integrator's eligibility decision through its key · TypeScript SDK generated from `openapi.yaml` |
+| **2 — Production readiness** | Shield Protocol level 2: complete specification and reference implementation in Lendara's SEP-24 anchor (direct deposits into the pool, no custody step) · operator, omnibus and view keys in a KMS/HSM with rotation · per-note selective disclosure for users and a role-based auditor portal with access logs · resolution of blocked users' funds (resume, return to the anchor or hold) with an audit log · integration with a second funding source |
 | **3 — Mainnet** | Mainnet deployment with archival RPC, monitoring and alerts · anonymity-set hardening (batching, rounding, delays) · first third-party wallet integration |
 
 See the [Roadmap](roadmap.md) for what is already done.
