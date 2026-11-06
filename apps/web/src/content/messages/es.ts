@@ -7,6 +7,11 @@ export const es: Messages = {
     title: "Lendara Shield",
     description: "Un protocolo abierto para pagos privados con cumplimiento en Stellar, hecho para wallets y anchors.",
   },
+  notFound: {
+    title: "Página no encontrada",
+    body: "Esta página no existe o cambió de lugar.",
+    home: "Ir al inicio",
+  },
   nav: {
     main: "Principal",
     onboard: "Registro",
