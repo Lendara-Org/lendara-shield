@@ -20,7 +20,7 @@ use stellar_private_payments::{
 
 use crate::{
     command::{CliError, Command, describe, hex},
-    sync_retry::{self, SyncRetry},
+    sync_retry::{self, SyncRetry, Trace},
 };
 
 pub const TESTNET_PASSPHRASE: &str = "Test SDF Network ; September 2015";
@@ -46,6 +46,11 @@ impl Env {
             bootnode_url: optional("SHIELD_BOOTNODE_URL"),
         })
     }
+}
+
+/// The RPC URL, as [`Env::load`] reads it.
+fn rpc_url() -> String {
+    std::env::var("SOROBAN_RPC_URL").unwrap_or_else(|_| DEFAULT_RPC_URL.into())
 }
 
 fn require(name: &str) -> Result<String, CliError> {
@@ -80,7 +85,16 @@ pub async fn run(command: Command) -> Result<Value, CliError> {
         command,
         Command::PrepareDeposit { .. } | Command::PrepareTransfer { .. }
     );
+    let mut trace = Trace::from_env(&rpc_url());
+    let started = std::time::Instant::now();
     let session = open(needs_prover).await?;
+    trace
+        .record(
+            "open",
+            started.elapsed(),
+            serde_json::json!({ "prover": needs_prover }),
+        )
+        .await;
     execute(&session, command).await
 }
 
@@ -292,8 +306,20 @@ async fn prepare(
     // A refused `SyncRequired` is retried here, as the SDK's own executor
     // does, instead of costing the worker a new process per retry.
     let mut retry = SyncRetry::new(sync_retry::MAX_ATTEMPTS, sync_retry::PAUSE);
+    let mut trace = Trace::from_env(&rpc_url());
+    let mut attempt = 0u32;
     let mut prepared = loop {
-        match pool.prove_next(&mut plan).await {
+        attempt += 1;
+        let started = std::time::Instant::now();
+        let result = pool.prove_next(&mut plan).await;
+        trace
+            .record("prove_next", started.elapsed(), {
+                let mut fields = sync_retry::outcome(&result);
+                fields["attempt"] = attempt.into();
+                fields
+            })
+            .await;
+        match result {
             Ok(prepared) => break prepared,
             Err(err) if retry.retry_after(&err).await => {}
             Err(err) => return Err(sdk(&err)),

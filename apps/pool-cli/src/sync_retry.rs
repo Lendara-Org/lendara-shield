@@ -14,7 +14,7 @@
 
 use std::time::Duration;
 
-use stellar_private_payments::{Error as SdkError, types::AspMembershipSync};
+use stellar_private_payments::{Error as SdkError, chain::RpcClient, types::AspMembershipSync};
 
 /// Attempts within one run before handing `SyncRequired` back to the worker:
 /// each takes a sync (a few seconds) plus [`PAUSE`], well under the API's
@@ -70,6 +70,78 @@ async fn wait(pause: Duration) {
     }
     // A failed join only shortens the pause.
     let _ = tokio::task::spawn_blocking(move || std::thread::sleep(pause)).await;
+}
+
+/// Optional per-attempt measurement, written as JSON lines to the file named
+/// by `SHIELD_SYNC_TRACE_FILE` (off when unset). Only timings, ledger numbers
+/// and outcome kinds: never keys, notes or amounts.
+#[derive(Debug)]
+pub struct Trace {
+    file: Option<std::fs::File>,
+    rpc: Option<RpcClient>,
+    run: u128,
+}
+
+impl Trace {
+    /// Reads `SHIELD_SYNC_TRACE_FILE`; `rpc_url` is used to read the chain
+    /// tip after each attempt.
+    #[must_use]
+    pub fn from_env(rpc_url: &str) -> Self {
+        let file = std::env::var("SHIELD_SYNC_TRACE_FILE")
+            .ok()
+            .filter(|path| !path.trim().is_empty())
+            .and_then(|path| {
+                std::fs::OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(path)
+                    .ok()
+            });
+        let rpc = file.as_ref().and_then(|_| RpcClient::new(rpc_url).ok());
+        let run = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.as_millis());
+        Self { file, rpc, run }
+    }
+
+    /// Records one event; `extra` holds its fields.
+    pub async fn record(&mut self, event: &str, elapsed: Duration, extra: serde_json::Value) {
+        if self.file.is_none() {
+            return;
+        }
+        let tip = match &self.rpc {
+            Some(rpc) => rpc.get_latest_ledger().await.ok().map(|l| l.sequence),
+            None => None,
+        };
+        let mut line = serde_json::json!({
+            "run": self.run,
+            "event": event,
+            "ms": elapsed.as_millis(),
+            "rpc_tip_after": tip,
+        });
+        if let (Some(line), serde_json::Value::Object(extra)) = (line.as_object_mut(), extra) {
+            line.extend(extra);
+        }
+        if let Some(file) = &mut self.file {
+            use std::io::Write as _;
+            // Measurement only: a failed write must not fail the command.
+            let _ = writeln!(file, "{line}");
+        }
+    }
+}
+
+/// The outcome of one `prove_next`, for [`Trace`].
+#[must_use]
+pub fn outcome<T>(result: &Result<T, SdkError>) -> serde_json::Value {
+    match result {
+        Ok(_) => serde_json::json!({ "outcome": "ok" }),
+        Err(SdkError::MembershipSync(AspMembershipSync::SyncRequired(gap))) => {
+            serde_json::json!({ "outcome": "sync_required", "gap": gap })
+        }
+        Err(err) => {
+            serde_json::json!({ "outcome": "error", "kind": format!("{err:?}").split(['(', ' ', '{']).next().unwrap_or("other") })
+        }
+    }
 }
 
 #[cfg(test)]
@@ -133,6 +205,23 @@ mod tests {
             Err(SdkError::MembershipSync(AspMembershipSync::RegisterAtASP))
         ));
         assert_eq!(runs, 1);
+    }
+
+    #[test]
+    fn the_trace_records_the_outcome_kind_and_gap_only() {
+        assert_eq!(outcome::<()>(&Ok(()))["outcome"], "ok");
+        let sync = outcome::<()>(&Err(sync_required()));
+        assert_eq!(
+            (sync["outcome"].as_str(), sync["gap"].as_u64()),
+            (Some("sync_required"), Some(1))
+        );
+        let other = outcome::<()>(&Err(SdkError::MembershipSync(
+            AspMembershipSync::RegisterAtASP,
+        )));
+        assert_eq!(
+            (other["outcome"].as_str(), other["kind"].as_str()),
+            (Some("error"), Some("MembershipSync"))
+        );
     }
 
     #[tokio::test]
