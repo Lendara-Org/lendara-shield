@@ -9,7 +9,7 @@ const es = messages.es.audit;
 
 const CAROL = `0x${"c0".repeat(32)}`;
 const BOB = `0x${"b0".repeat(32)}`;
-const note = (key: string, amount: string) => ({ owner_note_public_key: key, owner_stellar_account: null, amount });
+const note = (key: string, amount: string) => ({ owner_note_public_key: key, owner_kind: "unknown" as const, owner_stellar_account: null, amount });
 const tx = (kind: AuditTransaction["kind"], ext: string, inputs: ReturnType<typeof note>[], outputs: ReturnType<typeof note>[]): AuditTransaction => ({
   ledger: 1,
   tx_hash: null,
@@ -35,9 +35,9 @@ describe("audit wording", () => {
 
   it("names owners by account, or flags keys Shield does not know", () => {
     const key = `0x${"a2".repeat(32)}`;
-    expect(owner(en, { owner_note_public_key: key, owner_stellar_account: "GBJ3H74T4LB23V3WKE46BSWMZVOH4YWX2P5ZLQTY4EZXH3YAZZUCPFWY", amount: "1" })).toBe("GBJ3H7…PFWY");
-    expect(owner(en, { owner_note_public_key: key, owner_stellar_account: null, amount: "1" })).toBe("Unknown key 0xa2a2a2…a2a2");
-    expect(owner(es, { owner_note_public_key: key, owner_stellar_account: null, amount: "1" })).toBe("Llave desconocida 0xa2a2a2…a2a2");
+    expect(owner(en, { owner_note_public_key: key, owner_kind: "user", owner_stellar_account: "GBJ3H74T4LB23V3WKE46BSWMZVOH4YWX2P5ZLQTY4EZXH3YAZZUCPFWY", amount: "1" })).toBe("GBJ3H7…PFWY");
+    expect(owner(en, { owner_note_public_key: key, owner_kind: "unknown", owner_stellar_account: null, amount: "1" })).toBe("Unknown key 0xa2a2a2…a2a2");
+    expect(owner(es, { owner_note_public_key: key, owner_kind: "unknown", owner_stellar_account: null, amount: "1" })).toBe("Llave desconocida 0xa2a2a2…a2a2");
   });
 
   it("lists visible accounts besides the signer", () => {

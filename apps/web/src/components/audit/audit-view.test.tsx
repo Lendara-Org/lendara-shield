@@ -23,18 +23,18 @@ const txs: AuditTransaction[] = [
     tx_hash: HASH("2fe1"),
     kind: "transfer",
     ext_amount: "0",
-    inputs: [{ owner_note_public_key: key("1d"), owner_stellar_account: INTAKE, amount: "9.3039215" }],
-    outputs: [{ owner_note_public_key: key("c0"), owner_stellar_account: CAROL, amount: "9.3039215" }],
+    inputs: [{ owner_note_public_key: key("1d"), owner_kind: "user", owner_stellar_account: INTAKE, amount: "9.3039215" }],
+    outputs: [{ owner_note_public_key: key("c0"), owner_kind: "user", owner_stellar_account: CAROL, amount: "9.3039215" }],
   },
   {
     ledger: 5_392_292,
     tx_hash: HASH("363a"),
     kind: "transfer",
     ext_amount: "0",
-    inputs: [{ owner_note_public_key: key("c0"), owner_stellar_account: CAROL, amount: "2" }],
+    inputs: [{ owner_note_public_key: key("c0"), owner_kind: "user", owner_stellar_account: CAROL, amount: "2" }],
     outputs: [
-      { owner_note_public_key: key("b0"), owner_stellar_account: BOB, amount: "0.5" },
-      { owner_note_public_key: key("c0"), owner_stellar_account: CAROL, amount: "1.5" },
+      { owner_note_public_key: key("b0"), owner_kind: "user", owner_stellar_account: BOB, amount: "0.5" },
+      { owner_note_public_key: key("c0"), owner_kind: "user", owner_stellar_account: CAROL, amount: "1.5" },
     ],
   },
 ];

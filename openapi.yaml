@@ -745,12 +745,20 @@ components:
 
     AuditNote:
       type: object
-      required: [owner_note_public_key, owner_stellar_account, amount]
+      required: [owner_note_public_key, owner_kind, owner_stellar_account, amount]
       properties:
         owner_note_public_key:
           $ref: "#/components/schemas/PoolField"
+        owner_kind:
+          type: string
+          enum: [user, intake, unknown]
+          description: |
+            Who owns the note, as Shield knows it: `user` (a Shield user, see `owner_stellar_account`),
+            `intake` (Shield's omnibus account, which holds a ramp deposit between the anchor's payment and
+            the private transfer to the user) or `unknown` (a key that is neither, e.g. a transfer to someone
+            outside Shield).
         owner_stellar_account:
-          description: Resolved from Shield's records (Shield is the ASP). `null` if the key is not a Shield user.
+          description: Resolved from Shield's records (Shield is the ASP). `null` unless `owner_kind` is `user`.
           oneOf:
             - $ref: "#/components/schemas/StellarAccount"
             - type: "null"
