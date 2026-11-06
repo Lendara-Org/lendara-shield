@@ -10,13 +10,13 @@
 
 ## 1. What Lendara Shield is
 
-Lendara Shield is the reference implementation of the **Shield Protocol**: a compliant privacy layer for Stellar that connects fiat on-ramps (SEP-24 anchors) to a [Stellar Private Payments](https://developers.stellar.org/docs/build/apps/privacy) (SPP) pool.
+Lendara Shield is the reference implementation of the **Shield Protocol**: an open compliance layer for [Stellar Private Payments](https://developers.stellar.org/docs/build/apps/privacy) (SPP) that **wallets and anchors** integrate to give their users private payments. Individuals are end users: they reach Shield through a wallet or an anchor, which decides whether they are eligible under its own policy. Shield, as ASP, only writes that decision on-chain; it does not run KYC. A SEP-24 anchor is the first supported funding source.
 
-**The problem.** Stellar has privacy tools in developer preview, but privacy breaks at the fiat edge: a ramp deposit ties a user's address to an amount and a time. A privacy pool with an allow-list also needs someone to run KYC, maintain the list (the ASP), hold the audit key and pay fees.
+**The problem.** Stellar has privacy tools in developer preview, but privacy breaks at the fiat edge: a ramp deposit ties a user's address to an amount and a time. A privacy pool with an allow-list also needs someone to maintain the list (the ASP), hold the audit key and pay fees.
 
-**The idea.** An anchor already runs KYC and an omnibus account. If the anchor (or Shield on its behalf) deposits into the pool from its omnibus account and then transfers privately to the user's keys, **the user's address never appears on-chain**.
+**The idea.** An anchor already has its own checks and an omnibus account. If the anchor (or Shield on its behalf) deposits into the pool from its omnibus account and then transfers privately to the user's keys, **the user's address never appears on-chain**.
 
-**Tagline:** *KYC once, pay privately, disclose selectively.*
+**Tagline:** *Private payments, built into wallets and anchors.* User-facing copy never says Shield runs KYC: eligibility is the integrator's decision (simulated in the sandbox through the `scenario` field).
 
 **Team:** Anouk (Costa Rica), Karu and Elisa (Argentina). Built for HackMeridian 2026 (Genesis track).
 
