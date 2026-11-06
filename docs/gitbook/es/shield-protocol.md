@@ -1,6 +1,6 @@
 # Shield Protocol — borrador 0.1
 
-> Estado: **borrador**, escrito para HackMeridian 2026. Lendara Shield implementa el nivel 1 en testnet. El nivel 2 es una propuesta y **no** está implementado.
+> Estado: **borrador 0.1**. Lendara Shield implementa el nivel 1 en testnet. El nivel 2 es una propuesta y **no** está implementado.
 
 El Shield Protocol permite que una fuente de fondeo entregue el dinero **dentro de un pool privado** en lugar de enviarlo a la dirección pública del usuario, mientras la elegibilidad, la allow-list y la auditoría quedan en manos de partes responsables. Su nombre no lleva la marca "Lendara" para que cualquier integrador lo pueda adoptar. La primera fuente de fondeo que especifica es un anchor SEP-24.
 

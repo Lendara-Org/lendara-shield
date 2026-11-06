@@ -173,6 +173,16 @@ async fn the_auditor_reads_the_intakes_note_key_from_pool_cli_keys() -> TestResu
         .err()
         .ok_or("expected an error")?;
     assert!(!err.code.is_empty());
+
+    // A successful run with output that is not keys is a retryable protocol error.
+    for mode in ["garbage", "wrong-shape"] {
+        let err = PoolAuditor::intake_note_key(&auditor(mode)?)
+            .await
+            .err()
+            .ok_or("expected an error")?;
+        assert_eq!(err.code, "cli_protocol", "{mode}");
+        assert!(err.retryable, "{mode}");
+    }
     Ok(())
 }
 

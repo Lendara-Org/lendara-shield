@@ -191,7 +191,7 @@ El nivel 2 permite que una fuente de fondeo deposite **directo** en el pool a la
 * **Depósito interactivo** con `destination_type: "shielded"` y `shielded_recipient: <note_public_key>:<encryption_public_key>` en vez de `account`. El anchor debe rechazar los destinatarios cuya hoja no está en la allow-list.
 * **Liquidación:** la cuenta de distribución llama al depósito del pool con una nota de salida para el destinatario y reporta el hash de la transacción del pool en `GET /transaction`.
 
-Borrador completo: [Shield Protocol](shield-protocol.md). El tramo 2 entrega la especificación completa y una implementación de referencia en el anchor SEP-24 de Lendara.
+Borrador completo: [Shield Protocol](shield-protocol.md). El tramo 2 entrega la especificación completa, que cualquier anchor SEP-24 puede adoptar, con el anchor de Lendara como primera implementación de referencia.
 
 ## 9. Lo que existe hoy (testnet, verificable)
 
@@ -214,7 +214,7 @@ En la corrida de rampa del 2026-10-26, la dirección del usuario aparece 0 veces
 | Tramo | Construye sobre la arquitectura de arriba |
 | --- | --- |
 | **1 — Testnet lista para developers** | Hoja del ASP amarrada a la llave registrada (cierra el límite conocido 7) · relayer con fee-bump (los usuarios del modo directo ya no son visibles como firmantes) · API keys por proyecto, permisos acotados y sesiones, incluida la decisión de elegibilidad del integrador a través de su key · SDK de TypeScript generado desde `openapi.yaml` |
-| **2 — Preparación para producción** | Shield Protocol nivel 2: especificación completa e implementación de referencia en el anchor SEP-24 de Lendara (depósitos directos al pool, sin paso de custodia) · llaves de operador, ómnibus y de vista en un KMS/HSM con rotación · divulgación selectiva por nota para los usuarios y un portal de auditor basado en roles con registros de acceso · resolución de los fondos de usuarios bloqueados (reanudar, devolver al anchor o retener) con registro de auditoría · integración con una segunda fuente de fondeo |
+| **2 — Preparación para producción** | Shield Protocol nivel 2: especificación completa que cualquier anchor SEP-24 puede adoptar, con el anchor de Lendara como primera implementación de referencia (depósitos directos al pool, sin paso de custodia) · llaves de operador, ómnibus y de vista en un KMS/HSM con rotación · divulgación selectiva por nota para los usuarios y un portal de auditor basado en roles con registros de acceso · resolución de los fondos de usuarios bloqueados (reanudar, devolver al anchor o retener) con registro de auditoría · integración con una segunda fuente de fondeo · modelo de amenazas (al estilo STRIDE) y plan de monitoreo para el despliegue de producción |
 | **3 — Mainnet** | Despliegue en mainnet con RPC de archivo, monitoreo y alertas · refuerzo del anonymity set (agrupación, redondeo, demoras) · primera integración con una wallet de terceros |
 
 Consulta el [Roadmap](roadmap.md) para ver lo que ya está hecho.

@@ -23,7 +23,7 @@ Both modes already run end to end on Stellar testnet. The three tranches take Sh
 | Tranche | Builds |
 | --- | --- |
 | **1 — Developer-ready testnet** | ASP leaf bound to the registered key (closes known limit 7) · fee-bump relayer (direct-mode users no longer visible as signers) · project API keys, scoped permissions and sessions, including the integrator's eligibility decision through its key · TypeScript SDK generated from `openapi.yaml` |
-| **2 — Production readiness** | Shield Protocol level 2: complete specification and reference implementation in Lendara's SEP-24 anchor (direct deposits into the pool, no custody step) · operator, omnibus and view keys in a KMS/HSM with rotation · per-note selective disclosure for users and a role-based auditor portal with access logs · resolution of blocked users' funds (resume, return to the anchor or hold) with an audit log · integration with a second funding source |
+| **2 — Production readiness** | Shield Protocol level 2: complete specification that any SEP-24 anchor can adopt, with Lendara's anchor as the first reference implementation (direct deposits into the pool, no custody step) · operator, omnibus and view keys in a KMS/HSM with rotation · per-note selective disclosure for users and a role-based auditor portal with access logs · resolution of blocked users' funds (resume, return to the anchor or hold) with an audit log · integration with a second funding source · threat model (STRIDE-style) and monitoring plan for the production deployment |
 | **3 — Mainnet** | Mainnet deployment with archival RPC, monitoring and alerts · anonymity-set hardening (batching, rounding, delays) · first third-party wallet integration |
 
 ## After this award: one compliance layer for both privacy primitives
