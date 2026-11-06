@@ -10,7 +10,7 @@ test.beforeEach(async ({ page }) => {
 
 test("landing → onboard → deposit, and a clear message without Freighter", async ({ page }) => {
   await page.goto("/");
-  await expect(page.getByRole("heading", { level: 1 })).toContainText("KYC once");
+  await expect(page.getByRole("heading", { level: 1 })).toContainText("built into wallets and anchors");
 
   await page.getByRole("main").getByRole("link", { name: "Try the demo" }).first().click();
   await expect(page).toHaveURL(/\/onboard$/);
@@ -81,7 +81,7 @@ test("switches language and reads the docs", async ({ page }) => {
   await page.goto("/en");
   await page.getByRole("group", { name: "Language" }).getByRole("link", { name: "es" }).click();
   await expect(page).toHaveURL(/\/es$/);
-  await expect(page.getByRole("heading", { level: 1 })).toContainText("KYC una vez");
+  await expect(page.getByRole("heading", { level: 1 })).toContainText("integrados en wallets y anchors");
 
   await page.getByRole("navigation", { name: "Principal" }).getByRole("link", { name: "Docs" }).click();
   await expect(page).toHaveURL(/\/es\/docs$/);

@@ -28,7 +28,7 @@ describe("OnboardFlow", () => {
     const wallet = fakeWallet();
     const { user: ui } = await renderConnected(<OnboardFlow />, wallet);
 
-    await ui.selectOptions(await screen.findByLabelText("KYC scenario"), "blocked");
+    await ui.selectOptions(await screen.findByLabelText("Eligibility scenario"), "blocked");
     await ui.click(screen.getByRole("button", { name: "Derive keys and register" }));
 
     expect(wallet.signMessage).toHaveBeenCalledWith(
@@ -74,7 +74,7 @@ describe("OnboardFlow", () => {
     server.use(http.get(url(`/v1/users/${ACCOUNT}`), () => HttpResponse.json(user({ kyc_status: "rejected", asp_status: "not_allowed", last_asp_tx_hash: null }))));
     await renderConnected(<OnboardFlow />, fakeWallet());
 
-    expect(await screen.findByText(/KYC rejected/)).toBeInTheDocument();
+    expect(await screen.findByText(/Not eligible/)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /register/ })).not.toBeInTheDocument();
   });
 

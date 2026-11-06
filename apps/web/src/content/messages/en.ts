@@ -3,7 +3,7 @@ export const en = {
   locale: "en-US",
   meta: {
     title: "Lendara Shield",
-    description: "Compliant private payments on Stellar: KYC once, pay privately, disclose selectively.",
+    description: "An open protocol for compliant private payments on Stellar, built for wallets and anchors.",
   },
   nav: {
     main: "Main",
@@ -18,9 +18,9 @@ export const en = {
   footer: "Testnet only. Built on Stellar Private Payments (developer preview, unaudited contracts).",
   landing: {
     eyebrow: "Shield Protocol · Stellar Testnet",
-    title: "KYC once. Pay privately. Disclose selectively.",
+    title: "Private payments, built into wallets and anchors.",
     intro:
-      "Lendara Shield is a compliant privacy layer for Stellar. Shield runs the KYC and the pool's allow-list, connects any SEP-24 anchor to a private pool, and keeps an auditor's view key, so payments are private to the public and accountable to the regulator.",
+      "Lendara Shield is the reference implementation of the Shield Protocol, an open compliance layer for Stellar Private Payments. Wallets and anchors integrate it through one API: they decide which of their users are eligible, and Shield maintains the pool's allow-list and keeps the auditor's view key. Payments are private to the public and accountable to the auditor.",
     start: "Try the demo",
     readDocs: "Read the docs",
     visual: {
@@ -58,7 +58,7 @@ export const en = {
     devTitle: "For developers",
     devHeadline: "Private payments. Inside your product.",
     devBody:
-      "Shield works with any SEP-24 anchor through standard SEPs. Integrate it from your wallet or app with a few HTTP calls, or read the Shield Protocol draft for native shielded deposits.",
+      "Wallets integrate Shield with a few HTTP calls. Anchors work with it unchanged through standard SEPs (level 1), or adopt the Shield Protocol to deposit straight into the pool (level 2).",
   },
   connect: {
     title: "Connect your wallet",
@@ -76,16 +76,16 @@ export const en = {
   },
   onboard: {
     title: "Onboard",
-    intro: "KYC once: Shield vouches for your pool key without ever holding it.",
+    intro: "Your wallet or anchor decides that you are eligible; Shield adds your pool key to the allow-list without ever holding it.",
     statusTitle: "Your Shield status",
-    kyc: "KYC",
+    kyc: "Eligibility",
     allowList: "Allow-list",
     aspUpdate: "ASP update",
     kycStatus: { approved: "approved", rejected: "rejected" },
     statusText: {
       pending: "Updating the pool's allow-list on-chain…",
       allowed: "You are in the allow-list. You can deposit and transact privately.",
-      not_allowed: "KYC rejected: your key is not in the allow-list, so the pool refuses your proofs.",
+      not_allowed: "Not eligible: your key is not in the allow-list, so the pool refuses your proofs.",
       blocked: "Your key is in the block-list: it is frozen until the ASP unblocks it.",
     },
     continue: "Continue to deposit →",
@@ -94,10 +94,10 @@ export const en = {
       "Freighter signs a message to derive your pool keys, here in the browser.",
       "Freighter signs once more to prove this account is yours.",
       "Shield receives only your public keys and your allow-list leaf.",
-      "After the (simulated) KYC, Shield, as the pool's ASP, adds your leaf on-chain.",
+      "Once the integrator approves you (simulated here), Shield, as the pool's ASP, adds your leaf on-chain.",
     ],
-    scenario: "KYC scenario",
-    scenarioHint: "Sandbox only: choose the outcome of the simulated KYC.",
+    scenario: "Eligibility scenario",
+    scenarioHint: "Sandbox only: simulates the integrator's eligibility decision.",
     scenarios: {
       approved: "Approved: your key joins the allow-list",
       rejected: "Rejected: your key never enters the pool",

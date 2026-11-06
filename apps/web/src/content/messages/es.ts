@@ -5,7 +5,7 @@ export const es: Messages = {
   locale: "es-419",
   meta: {
     title: "Lendara Shield",
-    description: "Pagos privados con cumplimiento en Stellar: KYC una vez, paga en privado, revela solo lo necesario.",
+    description: "Un protocolo abierto para pagos privados con cumplimiento en Stellar, hecho para wallets y anchors.",
   },
   nav: {
     main: "Principal",
@@ -20,9 +20,9 @@ export const es: Messages = {
   footer: "Solo testnet. Construido sobre Stellar Private Payments (developer preview, contratos sin auditar).",
   landing: {
     eyebrow: "Shield Protocol · Testnet de Stellar",
-    title: "KYC una vez. Paga en privado. Revela solo lo necesario.",
+    title: "Pagos privados, integrados en wallets y anchors.",
     intro:
-      "Lendara Shield es una capa de privacidad con cumplimiento para Stellar. Shield hace el KYC y administra la allow-list del pool, conecta cualquier anchor SEP-24 con un pool privado y guarda la llave de vista del auditor: los pagos son privados para el público y auditables para el regulador.",
+      "Lendara Shield es la implementación de referencia del Shield Protocol, una capa abierta de cumplimiento para Stellar Private Payments. Las wallets y los anchors lo integran con una sola API: deciden cuáles de sus usuarios son elegibles, y Shield administra la allow-list del pool y guarda la llave de vista del auditor. Los pagos son privados para el público y auditables para el auditor.",
     start: "Probar la demo",
     readDocs: "Leer los docs",
     visual: {
@@ -60,7 +60,7 @@ export const es: Messages = {
     devTitle: "Para developers",
     devHeadline: "Pagos privados. Dentro de tu producto.",
     devBody:
-      "Shield funciona con cualquier anchor SEP-24 a través de SEPs estándar. Intégralo desde tu wallet o app con unas pocas llamadas HTTP, o lee el borrador del Shield Protocol para depósitos privados nativos.",
+      "Las wallets integran Shield con unas pocas llamadas HTTP. Los anchors funcionan con él sin cambios a través de SEPs estándar (nivel 1), o adoptan el Shield Protocol para depositar directo en el pool (nivel 2).",
   },
   connect: {
     title: "Conecta tu wallet",
@@ -78,16 +78,16 @@ export const es: Messages = {
   },
   onboard: {
     title: "Registro",
-    intro: "KYC una vez: Shield respalda tu llave del pool sin tenerla nunca.",
+    intro: "Tu wallet o tu anchor decide que eres elegible; Shield agrega tu llave del pool a la allow-list sin tenerla nunca.",
     statusTitle: "Tu estado en Shield",
-    kyc: "KYC",
+    kyc: "Elegibilidad",
     allowList: "Allow-list",
     aspUpdate: "Actualización del ASP",
     kycStatus: { approved: "aprobado", rejected: "rechazado" },
     statusText: {
       pending: "Actualizando la allow-list del pool on-chain…",
       allowed: "Estás en la allow-list. Ya puedes depositar y operar en privado.",
-      not_allowed: "KYC rechazado: tu llave no está en la allow-list, así que el pool rechaza tus pruebas.",
+      not_allowed: "No elegible: tu llave no está en la allow-list, así que el pool rechaza tus pruebas.",
       blocked: "Tu llave está en la block-list: queda congelada hasta que el ASP la desbloquee.",
     },
     continue: "Seguir a depositar →",
@@ -96,10 +96,10 @@ export const es: Messages = {
       "Freighter firma un mensaje para derivar tus llaves del pool, aquí en el navegador.",
       "Freighter firma una vez más para probar que la cuenta es tuya.",
       "Shield recibe solo tus llaves públicas y tu hoja de la allow-list.",
-      "Tras el KYC (simulado), Shield, como ASP del pool, agrega tu hoja on-chain.",
+      "Cuando el integrador te aprueba (aquí, simulado), Shield, como ASP del pool, agrega tu hoja on-chain.",
     ],
-    scenario: "Escenario de KYC",
-    scenarioHint: "Solo sandbox: elige el resultado del KYC simulado.",
+    scenario: "Escenario de elegibilidad",
+    scenarioHint: "Solo sandbox: simula la decisión de elegibilidad del integrador.",
     scenarios: {
       approved: "Aprobado: tu llave entra a la allow-list",
       rejected: "Rechazado: tu llave nunca entra al pool",
