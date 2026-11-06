@@ -12,6 +12,9 @@ const csp = contentSecurityPolicy({
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
+  // Pages have one root layout per language (app/[lang]/layout.tsx), so an
+  // unmatched URL needs app/global-not-found.tsx (experimental in Next 16).
+  experimental: { globalNotFound: true },
   // The API types package ships TypeScript sources.
   transpilePackages: ["@lendara/shield-api-types"],
   // Pages moved under /<lang>; old links keep working in English.

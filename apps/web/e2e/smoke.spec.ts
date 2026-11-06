@@ -80,11 +80,34 @@ test("the audit compares the explorer with the auditor", async ({ page }) => {
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
 
+test("an unknown URL answers 404 in both languages", async ({ page }) => {
+  const response = await page.goto("/no-such-page");
+  expect(response?.status()).toBe(404);
+  await expect(page.locator("html")).toHaveAttribute("lang", "en");
+  await expect(page.getByRole("heading", { name: "Page not found" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Página no encontrada" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Ir al inicio" })).toHaveAttribute("href", "/es");
+  // The 404 keeps the site's security headers.
+  expect(response?.headers()["content-security-policy"]).toContain("frame-ancestors 'none'");
+  expect(response?.headers()["x-content-type-options"]).toBe("nosniff");
+
+  // A language the app does not have is not a page either.
+  expect((await page.goto("/fr"))?.status()).toBe(404);
+});
+
 test("switches language and reads the docs", async ({ page }) => {
   await page.goto("/en");
+  // The document's language is the page's (screen readers, translation, hyphenation).
+  await expect(page.locator("html")).toHaveAttribute("lang", "en");
   await page.getByRole("group", { name: "Language" }).getByRole("link", { name: "es" }).click();
   await expect(page).toHaveURL(/\/es$/);
+  await expect(page.locator("html")).toHaveAttribute("lang", "es");
   await expect(page.getByRole("heading", { level: 1 })).toContainText("integrados en wallets y anchors");
+  await page.getByRole("group", { name: "Idioma" }).getByRole("link", { name: "en" }).click();
+  await expect(page).toHaveURL(/\/en$/);
+  await expect(page.locator("html")).toHaveAttribute("lang", "en");
+  await page.getByRole("group", { name: "Language" }).getByRole("link", { name: "es" }).click();
+  await expect(page.locator("html")).toHaveAttribute("lang", "es");
 
   await page.getByRole("navigation", { name: "Principal" }).getByRole("link", { name: "Docs" }).click();
   await expect(page).toHaveURL(/\/es\/docs$/);

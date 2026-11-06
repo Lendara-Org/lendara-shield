@@ -5,6 +5,11 @@ export const en = {
     title: "Lendara Shield",
     description: "An open protocol for compliant private payments on Stellar, built for wallets and anchors.",
   },
+  notFound: {
+    title: "Page not found",
+    body: "This page does not exist or has moved.",
+    home: "Go to the home page",
+  },
   nav: {
     main: "Main",
     onboard: "Onboard",
