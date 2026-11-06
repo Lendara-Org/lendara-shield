@@ -48,6 +48,15 @@ describe("audit wording", () => {
     expect(ownerHint(es, intake)).toMatch(/Cuenta ómnibus/);
   });
 
+  it("still names owners when an older API sends no owner_kind", () => {
+    // The web may be deployed before the API that adds the field.
+    const legacy = (account: string | null) =>
+      ({ owner_note_public_key: `0x${"a2".repeat(32)}`, owner_stellar_account: account, amount: "1" }) as unknown as Parameters<typeof owner>[1];
+    expect(owner(en, legacy("GBJ3H74T4LB23V3WKE46BSWMZVOH4YWX2P5ZLQTY4EZXH3YAZZUCPFWY"))).toBe("GBJ3H7…PFWY");
+    expect(owner(en, legacy(null))).toBe("Unknown key 0xa2a2a2…a2a2");
+    expect(ownerHint(en, legacy(null))).toBeUndefined();
+  });
+
   it("explains only the intake", () => {
     const key = `0x${"a2".repeat(32)}`;
     expect(ownerHint(en, { owner_note_public_key: key, owner_kind: "unknown", owner_stellar_account: null, amount: "1" })).toBeUndefined();

@@ -19,16 +19,12 @@ export function publicAmount(t: AuditCopy, ext: string | null, asset: string): s
  * Who a note belongs to, for the auditor. The API says which kind of owner
  * it is: Shield's own intake gets a name instead of looking like an
  * unidentified key, which in a permissioned pool would read as an alarm.
+ * An API without `owner_kind` (deployed before this web) still shows the
+ * account, or the key as unknown.
  */
 export function owner(t: AuditCopy, note: AuditNote): string {
-  switch (note.owner_kind) {
-    case "user":
-      return note.owner_stellar_account ? shorten(note.owner_stellar_account, 6, 4) : t.unknownKey(shorten(note.owner_note_public_key, 8, 4));
-    case "intake":
-      return t.intakeOwner;
-    case "unknown":
-      return t.unknownKey(shorten(note.owner_note_public_key, 8, 4));
-  }
+  if (note.owner_kind === "intake") return t.intakeOwner;
+  return note.owner_stellar_account ? shorten(note.owner_stellar_account, 6, 4) : t.unknownKey(shorten(note.owner_note_public_key, 8, 4));
 }
 
 /** The explanation shown next to an owner, if it needs one. */
