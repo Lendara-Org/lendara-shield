@@ -27,7 +27,7 @@ Checks: `make lint`, `make test` (Postgres needed), `make test-web-e2e`, and `ma
 {% step %}
 ### Onboard
 
-Open `http://localhost:3000/en/onboard` (or `/es/…` in Spanish) and connect Freighter (Testnet). Choose the KYC scenario **Approved** and click *Derive keys and register*. Freighter signs twice: once to derive your pool keys in the browser, once to prove the account is yours. Shield then adds your leaf to the allow-list.
+Open `http://localhost:3000/en/onboard` (or `/es/…` in Spanish) and connect Freighter (Testnet). Choose the eligibility scenario **Approved** and click *Derive keys and register*. Freighter signs twice: once to derive your pool keys in the browser, once to prove the account is yours. Shield then adds your leaf to the allow-list.
 {% endstep %}
 
 {% step %}
@@ -55,4 +55,4 @@ On `/en/audit`, paste `AUDITOR_TOKEN`. The explorer sees *"signed by Shield, amo
 {% endstep %}
 {% endstepper %}
 
-To try direct mode, choose *From my wallet* on `/en/deposit`. Your account needs testnet USDC from the sandbox and its trustline. Every KYC and anchor outcome is listed in [Scenarios](scenarios.md).
+To try direct mode, choose *From my wallet* on `/en/deposit`. Your account needs testnet USDC from the sandbox and its trustline. Every eligibility and funding outcome is listed in [Scenarios](scenarios.md).

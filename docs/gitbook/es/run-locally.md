@@ -27,7 +27,7 @@ Revisiones: `make lint`, `make test` (necesita Postgres), `make test-web-e2e`, y
 {% step %}
 ### Registro
 
-Abre `http://localhost:3000/en/onboard` (o `/es/…` en español) y conecta Freighter (Testnet). Elige el escenario de KYC **Aprobado** y haz clic en *Derivar llaves y registrarme*. Freighter firma dos veces: una para derivar tus llaves del pool en el navegador y otra para probar que la cuenta es tuya. Luego Shield agrega tu hoja a la allow-list.
+Abre `http://localhost:3000/en/onboard` (o `/es/…` en español) y conecta Freighter (Testnet). Elige el escenario de elegibilidad **Aprobado** y haz clic en *Derivar llaves y registrarme*. Freighter firma dos veces: una para derivar tus llaves del pool en el navegador y otra para probar que la cuenta es tuya. Luego Shield agrega tu hoja a la allow-list.
 {% endstep %}
 
 {% step %}
@@ -55,4 +55,4 @@ En `/en/audit`, pega `AUDITOR_TOKEN`. El explorador ve *"firmado por Shield, mon
 {% endstep %}
 {% endstepper %}
 
-Para probar el modo directo, elige *Desde mi wallet* en `/en/deposit`. Tu cuenta necesita USDC de testnet del sandbox y su trustline. Todos los resultados del KYC y del anchor están en [Escenarios](scenarios.md).
+Para probar el modo directo, elige *Desde mi wallet* en `/en/deposit`. Tu cuenta necesita USDC de testnet del sandbox y su trustline. Todos los resultados de elegibilidad y de fondeo están en [Escenarios](scenarios.md).

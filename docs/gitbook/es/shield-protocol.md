@@ -2,7 +2,7 @@
 
 > Estado: **borrador**, escrito para HackMeridian 2026. Lendara Shield implementa el nivel 1 en testnet. El nivel 2 es una propuesta y **no** está implementado.
 
-El Shield Protocol permite que las rampas de entrada fiat entreguen el dinero **dentro de un pool privado** en lugar de enviarlo a la dirección pública del usuario, mientras el KYC, la allow-list y la auditoría quedan en manos de partes reguladas. Su nombre no lleva la marca "Lendara" para que cualquier anchor lo pueda adoptar.
+El Shield Protocol permite que una fuente de fondeo entregue el dinero **dentro de un pool privado** en lugar de enviarlo a la dirección pública del usuario, mientras la elegibilidad, la allow-list y la auditoría quedan en manos de partes responsables. Su nombre no lleva la marca "Lendara" para que cualquier integrador lo pueda adoptar. La primera fuente de fondeo que especifica es un anchor SEP-24.
 
 **Piezas base:** [SEP-1](https://github.com/stellar/stellar-protocol/blob/master/ecosystem/sep-0001.md), [SEP-10](https://github.com/stellar/stellar-protocol/blob/master/ecosystem/sep-0010.md), [SEP-24](https://github.com/stellar/stellar-protocol/blob/master/ecosystem/sep-0024.md) y un pool de [Stellar Private Payments](https://developers.stellar.org/docs/build/apps/privacy) con un ASP (allow-list + block-list) y una Global View Key.
 
@@ -11,11 +11,12 @@ El Shield Protocol permite que las rampas de entrada fiat entreguen el dinero **
 | Rol | Qué hace |
 |---|---|
 | **Usuario** | Tiene una wallet de Stellar; deriva las llaves del pool en la wallet (las llaves de gasto nunca salen de ahí) |
-| **Anchor** | Rampa de entrada SEP-24: hace el KYC, recibe el pago en fiat y paga el activo |
-| **ASP** | Hace el KYC (o se apoya en uno) y mantiene la allow-list y la block-list del pool |
+| **Fuente de fondeo** | Paga el activo (hoy, un anchor SEP-24). Aplica sus propios controles; el protocolo no los define |
+| **Integrador** | Decide cuáles de sus usuarios son elegibles, según su propia política |
+| **ASP** | Escribe la decisión del integrador en la allow-list y la block-list del pool |
 | **Operador del pool** | Despliega y administra el pool |
 | **Auditor** | Tiene la Global View Key del pool; puede descifrar cada nota |
-| **Shield** (nivel 1) | ASP + cuenta ómnibus + cliente SEP-24 frente a cualquier anchor |
+| **Shield** (nivel 1) | ASP + cuenta ómnibus + un cliente para la fuente de fondeo (hoy SEP-24) |
 
 ## Nivel 1 — Shield como middleware (implementado)
 
@@ -25,12 +26,12 @@ Shield se ubica entre **cualquier** anchor SEP-24 y el pool. El anchor no se mod
 
 1. La wallet del usuario deriva las llaves del pool (llave de nota y llave de cifrado) y la hoja de membresía del ASP `leaf = H(note_public_key, membership_blinding)`.
 2. El usuario le envía a Shield **solo** `{stellar_account, note_public_key, encryption_public_key, asp_leaf}`. El usuario **no** se registra en el registro público de llaves del pool: eso es una transacción pública desde su propia dirección.
-3. Shield hace el KYC. Si se aprueba, Shield (como ASP) inserta `asp_leaf` en la allow-list on-chain. Bloquear es insertar la llave de nota en la block-list. En SPP, la allow-list es de solo agregado (append-only).
+3. El integrador decide si el usuario es elegible. Si se aprueba, Shield (como ASP) inserta `asp_leaf` en la allow-list on-chain. Bloquear es insertar la llave de nota en la block-list. En SPP, la allow-list es de solo agregado (append-only).
 
 ### Depósito (un intent)
 
 1. El usuario le pide a Shield depositar `amount` de `fiat_currency`.
-2. Shield se autentica con el anchor mediante **SEP-10**, como su cuenta ómnibus, con un memo `id` que identifica al usuario (cada usuario es un cliente distinto para el KYC del anchor). Shield verifica el challenge por completo antes de firmarlo.
+2. Shield se autentica con el anchor mediante **SEP-10**, como su cuenta ómnibus, con un memo `id` que identifica al usuario (cada usuario es un cliente distinto para el anchor). Shield verifica el challenge por completo antes de firmarlo.
 3. Shield llama a `POST /transactions/deposit/interactive` (**SEP-24**) con:
    - `asset_code`: el activo del pool
    - `account`: **la cuenta ómnibus de Shield**
@@ -84,7 +85,7 @@ SHIELD_ASP_ENDPOINT = "https://…"  # where wallets onboard keys (may be the an
 | `destination_type` | `"shielded"` |
 | `shielded_recipient` | Las llaves públicas del pool del destinatario, `<note_public_key>:<encryption_public_key>` (hex `0x`) |
 
-La sesión SEP-10 sigue identificando al cliente (KYC). El anchor debe rechazar un `shielded_recipient` cuya hoja no esté en la allow-list del pool (el anchor es el ASP o trabaja con él).
+La sesión SEP-10 sigue identificando al cliente. El anchor debe rechazar un `shielded_recipient` cuya hoja no esté en la allow-list del pool (el anchor es el ASP o trabaja con él).
 
 ### Liquidación
 
@@ -117,4 +118,4 @@ El usuario retira del pool a la cuenta del anchor con una prueba de membresía v
 
 1. ¿`shielded_recipient` debería ser una búsqueda en el registro (por dirección `G…`) o llaves directas? Las llaves directas evitan la transacción pública en el registro; un registro facilita los pagos entre pares.
 2. ¿Cómo le prueba un anchor a una wallet que su depósito fue a las llaves correctas sin revelarlas públicamente? (La divulgación selectiva por nota es una candidata.)
-3. Federación de ASP: ¿varios anchors pueden compartir la allow-list de un mismo pool?
+3. Federación de ASP: ¿varios integradores pueden compartir la allow-list de un mismo pool?

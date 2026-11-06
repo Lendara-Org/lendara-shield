@@ -2,14 +2,14 @@
 
 Every outcome the demo can show, and what Shield does with it. There are two independent gates:
 
-1. **Shield's KYC** (the pool's ASP), chosen in `/onboard`. Sandbox only.
-2. **The anchor's outcome** (ramp mode), chosen in the anchor's widget with a test card. These are Lendara sandbox's own scenarios; a real anchor runs real KYC.
+1. **The integrator's eligibility decision**, simulated in `/onboard`. Sandbox only: a real integrator applies its own policy.
+2. **The funding source's outcome** (ramp mode), chosen in the Lendara sandbox anchor's widget with a test card.
 
-## 1. Shield's KYC (`POST /v1/onboarding`, field `scenario`)
+## 1. Eligibility decision (`POST /v1/onboarding`, field `scenario`)
 
 Every onboarding request carries the account's SEP-53 signature over its keys; a missing or foreign signature answers `400` and nothing is registered.
 
-| Scenario | KYC | Allow-list (ASP) | What happens next |
+| Scenario | Eligibility | Allow-list (ASP) | What happens next |
 |---|---|---|---|
 | `approved` (default) | approved | Leaf inserted on-chain → `allowed` | Can deposit (both modes), transfer and withdraw |
 | `rejected` | rejected | Never inserted → `not_allowed` | The pool refuses the user's proofs; `POST /v1/intents` answers `409 user_not_allowed`; the web sends the user back to onboarding |
@@ -26,14 +26,14 @@ Blocking a user mid-intent:
 - Once the money is in Shield's custody (`funds_received` and later), an intent only ends `completed` or `error`, never `rejected` or `expired`. The shielding worker checks the user before the deposit, before the private transfer and before rebuilding a transfer that can no longer land: a blocked user's intent ends in `error` with the funds in Shield's custody (the omnibus account, or Shield's own note after the deposit). Nothing is sent to the frozen key. A transfer already sent is not chased: whatever a blocked key receives stays frozen, because spending needs a proof that the key is not on the block-list.
 - Unblocking does not revive rejected intents.
 
-## 2. The anchor's outcome (ramp mode, Lendara sandbox widget)
+## 2. The funding source's outcome (ramp mode, Lendara sandbox anchor)
 
 Any future expiry date and any 3-digit CVC work.
 
 | Test card | Sandbox outcome | Intent in Shield | Pool |
 |---|---|---|---|
 | `4242 4242 4242 4242` | Approved: USDC paid to Shield's omnibus account with the intent's memo | `awaiting_anchor → funds_received → shielding → transferring → completed`, with three hashes | Deposit from the omnibus account + private transfer to the user's keys |
-| `4000 0000 0000 0002` | Rejected (KYC) | `error`, with the anchor's message | Untouched |
+| `4000 0000 0000 0002` | Rejected by the anchor | `error`, with the anchor's message | Untouched |
 | `4000 0000 0000 9995` | Payment not received | `expired` | Untouched |
 | `4000 0000 0000 0077` | Approved after 30 s | Stays `awaiting_anchor` while the anchor is `pending_anchor`, then completes | As approved |
 

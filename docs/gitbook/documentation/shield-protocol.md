@@ -2,7 +2,7 @@
 
 > Status: **draft**, written for HackMeridian 2026. Level 1 is implemented by Lendara Shield on testnet. Level 2 is a proposal and is **not** implemented.
 
-The Shield Protocol lets fiat on-ramps deliver money **into a privacy pool** instead of to a user's public address, while keeping KYC, allow-listing and audit in the hands of regulated parties. It is named without the "Lendara" brand so any anchor can adopt it.
+The Shield Protocol lets a funding source deliver money **into a privacy pool** instead of to a user's public address, while eligibility, allow-listing and audit stay with accountable parties. It is named without the "Lendara" brand so any integrator can adopt it. The first funding source it specifies is a SEP-24 anchor.
 
 **Building blocks:** [SEP-1](https://github.com/stellar/stellar-protocol/blob/master/ecosystem/sep-0001.md), [SEP-10](https://github.com/stellar/stellar-protocol/blob/master/ecosystem/sep-0010.md), [SEP-24](https://github.com/stellar/stellar-protocol/blob/master/ecosystem/sep-0024.md), and a [Stellar Private Payments](https://developers.stellar.org/docs/build/apps/privacy) pool with an ASP (allow-list + block-list) and a Global View Key.
 
@@ -11,11 +11,12 @@ The Shield Protocol lets fiat on-ramps deliver money **into a privacy pool** ins
 | Role | Does |
 |---|---|
 | **User** | Holds a Stellar wallet; derives the pool keys in the wallet (spending keys never leave it) |
-| **Anchor** | SEP-24 on-ramp: KYC, takes the fiat payment, pays the asset |
-| **ASP** | Runs (or relies on) KYC and maintains the pool's allow-list and block-list |
+| **Funding source** | Pays the asset in (today a SEP-24 anchor). Applies its own checks; the protocol does not define them |
+| **Integrator** | Decides which of its users are eligible, under its own policy |
+| **ASP** | Writes the integrator's decision to the pool's allow-list and block-list |
 | **Pool operator** | Deploys and administers the pool |
 | **Auditor** | Holds the pool's Global View Key; can decrypt every note |
-| **Shield** (level 1) | ASP + omnibus account + SEP-24 client in front of any anchor |
+| **Shield** (level 1) | ASP + omnibus account + a client for the funding source (SEP-24 today) |
 
 ## Level 1 — Shield as middleware (implemented)
 
@@ -25,12 +26,12 @@ Shield sits between **any** SEP-24 anchor and the pool. The anchor is not modifi
 
 1. The user's wallet derives the pool keys (note key and encryption key) and the ASP membership leaf `leaf = H(note_public_key, membership_blinding)`.
 2. The user sends **only** `{stellar_account, note_public_key, encryption_public_key, asp_leaf}` to Shield. The user does **not** register in the pool's public key registry: that is a public transaction from their own address.
-3. Shield runs KYC. On approval, Shield (as ASP) inserts `asp_leaf` into the allow-list on-chain. Blocking inserts the note key into the block-list. The allow-list is append-only in SPP.
+3. The integrator decides whether the user is eligible. On approval, Shield (as ASP) inserts `asp_leaf` into the allow-list on-chain. Blocking inserts the note key into the block-list. The allow-list is append-only in SPP.
 
 ### Deposit (one intent)
 
 1. The user asks Shield to deposit `amount` of `fiat_currency`.
-2. Shield authenticates with the anchor using **SEP-10**, as its omnibus account with an `id` memo that identifies the user (each user is a distinct customer for the anchor's KYC). Shield verifies the challenge fully before signing it.
+2. Shield authenticates with the anchor using **SEP-10**, as its omnibus account with an `id` memo that identifies the user (each user is a distinct customer for the anchor). Shield verifies the challenge fully before signing it.
 3. Shield calls `POST /transactions/deposit/interactive` (**SEP-24**) with:
    - `asset_code`: the pool's asset
    - `account`: **Shield's omnibus account**
@@ -84,7 +85,7 @@ SHIELD_ASP_ENDPOINT = "https://…"  # where wallets onboard keys (may be the an
 | `destination_type` | `"shielded"` |
 | `shielded_recipient` | The recipient's pool public keys, `<note_public_key>:<encryption_public_key>` (`0x` hex) |
 
-The SEP-10 session still identifies the customer (KYC). The anchor must reject a `shielded_recipient` whose leaf is not in the pool's allow-list (it is, or works with, the ASP).
+The SEP-10 session still identifies the customer. The anchor must reject a `shielded_recipient` whose leaf is not in the pool's allow-list (it is, or works with, the ASP).
 
 ### Settlement
 
@@ -117,4 +118,4 @@ The user withdraws from the pool to the anchor's account with a valid membership
 
 1. Should `shielded_recipient` be a registry lookup (by `G…` address) or raw keys? Raw keys avoid the public registry transaction; a registry is easier for peer-to-peer payments.
 2. How does an anchor prove to a wallet that its deposit went to the right keys without revealing them publicly? (Per-note selective disclosure is a candidate.)
-3. ASP federation: can several anchors share one pool's allow-list?
+3. ASP federation: can several integrators share one pool's allow-list?

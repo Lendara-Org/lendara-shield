@@ -14,7 +14,7 @@ Repository: [github.com/Lendara-Org/lendara-shield](https://github.com/Lendara-O
 
 ## 1. Summary
 
-Lendara Shield gives any product on Stellar compliant private payments through one API. Wallets, anchors, payment apps and individual users get private balances, an Association Set they control and auditor-only disclosure, without building privacy infrastructure themselves. Funding stays private too: money arriving from an external source can reach a private balance without the user's address ever appearing on-chain.
+Lendara Shield gives wallets and anchors on Stellar compliant private payments through one API. Their users get private balances; the integrator controls who is eligible (the Association Set) and only an authorized auditor can see the details, without anyone building privacy infrastructure from scratch. Funding stays private too: money arriving from an external source can reach a private balance without the user's address ever appearing on-chain.
 
 Shield is the reference implementation of the **Shield Protocol**: the operator layer a compliant privacy pool needs and that no single product should have to build alone. It runs on [Stellar Private Payments (SPP)](https://developers.stellar.org/docs/build/apps/privacy), the Privacy Pools implementation by Nethermind for Stellar (Circom circuits, Groth16 proofs verified in Soroban contracts), and adds no new cryptography.
 
@@ -41,7 +41,7 @@ Status: both modes run end to end on Stellar testnet ([Section 9](#9.-what-exist
 | Role | Responsibility |
 | --- | --- |
 | **User** | Holds a Stellar wallet. Derives pool keys (note key, encryption key) in the browser; spending keys never leave it. |
-| **Integrating app** | Any product that uses Shield: a wallet, an anchor, a payment app or an individual's own client. Decides which of its users are eligible under its own compliance policy and calls Shield's API. |
+| **Integrating app** | A wallet or an anchor that uses Shield. Individuals are its end users and reach Shield only through it. Decides which of its users are eligible under its own compliance policy and calls Shield's API. |
 | **Shield operator (ASP)** | Administers the pool's allow-list and block-list contracts and pays the fees of those writes. |
 | **Shield intake (omnibus)** | In ramp mode, receives external funds, deposits them into the pool and transfers them privately to the user. |
 | **Auditor** | Holds the pool's Global View Key; decrypts every note. |
@@ -180,7 +180,7 @@ Logs carry intent ids and route templates, never "address + amount". The web app
 4. Shield (as ASP) and the auditor are trusted parties: the compliance trade-off of a permissioned pool.
 5. SPP is a developer preview with unaudited contracts; the testnet pool admin is a single key.
 6. Proving needs the pool's full event history; the public RPC keeps about 7 days, so production needs an archival RPC or SPP's bootnode.
-7. **Registration does not bind the ASP leaf to the user's key.** Shield receives `asp_leaf` but cannot check that it equals `H(note_public_key, membership_blinding)`, because the blinding stays in the browser. A user could register a leaf for a different key they control and keep using the pool after being blocked (the block-list holds the registered key, not the key behind the leaf). They could also register someone else's key and lend pool access to a person who never passed KYC. In both cases the auditor cannot map those notes to an account. Fixed in Tranche 1: the browser sends the blinding, and Shield recomputes the leaf and rejects any mismatch before inserting it. Shield already knows the key, so this reveals nothing new.
+7. **Registration does not bind the ASP leaf to the user's key.** Shield receives `asp_leaf` but cannot check that it equals `H(note_public_key, membership_blinding)`, because the blinding stays in the browser. A user could register a leaf for a different key they control and keep using the pool after being blocked (the block-list holds the registered key, not the key behind the leaf). They could also register someone else's key and lend pool access to a person the integrator never approved. In both cases the auditor cannot map those notes to an account. Fixed in Tranche 1: the browser sends the blinding, and Shield recomputes the leaf and rejects any mismatch before inserting it. Shield already knows the key, so this reveals nothing new.
 
 ## 8. Shield Protocol level 2 (specification draft)
 
@@ -229,7 +229,7 @@ Shield differs in two places. It operates SPP as a shared compliance layer that 
 | [LumenShade](https://communityfund.stellar.org/dashboard/projects/rec3veejDmuuYhhnP) (SCF #37) | A privacy pools protocol with its own circuits | Same model as SPP; Shield does not compete at the circuit layer, it operates and integrates it |
 | [Private & compliant payments on Stellar](https://communityfund.stellar.org/dashboard/submissions/recJbAw5nnUU1ZUmb) (SCF #40) | Confidential amounts and balances with selective disclosure, starting from an off-chain co-processor | Shield hides counterparties, not only amounts, and keeps proving and verification on Stellar through SPP |
 | [Zarf](https://communityfund.stellar.org/submissions/rec81hKwglu2sUT1N) (SCF #42) | Private token distribution to email addresses using ZK proofs over login tokens | A different use case (distributions); Shield covers ongoing private payments and private funding |
-| [Confidential Tokens](https://stellar.org/blog/developers/developer-preview-confidential-tokens-on-stellar) (OpenZeppelin, SDF developer preview) | A wrapper over SEP-41 tokens that hides balances and amounts; addresses stay visible | Complementary: Confidential Tokens serve known-counterparty flows where the amount is private; Shield serves flows where the counterparties are private |
+| [Confidential Tokens](https://stellar.org/blog/developers/developer-preview-confidential-tokens-on-stellar) (OpenZeppelin, SDF developer preview) | A wrapper over SEP-41 tokens that hides balances and amounts; addresses stay visible | Complementary: Confidential Tokens serve known-counterparty flows where the amount is private; Shield serves flows where the counterparties are private. After this award, Shield's compliance layer extends to Confidential Tokens (see the [Roadmap](roadmap.md)) |
 
 ## 12. Dependencies and risks
 

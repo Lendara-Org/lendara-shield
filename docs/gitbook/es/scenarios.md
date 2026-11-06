@@ -2,14 +2,14 @@
 
 Cada resultado que puede mostrar la demo, y qué hace Shield con él. Hay dos filtros independientes:
 
-1. **El KYC de Shield** (el ASP del pool), que se elige en `/onboard`. Solo sandbox.
-2. **El resultado del anchor** (modo rampa), que se elige en el widget del anchor con una tarjeta de prueba. Son escenarios propios del sandbox de Lendara; un anchor real hace un KYC real.
+1. **La decisión de elegibilidad del integrador**, simulada en `/onboard`. Solo sandbox: un integrador real aplica su propia política.
+2. **El resultado de la fuente de fondeo** (modo rampa), que se elige en el widget del anchor sandbox de Lendara con una tarjeta de prueba.
 
-## 1. El KYC de Shield (`POST /v1/onboarding`, campo `scenario`)
+## 1. Decisión de elegibilidad (`POST /v1/onboarding`, campo `scenario`)
 
 Cada solicitud de registro lleva la firma SEP-53 de la cuenta sobre sus llaves; si la firma falta o es de otra cuenta, responde `400` y no se registra nada.
 
-| Escenario | KYC | Allow-list (ASP) | Qué pasa después |
+| Escenario | Elegibilidad | Allow-list (ASP) | Qué pasa después |
 |---|---|---|---|
 | `approved` (por defecto) | aprobado | Hoja insertada on-chain → `allowed` | Puede depositar (en ambos modos), transferir y retirar |
 | `rejected` | rechazado | Nunca se inserta → `not_allowed` | El pool rechaza las pruebas del usuario; `POST /v1/intents` responde `409 user_not_allowed`; la web devuelve al usuario al registro |
@@ -33,7 +33,7 @@ Sirve cualquier fecha de vencimiento futura y cualquier CVC de 3 dígitos.
 | Tarjeta de prueba | Resultado en el sandbox | Intent en Shield | Pool |
 |---|---|---|---|
 | `4242 4242 4242 4242` | Aprobada: USDC pagados a la cuenta ómnibus de Shield con el memo del intent | `awaiting_anchor → funds_received → shielding → transferring → completed`, con tres hashes | Depósito desde la cuenta ómnibus + transferencia privada a las llaves del usuario |
-| `4000 0000 0000 0002` | Rechazada (KYC) | `error`, con el mensaje del anchor | Sin cambios |
+| `4000 0000 0000 0002` | Rechazada por el anchor | `error`, con el mensaje del anchor | Sin cambios |
 | `4000 0000 0000 9995` | Pago no recibido | `expired` | Sin cambios |
 | `4000 0000 0000 0077` | Aprobada a los 30 s | Se queda en `awaiting_anchor` mientras el anchor está en `pending_anchor` y luego se completa | Igual que aprobada |
 
