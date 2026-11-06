@@ -7,7 +7,7 @@ use std::collections::VecDeque;
 use serde_json::{Value, json};
 use stellar_private_payments::{
     CircuitStore, Client, Error as SdkError, LocalProver, LocalSigner, LocalStorage, PrivatePool,
-    ProverHandle, SignerHandle,
+    ProverHandle, RetentionGap, SignerHandle,
     chain::{LocalSigner as Keypair, RpcClient},
     circuit_lock,
     gvk::{GvkAudit, GvkTxAudit},
@@ -29,6 +29,8 @@ struct Env {
     deployment_file: String,
     wallet_path: String,
     rpc_url: String,
+    /// SPP bootnode for pool events older than the RPC's ~7-day window.
+    bootnode_url: Option<String>,
 }
 
 impl Env {
@@ -38,15 +40,23 @@ impl Env {
             deployment_file: require("SHIELD_DEPLOYMENT_FILE")?,
             wallet_path: require("SHIELD_INTAKE_WALLET_PATH")?,
             rpc_url: std::env::var("SOROBAN_RPC_URL").unwrap_or_else(|_| DEFAULT_RPC_URL.into()),
+            bootnode_url: optional("SHIELD_BOOTNODE_URL"),
         })
     }
 }
 
 fn require(name: &str) -> Result<String, CliError> {
-    std::env::var(name)
-        .ok()
-        .filter(|v| !v.trim().is_empty())
-        .ok_or_else(|| CliError::new("config", format!("{name} is not set"), false))
+    optional(name).ok_or_else(|| CliError::new("config", format!("{name} is not set"), false))
+}
+
+/// `name`, unless unset or blank.
+fn optional(name: &str) -> Option<String> {
+    non_blank(std::env::var(name).ok())
+}
+
+/// `value` trimmed; `None` if it is missing or blank.
+fn non_blank(value: Option<String>) -> Option<String> {
+    value.map(|v| v.trim().to_owned()).filter(|v| !v.is_empty())
 }
 
 /// An open SDK session as the intake account.
@@ -93,10 +103,15 @@ async fn open(needs_prover: bool) -> Result<Session, CliError> {
             storage.into(),
             ProverHandle::from(prover),
             config,
-            None,
+            env.bootnode_url.clone(),
         )
     } else {
-        Client::init_readonly(&env.rpc_url, storage.into(), config, None)
+        Client::init_readonly(
+            &env.rpc_url,
+            storage.into(),
+            config,
+            env.bootnode_url.clone(),
+        )
     }
     .map_err(|e| sdk(&e))?;
 
@@ -316,13 +331,22 @@ fn read(path: &str) -> Result<String, CliError> {
 fn sdk(err: &SdkError) -> CliError {
     let message = err.to_string();
     match err {
-        SdkError::Rpc(_) => CliError::new("chain", message, true),
-        SdkError::RetentionGap(_) => CliError::new("retention_gap", message, false),
-        // The wallet's ASP index is a few ledgers behind the chain: it
-        // catches up on its own, so the caller should wait, not give up.
-        SdkError::MembershipSync(AspMembershipSync::SyncRequired(_)) => {
+        // A bootnode request that failed (network, bad answer) may succeed
+        // on retry like any RPC call; it counts as an attempt.
+        SdkError::Rpc(_) | SdkError::RetentionGap(RetentionGap::BootnodeFailed(_)) => {
+            CliError::new("chain", message, true)
+        }
+        // Waits, not failures, so the caller does not spend an attempt: the
+        // wallet's ASP index is a few ledgers behind the chain, or the
+        // bootnode is still archiving (`-32004`). Both catch up on their own;
+        // counting them would send funded intents to `error`.
+        SdkError::MembershipSync(AspMembershipSync::SyncRequired(_))
+        | SdkError::RetentionGap(RetentionGap::BootnodeNotReady(_)) => {
             CliError::new("sync_required", message, true)
         }
+        // The RPC lacks the history and no bootnode is configured: retrying
+        // cannot help until SHIELD_BOOTNODE_URL is set.
+        SdkError::RetentionGap(_) => CliError::new("retention_gap", message, false),
         SdkError::MembershipSync(_) => CliError::new("not_allowed", message, false),
         SdkError::AccountNotFound { .. } | SdkError::InvalidConfig(_) => {
             CliError::new("config", message, false)
@@ -337,6 +361,38 @@ fn sdk(err: &SdkError) -> CliError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_bootnode_that_is_not_ready_is_waited_for_without_spending_an_attempt() {
+        let err = sdk(&SdkError::RetentionGap(RetentionGap::BootnodeNotReady(
+            "archive not ready".into(),
+        )));
+        assert_eq!((err.error, err.retryable), ("sync_required", true));
+    }
+
+    #[test]
+    fn a_failed_bootnode_request_is_a_retryable_chain_failure() {
+        let err = sdk(&SdkError::RetentionGap(RetentionGap::BootnodeFailed(
+            "connection refused".into(),
+        )));
+        assert_eq!((err.error, err.retryable), ("chain", true));
+    }
+
+    #[test]
+    fn missing_history_without_a_bootnode_is_not_retryable() {
+        let err = sdk(&SdkError::RetentionGap(RetentionGap::SyncGap));
+        assert_eq!((err.error, err.retryable), ("retention_gap", false));
+    }
+
+    #[test]
+    fn an_unset_or_blank_bootnode_means_none_and_a_set_one_is_trimmed() {
+        assert_eq!(non_blank(None), None);
+        assert_eq!(non_blank(Some("  ".into())), None);
+        assert_eq!(
+            non_blank(Some(" https://bootnode.example/bootnode \n".into())),
+            Some("https://bootnode.example/bootnode".into())
+        );
+    }
 
     #[test]
     fn a_wallet_behind_the_chain_is_a_retryable_sync_wait() {

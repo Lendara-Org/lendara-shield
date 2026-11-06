@@ -246,3 +246,243 @@ async fn init_forwards_a_pool_cli_failure_and_writes_nothing() -> TestResult {
     assert_eq!(asp.submits(), 0);
     Ok(())
 }
+
+/// The recorded `LeafAdded` event, at a ledger the bootnode archives.
+fn leaf_added() -> serde_json::Value {
+    json!({ "ledger": 5_395_550, "topic": [LEAF_ADDED_TOPIC], "value": LEAF_ADDED_VALUE })
+}
+
+fn rpc_error(code: i64, message: &str, data: &serde_json::Value) -> ResponseTemplate {
+    ResponseTemplate::new(200).set_body_json(json!({
+        "jsonrpc": "2.0", "id": 1,
+        "error": { "code": code, "message": message, "data": data },
+    }))
+}
+
+/// Ledger at which the bootnode hands the scan over to the RPC.
+const HANDOFF_LEDGER: u32 = 5_470_301;
+
+/// A bootnode whose archive (from the deployment ledger) has no matching
+/// event and then hands off at [`HANDOFF_LEDGER`], as SPP's bootnode does.
+async fn handing_off_bootnode() -> MockServer {
+    let server = MockServer::start().await;
+    let other =
+        json!({ "ledger": 5_395_541, "topic": ["AAAADwAAAAVPdGhlcgAAAA=="], "value": "AAAAAQ==" });
+    Mock::given(method("POST"))
+        .and(body_partial_json(json!({
+            "method": "getEvents",
+            "params": { "startLedger": DEPLOYMENT_LEDGER },
+        })))
+        .respond_with(page(&[other], "b1"))
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(body_partial_json(json!({
+            "method": "getEvents",
+            "params": { "pagination": { "cursor": "b1" } },
+        })))
+        .respond_with(rpc_error(
+            -32002,
+            "Continue syncing on your RPC endpoint",
+            &json!({ "reason": "retention_threshold", "fromLedger": HANDOFF_LEDGER }),
+        ))
+        .mount(&server)
+        .await;
+    server
+}
+
+#[tokio::test]
+async fn check_finds_an_old_leaf_in_the_bootnode_without_asking_the_rpc() -> TestResult {
+    let bootnode = MockServer::start().await;
+    // The only filter SPP's bootnode accepts: every event of the contract.
+    Mock::given(method("POST"))
+        .and(body_partial_json(json!({
+            "method": "getEvents",
+            "params": {
+                "startLedger": DEPLOYMENT_LEDGER,
+                "filters": [{ "type": "contract", "topics": [["**"]], "contractIds": [MEMBERSHIP] }],
+            },
+        })))
+        .respond_with(page(&[leaf_added()], "b1"))
+        .mount(&bootnode)
+        .await;
+    let rpc = MockServer::start().await;
+    let check = client("ok", &rpc.uri())?
+        .with_bootnode(Some(SorobanRpc::new(bootnode.uri())?))
+        .check_intake(&membership()?, DEPLOYMENT_LEDGER)
+        .await?;
+    assert!(check.allow_listed);
+    assert_eq!(rpc.received_requests().await.map_or(0, |r| r.len()), 0);
+    Ok(())
+}
+
+#[tokio::test]
+async fn check_continues_on_the_rpc_from_the_bootnode_handoff_ledger() -> TestResult {
+    let bootnode = handing_off_bootnode().await;
+    let rpc = MockServer::start().await;
+    // Only a scan resumed at the handoff ledger matches: one from the
+    // deployment ledger would be a 404 and an error.
+    Mock::given(method("POST"))
+        .and(body_partial_json(json!({
+            "method": "getEvents",
+            "params": { "startLedger": HANDOFF_LEDGER, "filters": [{ "contractIds": [MEMBERSHIP] }] },
+        })))
+        .respond_with(page(&[leaf_added()], "r1"))
+        .mount(&rpc)
+        .await;
+    let check = client("ok", &rpc.uri())?
+        .with_bootnode(Some(SorobanRpc::new(bootnode.uri())?))
+        .check_intake(&membership()?, DEPLOYMENT_LEDGER)
+        .await?;
+    assert!(check.allow_listed);
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_handoff_below_the_deployment_ledger_resumes_at_the_deployment_ledger() -> TestResult {
+    // A young pool: the bootnode hands off at its retention cutoff, which is
+    // older than the pool (seen on testnet).
+    let bootnode = MockServer::start().await;
+    Mock::given(method("POST"))
+        .respond_with(rpc_error(
+            -32002,
+            "Continue syncing on your RPC endpoint",
+            &json!({ "reason": "retention_threshold", "fromLedger": DEPLOYMENT_LEDGER - 1_000 }),
+        ))
+        .mount(&bootnode)
+        .await;
+    let server = rpc().await;
+    let check = client("ok", &server.uri())?
+        .with_bootnode(Some(SorobanRpc::new(bootnode.uri())?))
+        .check_intake(&membership()?, DEPLOYMENT_LEDGER)
+        .await?;
+    assert!(check.allow_listed);
+    Ok(())
+}
+
+#[tokio::test]
+async fn an_empty_bootnode_page_with_a_cursor_keeps_reading_until_the_handoff() -> TestResult {
+    // The archive is catching up: an empty page that is not its end.
+    let bootnode = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(body_partial_json(json!({
+            "method": "getEvents",
+            "params": { "startLedger": DEPLOYMENT_LEDGER },
+        })))
+        .respond_with(page(&[], "b1"))
+        .mount(&bootnode)
+        .await;
+    Mock::given(method("POST"))
+        .and(body_partial_json(json!({
+            "method": "getEvents",
+            "params": { "pagination": { "cursor": "b1" } },
+        })))
+        .respond_with(rpc_error(
+            -32002,
+            "Continue syncing on your RPC endpoint",
+            &json!({ "reason": "retention_threshold", "fromLedger": HANDOFF_LEDGER }),
+        ))
+        .mount(&bootnode)
+        .await;
+    let rpc = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(body_partial_json(json!({
+            "method": "getEvents",
+            "params": { "startLedger": HANDOFF_LEDGER },
+        })))
+        .respond_with(page(&[leaf_added()], "r1"))
+        .mount(&rpc)
+        .await;
+    let check = client("ok", &rpc.uri())?
+        .with_bootnode(Some(SorobanRpc::new(bootnode.uri())?))
+        .check_intake(&membership()?, DEPLOYMENT_LEDGER)
+        .await?;
+    assert!(check.allow_listed);
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_bootnode_cursor_that_does_not_move_ends_its_scan() -> TestResult {
+    let bootnode = MockServer::start().await;
+    Mock::given(method("POST"))
+        .respond_with(page(&[], "stuck"))
+        .mount(&bootnode)
+        .await;
+    let server = rpc().await;
+    let check = client("ok", &server.uri())?
+        .with_bootnode(Some(SorobanRpc::new(bootnode.uri())?))
+        .check_intake(&membership()?, DEPLOYMENT_LEDGER)
+        .await?;
+    assert!(check.allow_listed);
+    // The first page and one repeat of the same cursor, then the RPC.
+    assert_eq!(bootnode.received_requests().await.map_or(0, |r| r.len()), 2);
+    Ok(())
+}
+
+#[tokio::test]
+async fn check_reports_a_leaf_missing_from_both_the_bootnode_and_the_rpc() -> TestResult {
+    let bootnode = handing_off_bootnode().await;
+    let rpc = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(body_partial_json(json!({
+            "method": "getEvents",
+            "params": { "startLedger": HANDOFF_LEDGER },
+        })))
+        .respond_with(page(&[], "r1"))
+        .mount(&rpc)
+        .await;
+    let check = client("unlisted", &rpc.uri())?
+        .with_bootnode(Some(SorobanRpc::new(bootnode.uri())?))
+        .check_intake(&membership()?, DEPLOYMENT_LEDGER)
+        .await?;
+    assert!(!check.allow_listed);
+    Ok(())
+}
+
+#[tokio::test]
+async fn check_reports_a_bootnode_that_is_not_ready_as_retryable() -> TestResult {
+    let bootnode = MockServer::start().await;
+    Mock::given(method("POST"))
+        .respond_with(rpc_error(
+            -32004,
+            "bootnode archive not ready",
+            &json!(null),
+        ))
+        .mount(&bootnode)
+        .await;
+    let rpc = MockServer::start().await;
+    let err = client("ok", &rpc.uri())?
+        .with_bootnode(Some(SorobanRpc::new(bootnode.uri())?))
+        .check_intake(&membership()?, DEPLOYMENT_LEDGER)
+        .await
+        .err()
+        .ok_or("expected an error")?;
+    assert_eq!(err.code, "chain");
+    assert!(err.retryable);
+    assert!(err.message.contains("-32004"), "{}", err.message);
+    assert_eq!(rpc.received_requests().await.map_or(0, |r| r.len()), 0);
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_handoff_without_a_ledger_is_a_plain_rpc_error() -> TestResult {
+    let bootnode = MockServer::start().await;
+    Mock::given(method("POST"))
+        .respond_with(rpc_error(
+            -32002,
+            "Continue syncing",
+            &json!({ "reason": "retention_threshold" }),
+        ))
+        .mount(&bootnode)
+        .await;
+    let rpc = MockServer::start().await;
+    let err = client("ok", &rpc.uri())?
+        .with_bootnode(Some(SorobanRpc::new(bootnode.uri())?))
+        .check_intake(&membership()?, DEPLOYMENT_LEDGER)
+        .await
+        .err()
+        .ok_or("expected an error")?;
+    assert!(err.message.contains("-32002"), "{}", err.message);
+    assert_eq!(rpc.received_requests().await.map_or(0, |r| r.len()), 0);
+    Ok(())
+}
