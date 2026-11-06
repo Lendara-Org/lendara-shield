@@ -16,7 +16,7 @@ const code = (value: string, title?: string) => <CodeBlock code={value} copy={ch
 export const pages: Record<DocSlug, DocPage> = {
   "": {
     title: "Introducción",
-    description: "Una capa de privacidad con cumplimiento que lleva el dinero de cualquier anchor SEP-24 directo a un pool privado.",
+    description: "Un protocolo abierto que las wallets y los anchors integran para dar a sus usuarios pagos privados con cumplimiento.",
     body: () => (
       <>
         <Callout title="Solo testnet" tone="warning">
@@ -26,16 +26,17 @@ export const pages: Record<DocSlug, DocPage> = {
 
         <H2 id="problema">El problema</H2>
         <P>
-          Stellar tiene herramientas de privacidad, pero la privacidad se rompe en el borde fiat. Un depósito por rampa
-          le paga a la dirección del usuario, con un monto y una hora, y cualquiera puede seguirlo hasta un pool privado
-          y de vuelta. Además, un pool con cumplimiento necesita a alguien que haga el KYC, administre la allow-list (el
-          ASP), guarde la llave de vista del auditor y pague las comisiones.
+          Stellar tiene herramientas de privacidad, pero la privacidad se rompe donde entra el dinero. Un depósito desde
+          una fuente externa le paga a la dirección del usuario, con un monto y una hora, y cualquiera puede seguirlo
+          hasta un pool privado y de vuelta. Además, un pool con cumplimiento necesita a alguien que administre la
+          allow-list (el ASP), guarde la llave de vista del auditor y pague las comisiones, y hoy cada wallet o anchor
+          tendría que construir eso por su cuenta.
         </P>
 
         <H2 id="como">Cómo funciona Shield</H2>
         <List ordered>
           <li>La wallet del usuario deriva sus llaves del pool. Shield recibe solo llaves públicas, firmadas por la cuenta.</li>
-          <li>Shield hace el KYC y, como ASP del pool, agrega al usuario a la allow-list on-chain.</li>
+          <li>El integrador (una wallet o un anchor) decide que el usuario es elegible; Shield, como ASP del pool, lo agrega a la allow-list on-chain.</li>
           <li>
             Shield abre un depósito SEP-24 estándar con el anchor, pagado a la <strong>cuenta ómnibus de Shield</strong>{" "}
             con un memo.
@@ -52,16 +53,16 @@ export const pages: Record<DocSlug, DocPage> = {
         <Table
           head={["", "Rampa", "Directo"]}
           rows={[
-            ["De dónde viene el dinero", "Moneda local a través de un anchor SEP-24", "USDC en la wallet del usuario"],
+            ["De dónde viene el dinero", "Una fuente de fondeo (hoy, un anchor SEP-24)", "USDC en la wallet del usuario"],
             ["Dirección del usuario on-chain", "Nunca", "Al depositar, y como firmante de sus transferencias"],
-            ["Necesita un anchor", "Sí, cualquier anchor SEP-24", "No"],
+            ["Necesita una fuente de fondeo", "Sí, cualquier anchor SEP-24 funciona sin cambios", "No"],
           ]}
         />
 
         <H2 id="para-quien">Para quién es</H2>
         <List>
           <li>
-            <strong>Wallets y apps</strong> que quieren saldos privados para sus usuarios: integran el API (ver{" "}
+            <strong>Wallets</strong> que quieren saldos privados para sus usuarios: integran el API (ver{" "}
             <A href={docHref("es", "quickstart")}>Inicio rápido</A>).
           </li>
           <li>
@@ -73,13 +74,18 @@ export const pages: Record<DocSlug, DocPage> = {
             <A href={docHref("es", "security")}>Seguridad</A>).
           </li>
         </List>
+        <P>
+          Las personas individuales son los usuarios finales: llegan a Shield a través de una wallet o un anchor, que
+          decide si son elegibles según su propia política. Un pool con cumplimiento necesita una parte responsable detrás
+          de esa decisión.
+        </P>
       </>
     ),
   },
 
   protocol: {
     title: "Shield Protocol",
-    description: "El nivel 1 funciona hoy con cualquier anchor SEP-24; el nivel 2 permite que los anchors depositen en el pool de forma nativa.",
+    description: "El nivel 1 funciona con cualquier anchor SEP-24 sin cambios; el nivel 2 permite que las fuentes de fondeo depositen en el pool de forma nativa.",
     body: () => (
       <>
         <P>
@@ -87,7 +93,7 @@ export const pages: Record<DocSlug, DocPage> = {
           <A href="https://github.com/stellar/stellar-protocol/blob/master/ecosystem/sep-0010.md">SEP-10</A>,{" "}
           <A href="https://github.com/stellar/stellar-protocol/blob/master/ecosystem/sep-0053.md">SEP-53</A> y un pool
           de <A href="https://developers.stellar.org/docs/build/apps/privacy">Stellar Private Payments</A> con allow-list,
-          block-list y Global View Key. El nombre no lleva marca para que cualquier anchor lo pueda adoptar.
+          block-list y Global View Key. El nombre no lleva marca para que cualquier wallet o anchor lo pueda adoptar.
         </P>
 
         <H2 id="roles">Roles</H2>
@@ -95,8 +101,9 @@ export const pages: Record<DocSlug, DocPage> = {
           head={["Rol", "Qué hace"]}
           rows={[
             ["Usuario", "Deriva sus llaves del pool en la wallet; las llaves de gasto nunca salen de ahí"],
-            ["Anchor", "Rampa SEP-24: KYC, recibe el pago en fiat, paga el activo"],
-            ["ASP", "Mantiene la allow-list y la block-list del pool"],
+            ["Integrador", "Una wallet o un anchor: decide cuáles de sus usuarios son elegibles, según su propia política"],
+            ["Fuente de fondeo", "Paga el activo (hoy, un anchor SEP-24) y aplica sus propios controles"],
+            ["ASP", "Escribe la decisión del integrador en la allow-list y la block-list del pool"],
             ["Auditor", "Tiene la Global View Key y puede descifrar cada nota"],
             ["Shield (nivel 1)", "ASP + cuenta ómnibus + cliente SEP-24 frente a cualquier anchor"],
           ]}
@@ -110,7 +117,7 @@ export const pages: Record<DocSlug, DocPage> = {
             en el registro público de llaves del pool, porque esa transacción publicaría su dirección.
           </li>
           <li>La cuenta firma las llaves (SEP-53) y las envía al ASP.</li>
-          <li>Tras el KYC, el ASP inserta la hoja en la allow-list. Bloquear es insertar la llave de nota en la block-list.</li>
+          <li>Cuando el integrador aprueba al usuario, el ASP inserta la hoja en la allow-list. Bloquear es insertar la llave de nota en la block-list.</li>
         </List>
         <H3>Depósito</H3>
         <List ordered>
@@ -213,8 +220,8 @@ shielded_recipient=<note_public_key>:<encryption_public_key>`, "Depósito intera
           head={["Endpoint", "Autenticación", "Qué hace"]}
           rows={[
             [<C key="c">GET /v1/info</C>, "—", "Red, pool, activo y modos habilitados"],
-            [<C key="c">POST /v1/onboarding</C>, "Firma SEP-53", "Registra las llaves, corre el KYC simulado y pide la allow-list"],
-            [<C key="c">GET /v1/users/{"{account}"}</C>, "—", "Estado del KYC y de la allow-list"],
+            [<C key="c">POST /v1/onboarding</C>, "Firma SEP-53", "Registra las llaves, aplica la decisión de elegibilidad (simulada) y pide la allow-list"],
+            [<C key="c">GET /v1/users/{"{account}"}</C>, "—", "Estado de elegibilidad y de la allow-list"],
             [<C key="c">POST /v1/intents</C>, "Firma SEP-53", "Crea un intent de rampa y devuelve la URL interactiva del anchor (solo aquí)"],
             [<C key="c">GET /v1/intents/{"{id}"}</C>, "—", "Estado y hashes on-chain (nunca la URL interactiva)"],
             [<C key="c">POST /v1/asp/block</C>, <C key="t">ADMIN_TOKEN</C>, "Bloquea una llave (block-list)"],
@@ -256,12 +263,13 @@ shielded_recipient=<note_public_key>:<encryption_public_key>`, "Depósito intera
 
   scenarios: {
     title: "Escenarios",
-    description: "Fuerza cada resultado en testnet: el KYC de Shield y las tarjetas de prueba del anchor.",
+    description: "Fuerza cada resultado en testnet: la decisión de elegibilidad y las tarjetas de prueba del anchor.",
     body: () => (
       <>
-        <H2 id="kyc">El KYC de Shield (sandbox)</H2>
+        <H2 id="eligibility">Decisión de elegibilidad (sandbox)</H2>
         <P>
-          Se elige con <C>scenario</C> en <C>POST /v1/onboarding</C>, o en el selector de la página de Registro.
+          Un integrador real aplica su propia política. El sandbox simula su decisión: se elige con <C>scenario</C>{" "}
+          en <C>POST /v1/onboarding</C>, o en el selector de la página de Registro.
         </P>
         <Table
           head={["Escenario", "Resultado"]}
@@ -278,7 +286,7 @@ shielded_recipient=<note_public_key>:<encryption_public_key>`, "Depósito intera
           head={["Tarjeta", "Resultado", "Intent"]}
           rows={[
             [<C key="c">4242 4242 4242 4242</C>, "Aprobada", <C key="s">completed</C>],
-            [<C key="c">4000 0000 0000 0002</C>, "KYC rechazado", <C key="s">error</C>],
+            [<C key="c">4000 0000 0000 0002</C>, "Rechazado por el anchor", <C key="s">error</C>],
             [<C key="c">4000 0000 0000 9995</C>, "Pago no recibido", <C key="s">expired</C>],
             [<C key="c">4000 0000 0000 0077</C>, "Aprobada a los 30 s", <C key="s">completed</C>],
           ]}
@@ -304,7 +312,7 @@ shielded_recipient=<note_public_key>:<encryption_public_key>`, "Depósito intera
           head={["Observador", "Ve"]}
           rows={[
             ["El público", "El anchor le pagó a Shield; Shield usó el pool. Ni la dirección del usuario ni quién recibió qué"],
-            ["El anchor", "Al usuario y el monto (hace el KYC)"],
+            ["La fuente de fondeo", "Al usuario y el monto (recibe el pago)"],
             ["Shield", "Qué cuenta es dueña de qué llaves (es el ASP), y cada intent"],
             ["El auditor", "Cada nota: dueño y monto"],
           ]}

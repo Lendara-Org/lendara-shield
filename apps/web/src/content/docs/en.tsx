@@ -16,7 +16,7 @@ const code = (value: string, title?: string) => <CodeBlock code={value} copy={ch
 export const pages: Record<DocSlug, DocPage> = {
   "": {
     title: "Overview",
-    description: "A compliant privacy layer that takes money from any SEP-24 anchor straight into a private pool.",
+    description: "An open protocol that wallets and anchors integrate to give their users compliant private payments.",
     body: () => (
       <>
         <Callout title="Testnet only" tone="warning">
@@ -26,16 +26,16 @@ export const pages: Record<DocSlug, DocPage> = {
 
         <H2 id="problem">The problem</H2>
         <P>
-          Stellar has privacy tools, but privacy breaks at the fiat edge. A ramp deposit pays the user&apos;s own
-          address, with an amount and a time, and anyone can follow it into a privacy pool and out. A compliant pool
-          also needs someone to run KYC, maintain the allow-list (the ASP), keep the auditor&apos;s view key and pay
-          fees.
+          Stellar has privacy tools, but privacy breaks where money comes in. A deposit from an external source pays
+          the user&apos;s own address, with an amount and a time, and anyone can follow it into a privacy pool and
+          out. A compliant pool also needs someone to maintain the allow-list (the ASP), keep the auditor&apos;s view
+          key and pay fees, and today every wallet or anchor would have to build that alone.
         </P>
 
         <H2 id="how">How Shield works</H2>
         <List ordered>
           <li>The user&apos;s wallet derives their pool keys. Shield receives only public keys, signed by the account.</li>
-          <li>Shield runs KYC and, as the pool&apos;s ASP, adds the user to the allow-list on-chain.</li>
+          <li>The integrator (a wallet or an anchor) decides the user is eligible; Shield, as the pool&apos;s ASP, adds them to the allow-list on-chain.</li>
           <li>
             Shield opens a standard SEP-24 deposit with the anchor, paid to <strong>Shield&apos;s omnibus account</strong>{" "}
             with a memo.
@@ -52,16 +52,16 @@ export const pages: Record<DocSlug, DocPage> = {
         <Table
           head={["", "Ramp", "Direct"]}
           rows={[
-            ["Money comes from", "Local currency through a SEP-24 anchor", "USDC in the user's wallet"],
+            ["Money comes from", "A funding source (today a SEP-24 anchor)", "USDC in the user's wallet"],
             ["User address on-chain", "Never", "When depositing, and as the signer of their transfers"],
-            ["Needs an anchor", "Yes, any SEP-24 anchor", "No"],
+            ["Needs a funding source", "Yes, any SEP-24 anchor works unchanged", "No"],
           ]}
         />
 
         <H2 id="who">Who it is for</H2>
         <List>
           <li>
-            <strong>Wallets and apps</strong> that want private balances for their users: integrate the API (see{" "}
+            <strong>Wallets</strong> that want private balances for their users: integrate the API (see{" "}
             <A href={docHref("en", "quickstart")}>Quickstart</A>).
           </li>
           <li>
@@ -73,13 +73,17 @@ export const pages: Record<DocSlug, DocPage> = {
             <A href={docHref("en", "security")}>Security</A>).
           </li>
         </List>
+        <P>
+          Individuals are the end users: they reach Shield through a wallet or an anchor, which decides whether they are
+          eligible under its own policy. A compliant pool needs an accountable party behind that decision.
+        </P>
       </>
     ),
   },
 
   protocol: {
     title: "Shield Protocol",
-    description: "Level 1 works with any SEP-24 anchor today; level 2 lets anchors deposit into the pool natively.",
+    description: "Level 1 works with any SEP-24 anchor unchanged; level 2 lets funding sources deposit into the pool natively.",
     body: () => (
       <>
         <P>
@@ -87,7 +91,7 @@ export const pages: Record<DocSlug, DocPage> = {
           <A href="https://github.com/stellar/stellar-protocol/blob/master/ecosystem/sep-0010.md">SEP-10</A>,{" "}
           <A href="https://github.com/stellar/stellar-protocol/blob/master/ecosystem/sep-0053.md">SEP-53</A> and a{" "}
           <A href="https://developers.stellar.org/docs/build/apps/privacy">Stellar Private Payments</A> pool with an
-          allow-list, a block-list and a Global View Key. The name has no brand so any anchor can adopt it.
+          allow-list, a block-list and a Global View Key. The name has no brand so any wallet or anchor can adopt it.
         </P>
 
         <H2 id="roles">Roles</H2>
@@ -95,8 +99,9 @@ export const pages: Record<DocSlug, DocPage> = {
           head={["Role", "Does"]}
           rows={[
             ["User", "Derives pool keys in the wallet; spending keys never leave it"],
-            ["Anchor", "SEP-24 on-ramp: KYC, takes the fiat payment, pays the asset"],
-            ["ASP", "Maintains the pool's allow-list and block-list"],
+            ["Integrator", "A wallet or an anchor: decides which of its users are eligible, under its own policy"],
+            ["Funding source", "Pays the asset in (today a SEP-24 anchor) and applies its own checks"],
+            ["ASP", "Writes the integrator's decision to the pool's allow-list and block-list"],
             ["Auditor", "Holds the Global View Key and can decrypt every note"],
             ["Shield (level 1)", "ASP + omnibus account + SEP-24 client in front of any anchor"],
           ]}
@@ -110,7 +115,7 @@ export const pages: Record<DocSlug, DocPage> = {
             register in the pool&apos;s public key registry, because that transaction would publish their address.
           </li>
           <li>The account signs the keys (SEP-53) and sends them to the ASP.</li>
-          <li>After KYC, the ASP inserts the leaf into the allow-list. Blocking inserts the note key into the block-list.</li>
+          <li>Once the integrator approves the user, the ASP inserts the leaf into the allow-list. Blocking inserts the note key into the block-list.</li>
         </List>
         <H3>Deposit</H3>
         <List ordered>
@@ -211,8 +216,8 @@ shielded_recipient=<note_public_key>:<encryption_public_key>`, "SEP-24 interacti
           head={["Endpoint", "Auth", "What it does"]}
           rows={[
             [<C key="c">GET /v1/info</C>, "—", "Network, pool, asset and enabled modes"],
-            [<C key="c">POST /v1/onboarding</C>, "SEP-53 signature", "Registers keys, runs the simulated KYC, requests the allow-list"],
-            [<C key="c">GET /v1/users/{"{account}"}</C>, "—", "KYC and allow-list status"],
+            [<C key="c">POST /v1/onboarding</C>, "SEP-53 signature", "Registers keys, applies the (simulated) eligibility decision, requests the allow-list"],
+            [<C key="c">GET /v1/users/{"{account}"}</C>, "—", "Eligibility and allow-list status"],
             [<C key="c">POST /v1/intents</C>, "SEP-53 signature", "Creates a ramp intent and returns the anchor's interactive URL (only here)"],
             [<C key="c">GET /v1/intents/{"{id}"}</C>, "—", "Status and on-chain hashes (never the interactive URL)"],
             [<C key="c">POST /v1/asp/block</C>, <C key="t">ADMIN_TOKEN</C>, "Blocks a key (block-list)"],
@@ -254,12 +259,13 @@ shielded_recipient=<note_public_key>:<encryption_public_key>`, "SEP-24 interacti
 
   scenarios: {
     title: "Scenarios",
-    description: "Force every outcome on testnet: Shield's KYC and the anchor's test cards.",
+    description: "Force every outcome on testnet: the eligibility decision and the anchor's test cards.",
     body: () => (
       <>
-        <H2 id="kyc">Shield&apos;s KYC (sandbox)</H2>
+        <H2 id="eligibility">Eligibility decision (sandbox)</H2>
         <P>
-          Choose it with <C>scenario</C> in <C>POST /v1/onboarding</C>, or in the selector on the Onboard page.
+          A real integrator applies its own policy. The sandbox simulates its decision: choose it with <C>scenario</C>{" "}
+          in <C>POST /v1/onboarding</C>, or in the selector on the Onboard page.
         </P>
         <Table
           head={["Scenario", "Result"]}
@@ -276,7 +282,7 @@ shielded_recipient=<note_public_key>:<encryption_public_key>`, "SEP-24 interacti
           head={["Card", "Outcome", "Intent"]}
           rows={[
             [<C key="c">4242 4242 4242 4242</C>, "Approved", <C key="s">completed</C>],
-            [<C key="c">4000 0000 0000 0002</C>, "KYC rejected", <C key="s">error</C>],
+            [<C key="c">4000 0000 0000 0002</C>, "Rejected by the anchor", <C key="s">error</C>],
             [<C key="c">4000 0000 0000 9995</C>, "Payment not received", <C key="s">expired</C>],
             [<C key="c">4000 0000 0000 0077</C>, "Approved after 30 s", <C key="s">completed</C>],
           ]}
@@ -302,7 +308,7 @@ shielded_recipient=<note_public_key>:<encryption_public_key>`, "SEP-24 interacti
           head={["Observer", "Sees"]}
           rows={[
             ["The public", "The anchor paid Shield; Shield used the pool. Not the user's address, not who received what"],
-            ["The anchor", "The user and the amount (it does the KYC)"],
+            ["The funding source", "The user and the amount (it takes the payment)"],
             ["Shield", "Which account owns which keys (it is the ASP), and each intent"],
             ["The auditor", "Every note: owner and amount"],
           ]}
