@@ -10,16 +10,19 @@ use shield_api::{
     domain::{AccountId, DecimalAmount, FiatCurrency, PoolField, TxHash},
     intent::{
         IntentStatus,
-        anchor_sync::{ANCHOR_PAYMENT_GRACE, AnchorSync, UNCONFIRMED_PAYMENT_MESSAGE},
+        anchor_sync::{
+            ANCHOR_PAYMENT_GRACE, AnchorSync, INTERRUPTED_CREATION_AFTER,
+            INTERRUPTED_CREATION_MESSAGE, UNCONFIRMED_PAYMENT_MESSAGE,
+        },
         matching::ExpectedAsset,
         service::{CreateIntent, IntentService},
         shielding::ShieldingWorker,
         watcher::{IntakeWatcher, WatchReport},
     },
-    ports::{AnchorClient, AnchorStatus, IncomingPayment},
+    ports::{AnchorClient, AnchorStatus, Clock, IncomingPayment},
     store::{
         intake_payments,
-        intents::Intent,
+        intents::{self, Intent, NewIntent},
         users::{self, NewUser},
     },
     testing::{AnchorBehaviour, FakeAnchor, FakeClock, FakeLedger, FakePool, PoolBehaviour},
@@ -710,5 +713,101 @@ async fn a_stuck_prover_holds_up_neither_payments_nor_the_anchor(db: PgPool) -> 
     // Shutdown does not wait for the hung proof either.
     shutdown.cancel();
     tokio::time::timeout(std::time::Duration::from_secs(2), task).await??;
+    Ok(())
+}
+
+impl Harness {
+    /// An intent whose creation stopped after it was stored, `age` ago by the
+    /// harness clock (as a request cut by its timeout, or a restart, leaves it).
+    async fn interrupted_intent(
+        &self,
+        age: chrono::Duration,
+    ) -> Result<uuid::Uuid, Box<dyn std::error::Error>> {
+        let user_id: uuid::Uuid =
+            sqlx::query_scalar("SELECT id FROM shield_users WHERE stellar_account = $1")
+                .bind(ALICE)
+                .fetch_one(&self.db)
+                .await?;
+        let mut conn = self.db.acquire().await?;
+        let intent = intents::insert_created(
+            &mut conn,
+            &NewIntent {
+                user_id,
+                request_id: uuid::Uuid::now_v7(),
+                fiat_currency: FiatCurrency::parse("CRC")?,
+                amount_fiat: DecimalAmount::parse("5000")?,
+                asset_code: "USDC".into(),
+                anchor_home_domain: "anchor.example".into(),
+            },
+        )
+        .await?;
+        sqlx::query("UPDATE intents SET created_at = $2 WHERE id = $1")
+            .bind(intent.id)
+            .bind(self.clock.now() - age)
+            .execute(&self.db)
+            .await?;
+        Ok(intent.id)
+    }
+}
+
+#[sqlx::test]
+async fn an_interrupted_creation_ends_in_error_instead_of_staying_created(
+    db: PgPool,
+) -> TestResult {
+    let h = harness(db).await?;
+    let limit = chrono::Duration::from_std(INTERRUPTED_CREATION_AFTER)?;
+    let old = h
+        .interrupted_intent(limit + chrono::Duration::minutes(1))
+        .await?;
+    let recent = h
+        .interrupted_intent(limit - chrono::Duration::minutes(1))
+        .await?;
+    let waiting = h.intent().await?;
+
+    assert_eq!(h.sync.end_interrupted_creations().await?, 1);
+    let ended = h.intents.get(old).await?;
+    assert_eq!(ended.status, IntentStatus::Error);
+    assert_eq!(ended.message.as_deref(), Some(INTERRUPTED_CREATION_MESSAGE));
+    // A creation that may still be in flight, and one the anchor answered, stay.
+    assert_eq!(h.intents.get(recent).await?.status, IntentStatus::Created);
+    assert_eq!(h.status(&waiting).await?, IntentStatus::AwaitingAnchor);
+    assert!(
+        h.anchor.status_queries().is_empty(),
+        "the anchor is not asked"
+    );
+
+    // Each anchor round runs it, and the recent one ends once it is old enough.
+    h.clock.advance(chrono::Duration::minutes(2));
+    h.sync.check_due().await?;
+    assert_eq!(h.intents.get(recent).await?.status, IntentStatus::Error);
+    assert_eq!(h.sync.end_interrupted_creations().await?, 0, "nothing left");
+    Ok(())
+}
+
+#[sqlx::test]
+async fn a_late_payment_for_an_interrupted_creation_waits_for_review(db: PgPool) -> TestResult {
+    let h = harness(db.clone()).await?;
+    let limit = chrono::Duration::from_std(INTERRUPTED_CREATION_AFTER)?;
+    let id = h
+        .interrupted_intent(limit + chrono::Duration::minutes(1))
+        .await?;
+    h.sync.check_due().await?;
+    let ended = h.intents.get(id).await?;
+    assert_eq!(ended.status, IntentStatus::Error);
+
+    // The anchor had opened its side after all and pays with the intent's memo.
+    h.ledger.push(payment(9, memo(&ended), "USDC", ISSUER)?);
+    h.watcher.poll().await?;
+    let reason: Option<String> = sqlx::query_scalar(
+        "SELECT unmatched_reason FROM intake_payments WHERE operation_id = 'op-9'",
+    )
+    .fetch_one(&db)
+    .await?;
+    assert_eq!(reason.as_deref(), Some("intent is error"));
+    assert_eq!(h.intents.get(id).await?.status, IntentStatus::Error);
+    assert!(
+        h.intents.get(id).await?.amount_asset.is_none(),
+        "nothing funded"
+    );
     Ok(())
 }
