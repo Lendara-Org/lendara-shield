@@ -4,7 +4,7 @@
 //! `intent_events` in the same transaction.
 
 use chrono::{DateTime, Utc};
-use sqlx::{PgConnection, PgExecutor, prelude::FromRow};
+use sqlx::{Connection, PgConnection, PgExecutor, prelude::FromRow};
 use uuid::Uuid;
 
 use super::{StoreError, corrupt, unique_violation};
@@ -190,12 +190,17 @@ impl TryFrom<Row> for Intent {
     }
 }
 
-/// Inserts an intent in `created` and records its first event. A request id
-/// that was already used is refused.
+/// Inserts an intent in `created` and records its first event, both or
+/// neither (its own transaction, or a savepoint inside the caller's). A
+/// request id that was already used is refused.
 pub async fn insert_created(
     conn: &mut PgConnection,
     new: &NewIntent,
 ) -> Result<Intent, InsertIntentError> {
+    let mut tx = conn
+        .begin()
+        .await
+        .map_err(|err| InsertIntentError::Store(err.into()))?;
     let row: Row = sqlx::query_as(concat!(
         "INSERT INTO intents (id, user_id, mode, status, fiat_currency, amount_fiat, asset_code, \
          anchor_home_domain, request_id) \
@@ -209,14 +214,17 @@ pub async fn insert_created(
     .bind(&new.asset_code)
     .bind(&new.anchor_home_domain)
     .bind(new.request_id)
-    .fetch_one(&mut *conn)
+    .fetch_one(&mut *tx)
     .await
     .map_err(|err| match unique_violation(&err) {
         Some("intents_request_id_key") => InsertIntentError::Replayed,
         _ => InsertIntentError::Store(err.into()),
     })?;
     let intent: Intent = row.try_into()?;
-    record_event(&mut *conn, intent.id, None, IntentStatus::Created, None).await?;
+    record_event(&mut tx, intent.id, None, IntentStatus::Created, None).await?;
+    tx.commit()
+        .await
+        .map_err(|err| InsertIntentError::Store(err.into()))?;
     Ok(intent)
 }
 
@@ -232,8 +240,10 @@ pub async fn find(db: impl PgExecutor<'_>, id: Uuid) -> Result<Option<Intent>, S
     row.map(TryInto::try_into).transpose()
 }
 
-/// Moves the intent `from → to`, applying `changes`. Fails if the transition
-/// is illegal or the intent is no longer in `from`.
+/// Moves the intent `from → to`, applying `changes`, and records the event:
+/// both or neither (its own transaction, or a savepoint inside the caller's),
+/// so callers holding a plain connection get the same guarantee. Fails if the
+/// transition is illegal or the intent is no longer in `from`.
 pub async fn transition(
     conn: &mut PgConnection,
     id: Uuid,
@@ -242,6 +252,7 @@ pub async fn transition(
     changes: Changes,
 ) -> Result<Intent, TransitionError> {
     state::check(from, to)?;
+    let mut tx = conn.begin().await.map_err(StoreError::from)?;
     let row: Option<Row> = sqlx::query_as(concat!(
         "UPDATE intents SET status = $3, \
          anchor_tx_id = COALESCE($4, anchor_tx_id), \
@@ -283,10 +294,11 @@ pub async fn transition(
             .map(|tx| tx.envelope_xdr.as_str()),
     )
     .bind(changes.pool_transfer.as_ref().map(|tx| tx.sequence))
-    .fetch_optional(&mut *conn)
+    .fetch_optional(&mut *tx)
     .await?;
     let intent: Intent = row.ok_or(TransitionError::Stale(id))?.try_into()?;
-    record_event(&mut *conn, id, Some(from), to, intent.message.as_deref()).await?;
+    record_event(&mut tx, id, Some(from), to, intent.message.as_deref()).await?;
+    tx.commit().await.map_err(StoreError::from)?;
     Ok(intent)
 }
 

@@ -237,6 +237,133 @@ async fn the_store_refuses_illegal_and_stale_transitions(db: PgPool) -> TestResu
     Ok(())
 }
 
+/// Makes every `intent_events` insert with `to_status = status` fail, as a
+/// database error between the two writes of a transition would.
+async fn fail_events_to(db: &PgPool, status: &'static str) -> TestResult {
+    sqlx::raw_sql(
+        "CREATE FUNCTION refuse_event() RETURNS trigger LANGUAGE plpgsql AS $$ \
+         BEGIN IF NEW.to_status = TG_ARGV[0] THEN RAISE EXCEPTION 'event refused'; END IF; \
+         RETURN NEW; END $$",
+    )
+    .execute(db)
+    .await?;
+    let trigger = match status {
+        "error" => {
+            "CREATE TRIGGER refuse BEFORE INSERT ON intent_events FOR EACH ROW EXECUTE FUNCTION refuse_event('error')"
+        }
+        "created" => {
+            "CREATE TRIGGER refuse BEFORE INSERT ON intent_events FOR EACH ROW EXECUTE FUNCTION refuse_event('created')"
+        }
+        _ => return Err("unsupported status".into()),
+    };
+    sqlx::raw_sql(trigger).execute(db).await?;
+    Ok(())
+}
+
+#[sqlx::test]
+async fn a_transition_whose_event_cannot_be_written_changes_nothing(db: PgPool) -> TestResult {
+    user(&db, ALICE, 1, AspStatus::Allowed).await?;
+    let (service, _) = service(db.clone());
+    let intent = service.create(request(ALICE, "10")?).await?;
+    let before = intents::events(&db, intent.id).await?.len();
+    fail_events_to(&db, "error").await?;
+
+    // A plain connection, as the workers use: the status must not move alone.
+    let mut conn = db.acquire().await?;
+    let result = intents::transition(
+        &mut conn,
+        intent.id,
+        IntentStatus::AwaitingAnchor,
+        IntentStatus::Error,
+        Changes {
+            message: Some("boom".into()),
+            ..Changes::default()
+        },
+    )
+    .await;
+    assert!(result.is_err());
+    let after = service.get(intent.id).await?;
+    assert_eq!(after.status, IntentStatus::AwaitingAnchor);
+    assert_eq!(after.message, None);
+    assert_eq!(intents::events(&db, intent.id).await?.len(), before);
+
+    // The same connection is still usable: a later transition goes through whole.
+    intents::transition(
+        &mut conn,
+        intent.id,
+        IntentStatus::AwaitingAnchor,
+        IntentStatus::Expired,
+        Changes::default(),
+    )
+    .await?;
+    assert_eq!(service.get(intent.id).await?.status, IntentStatus::Expired);
+    assert_eq!(intents::events(&db, intent.id).await?.len(), before + 1);
+    Ok(())
+}
+
+#[sqlx::test]
+async fn a_transition_inside_a_caller_transaction_follows_it(db: PgPool) -> TestResult {
+    user(&db, ALICE, 1, AspStatus::Allowed).await?;
+    let (service, _) = service(db.clone());
+    let intent = service.create(request(ALICE, "10")?).await?;
+    let before = intents::events(&db, intent.id).await?.len();
+
+    let mut tx = db.begin().await?;
+    intents::transition(
+        &mut tx,
+        intent.id,
+        IntentStatus::AwaitingAnchor,
+        IntentStatus::Error,
+        Changes::default(),
+    )
+    .await?;
+    tx.rollback().await?;
+
+    assert_eq!(
+        service.get(intent.id).await?.status,
+        IntentStatus::AwaitingAnchor
+    );
+    assert_eq!(intents::events(&db, intent.id).await?.len(), before);
+    Ok(())
+}
+
+#[sqlx::test]
+async fn inserting_on_a_plain_connection_without_its_event_inserts_nothing(
+    db: PgPool,
+) -> TestResult {
+    let alice = user(&db, ALICE, 1, AspStatus::Allowed).await?;
+    fail_events_to(&db, "created").await?;
+    let mut conn = db.acquire().await?;
+    let new = intents::NewIntent {
+        user_id: alice.id,
+        request_id: Uuid::now_v7(),
+        fiat_currency: FiatCurrency::parse("CRC")?,
+        amount_fiat: DecimalAmount::parse("10")?,
+        asset_code: "USDC".into(),
+        anchor_home_domain: "anchor.example".into(),
+    };
+    assert!(intents::insert_created(&mut conn, &new).await.is_err());
+    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM intents")
+        .fetch_one(&mut *conn)
+        .await?;
+    assert_eq!(count, 0, "no intent without its first event");
+    Ok(())
+}
+
+#[sqlx::test]
+async fn an_intent_whose_first_event_cannot_be_written_is_not_created(db: PgPool) -> TestResult {
+    user(&db, ALICE, 1, AspStatus::Allowed).await?;
+    let (service, anchor) = service(db.clone());
+    fail_events_to(&db, "created").await?;
+    assert!(service.create(request(ALICE, "10")?).await.is_err());
+    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM intents")
+        .fetch_one(&db)
+        .await?;
+    assert_eq!(count, 0);
+    assert!(anchor.requests().is_empty(), "the anchor was never asked");
+    Ok(())
+}
+
 #[sqlx::test]
 async fn walks_the_happy_path_and_stamps_completion(db: PgPool) -> TestResult {
     user(&db, ALICE, 1, AspStatus::Allowed).await?;
@@ -309,7 +436,11 @@ async fn shielding_without_a_stored_deposit_is_refused(db: PgPool) -> TestResult
         intent.id,
         IntentStatus::AwaitingAnchor,
         IntentStatus::FundsReceived,
-        Changes::default(),
+        Changes {
+            amount_asset: Some(DecimalAmount::parse("9.3039215")?),
+            intake_payment_tx_hash: Some(TxHash::from_bytes([7; 32])),
+            ..Changes::default()
+        },
     )
     .await?;
 
@@ -337,7 +468,9 @@ async fn one_anchor_payment_can_fund_only_one_intent(db: PgPool) -> TestResult {
     let a = service.create(request(ALICE, "10")?).await?;
     let b = service.create(request(ALICE, "10")?).await?;
     let mut conn = db.acquire().await?;
+    let amount = DecimalAmount::parse("9.3039215")?;
     let funded = |hash: TxHash| Changes {
+        amount_asset: Some(amount.clone()),
         intake_payment_tx_hash: Some(hash),
         ..Changes::default()
     };
@@ -417,5 +550,47 @@ async fn a_request_id_creates_at_most_one_intent(db: PgPool) -> TestResult {
         Err(IntentError::Replayed)
     ));
     assert_eq!(anchor.requests().len(), 1, "the anchor is asked only once");
+    Ok(())
+}
+
+#[sqlx::test]
+async fn the_database_refuses_unknown_event_statuses_and_unfunded_funded_intents(
+    db: PgPool,
+) -> TestResult {
+    user(&db, ALICE, 1, AspStatus::Allowed).await?;
+    let (service, _) = service(db.clone());
+    let intent = service.create(request(ALICE, "10")?).await?;
+
+    let bad_event = sqlx::query(
+        "INSERT INTO intent_events (id, intent_id, from_status, to_status) VALUES ($1, $2, 'created', 'teleported')",
+    )
+    .bind(Uuid::now_v7())
+    .bind(intent.id)
+    .execute(&db)
+    .await;
+    assert!(bad_event.is_err(), "an unknown to_status is refused");
+
+    let bad_from = sqlx::query(
+        "INSERT INTO intent_events (id, intent_id, from_status, to_status) VALUES ($1, $2, 'limbo', 'error')",
+    )
+    .bind(Uuid::now_v7())
+    .bind(intent.id)
+    .execute(&db)
+    .await;
+    assert!(bad_from.is_err(), "an unknown from_status is refused");
+
+    // Funded without the USDC amount or the payment that brought it.
+    let unfunded = sqlx::query("UPDATE intents SET status = 'funds_received' WHERE id = $1")
+        .bind(intent.id)
+        .execute(&db)
+        .await;
+    assert!(
+        unfunded.is_err(),
+        "a funded intent needs its amount and payment"
+    );
+    assert_eq!(
+        service.get(intent.id).await?.status,
+        IntentStatus::AwaitingAnchor
+    );
     Ok(())
 }
