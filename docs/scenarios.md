@@ -46,6 +46,7 @@ Shield follows the anchor with `GET /sep24/transaction` (the sandbox has no webh
 | Case | Behaviour |
 |---|---|
 | Someone sends the asset with an intent's memo (front-running the anchor) | Recorded as "matches an intent's memo; not confirmed by the anchor"; only the payment the anchor reports funds the intent (verified on testnet: dust [`1f533b4e…`](https://stellar.expert/explorer/testnet/tx/1f533b4e04b51d2734162b4a2730d85cecbf9c796cfac47430157ba426c1f178) stayed in review, the anchor's [`3a971137…`](https://stellar.expert/explorer/testnet/tx/3a97113724334b86130aeb18d0de249f7090dc8364da2ca4cb30d1017883c3b6) completed the intent) |
+| Creating an intent is interrupted after it was stored (a timeout or a restart while the anchor answers) | After 5 minutes in `created` it ends in `error`. The user never received the anchor's URL, so the widget cannot be completed; a payment that still arrives with its memo is kept as unmatched for review |
 | The anchor reports `completed` before Shield has read its payment on Horizon | Waits and checks again a few seconds later |
 | The anchor reports `completed` but its payment never shows up (no memo, wrong asset, no `stellar_transaction_id`) | Waits 15 minutes from the first report, then `error` for manual review; a payment arriving later is kept as unmatched |
 | Someone else asks for a deposit in a user's name | Refused: `POST /v1/intents` needs the account's SEP-53 signature (`400 invalid_signature`) |

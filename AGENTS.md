@@ -148,7 +148,8 @@ shielding ──(deposit confirmed; transfer stored and sent)──► transferr
 transferring ──(private transfer confirmed)──► completed
 
 Error exits:
-  created ──► error                       (the anchor could not start the deposit: POST /v1/intents → 502)
+  created ──► error                       (the anchor could not start the deposit: POST /v1/intents → 502;
+                                           or the creation was interrupted and stayed `created` for 5 minutes)
   created | awaiting_anchor ──► rejected  (the ASP confirmed a block of the user)
   awaiting_anchor ──► expired             (the anchor reports expired)
   awaiting_anchor ──► error               (the anchor failed, e.g. KYC rejected in the sandbox; or it reported
