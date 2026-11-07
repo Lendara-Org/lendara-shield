@@ -42,21 +42,29 @@ pub async fn record(
     Ok(inserted == 1)
 }
 
-/// The unattached payment in transaction `tx_hash` with memo `memo`, locked
-/// until the transaction ends. `None` if Shield has not seen it yet (or it
-/// already funded something). A transaction with several such payments is
-/// not one the anchor would send: it is treated as unseen and left for review.
+/// The unattached payment of the pool's asset (`asset_code` issued by
+/// `asset_issuer`) in transaction `tx_hash` with memo `memo`, locked until
+/// the transaction ends. `None` if Shield has not seen it yet (or it already
+/// funded something). A payment of any other asset never funds an intent,
+/// even when the anchor reports its transaction: it is treated as unseen and
+/// left for review. So is a transaction with several such payments, which
+/// the anchor would not send.
 pub async fn lock_confirmed(
     conn: &mut PgConnection,
     tx_hash: &TxHash,
     memo: i64,
+    asset_code: &str,
+    asset_issuer: &str,
 ) -> Result<Option<(String, DecimalAmount)>, StoreError> {
     let rows: Vec<(String, String)> = sqlx::query_as(
         "SELECT operation_id, amount::text FROM intake_payments \
-         WHERE tx_hash = $1 AND memo = $2 AND intent_id IS NULL FOR UPDATE",
+         WHERE tx_hash = $1 AND memo = $2 AND asset_code = $3 AND asset_issuer = $4 \
+         AND intent_id IS NULL FOR UPDATE",
     )
     .bind(tx_hash.as_str())
     .bind(memo)
+    .bind(asset_code)
+    .bind(asset_issuer)
     .fetch_all(conn)
     .await?;
     match rows.as_slice() {
