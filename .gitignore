@@ -33,6 +33,8 @@ artifacts/
 
 # Local AI context
 CLAUDE.local.md
+# Local working notes (e.g. the SCF application draft): never versioned.
+docs/scf-context.md
 
 # Pool SDK served to the browser (scripts/stage-web-sdk.sh)
 apps/web/public/spp/
