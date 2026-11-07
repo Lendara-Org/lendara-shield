@@ -109,7 +109,22 @@ Corrido en `develop` en `9bb595d` (el commit desplegado).
 
 **Resultado:** aprobado. La revisión *pool deployment ledger is inside the RPC retention window* va a empezar a fallar alrededor del 2026-11-02 (ver Hallazgos).
 
+## 6. Reverificación en el pool redesplegado (2026-11-06)
+
+El primer pool salió de la ventana de historial del RPC público el 2026-11-02 (hallazgo 2). Se redesplegó el 2026-11-06 en el ledger 5 591 375 ([CAB6FI43…KR4](https://stellar.expert/explorer/testnet/contract/CAB6FI43BVMPMAXYCLVZ7R5DYQY3IUJF3G7JMSBEXJHWO7LEUE3H4KR4)), con el bootnode de SPP sirviendo los eventos más viejos que esa ventana. Después se corrieron todos los flujos a mano desde la app web en vivo, con Freighter. Todas las transacciones salieron bien; en las tres de la rampa, la dirección del usuario aparece 0 veces (Horizon: transacciones, operaciones y efectos).
+
+| Flujo | UTC | Transacción |
+| --- | --- | --- |
+| Rampa: anchor → ómnibus (9,3039215 USDC, memo del intent) | 19:08:31 | [7ce42090…](https://stellar.expert/explorer/testnet/tx/7ce4209056f81d311f7a55a2f25e2a99e4ae5cba30ef469e0dd8db5635cf810f) |
+| Rampa: depósito de Shield en el pool | 19:11:11 | [2a8dd765…](https://stellar.expert/explorer/testnet/tx/2a8dd76594d81d566b67cceaa9c7b35b7cd087c952e7d28e6ccb000b2b795bda) |
+| Rampa: transferencia privada a las llaves del usuario | 19:12:11 | [4e3c5c0a…](https://stellar.expert/explorer/testnet/tx/4e3c5c0a1fcfe09df21434252c2d586aea475dc719ec731ba6d38ef3c72c7d9d) |
+| Directo: depósito desde la wallet del usuario | 19:01:31 | [e2f171da…](https://stellar.expert/explorer/testnet/tx/e2f171dad9a6f67b3bc0d407fa18beb7e001c5f78f7650d5454f1ab588568aec) |
+| Directo: transferencia privada desde el navegador | 21:13:11 | [eee163a9…](https://stellar.expert/explorer/testnet/tx/eee163a927aa368798072306ab7d15dfa16c18f1bc318ca0d0962cccf2e6be2d) |
+| Directo: retiro de 5 USDC a la cuenta del usuario | 21:28:01 | [1a8bb88e…](https://stellar.expert/explorer/testnet/tx/1a8bb88ecbef914ead7a43019e80bbaf154f23cb44f6162caa03df41f1dfc71b) |
+
+Una rampa posterior, el mismo día, tardó unos 13 minutos desde el pago del anchor hasta la transferencia privada. La causa fue la latencia del RPC público, no Shield ni SPP: ver `docs/testing/2026-11-06-rpc-latency.md` en el repositorio.
+
 ## Hallazgos
 
-1. **Límites de depósito que no coinciden.** El `MaximumDepositAmount` del pool es `10000000000` stroops (1000 USDC); el anchor acepta hasta 10 000 USDC y el API no revisa el límite del pool al crear un intent. Un intent de rampa de entre 1000 y 10 000 USDC lo pagaría el anchor, lo rechazaría el pool y terminaría en `error` con los USDC en la intake. Los montos de la demo (CRC 5000 ≈ 9,30 USDC) no se ven afectados.
-2. **Ventana de historial del RPC.** El pool se desplegó en el ledger `5395126`; el RPC público guarda 120 960 ledgers (el más antiguo era `5316399`). A ~5 s por ledger, el despliegue sale de la ventana alrededor del **2026-11-02**, y desde entonces las pruebas fallan en ambos modos. Opciones: correr `tools/bootnode` de SPP o redesplegar (ver el AGENTS.md del repositorio, sección 9).
+1. **Límites de depósito que no coinciden.** El `MaximumDepositAmount` del pool es `10000000000` stroops (1000 USDC); el anchor acepta hasta 10 000 USDC y el API no revisa el límite del pool al crear un intent. Un intent de rampa de entre 1000 y 10 000 USDC lo pagaría el anchor, lo rechazaría el pool y terminaría en `error` con los USDC en la intake. Los montos de la demo (CRC 5000 ≈ 9,30 USDC) no se ven afectados. **Resuelto para la demo (2026-11-06, #62–#64):** la API publica el tope como `pool.max_deposit` en `/v1/info`, la página de depósito lo muestra antes de ir al anchor, y un pago por encima del tope se detiene de inmediato en `error` con un mensaje claro.
+2. **Ventana de historial del RPC.** El pool se desplegó en el ledger `5395126`; el RPC público guarda 120 960 ledgers (el más antiguo era `5316399`). A ~5 s por ledger, el despliegue sale de la ventana alrededor del **2026-11-02**, y desde entonces las pruebas fallan en ambos modos. Opciones: correr `tools/bootnode` de SPP o redesplegar (ver el AGENTS.md del repositorio, sección 9). **Resuelto (2026-11-06):** el pool se redesplegó y el bootnode de SPP ahora sirve el historial más viejo (sección 6).

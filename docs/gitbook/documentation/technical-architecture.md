@@ -14,7 +14,7 @@ Repository: [github.com/Lendara-Org/lendara-shield](https://github.com/Lendara-O
 
 ## 1. Summary
 
-Lendara Shield gives wallets and anchors on Stellar compliant private payments through one API. Their users get private balances; the integrator controls who is eligible (the Association Set) and only an authorized auditor can see the details, without anyone building privacy infrastructure from scratch. Funding stays private too: money arriving from an external source can reach a private balance without the user's address ever appearing on-chain.
+Lendara Shield gives wallets and anchors on Stellar compliant private payments through one API. Their users get private balances; the integrator controls who is eligible (the Association Set) and only an authorized auditor can see the details, without anyone building privacy infrastructure from scratch. Funding stays private too: money arriving from an external source can reach a private balance without the user's address appearing in the ramp's settlement transactions.
 
 Shield is the reference implementation of the **Shield Protocol**: the operator layer a compliant privacy pool needs and that no single product should have to build alone. It runs on [Stellar Private Payments (SPP)](https://developers.stellar.org/docs/build/apps/privacy), the Privacy Pools implementation by Nethermind for Stellar (Circom circuits, Groth16 proofs verified in Soroban contracts), and adds no new cryptography.
 
@@ -23,7 +23,7 @@ A compliant SPP pool needs someone to maintain its Association Set (allow-list a
 * **Private balances:** deposits, private transfers and withdrawals, with proofs generated client-side.
 * **An on-chain Association Set the integrator controls:** the integrator decides which of its users are eligible; Shield writes the allow-list and block-list.
 * **Selective disclosure:** an authorized auditor can decrypt every note; nobody else can.
-* **Private funding (ramp mode):** funds from an external source reach the user's private balance without exposing the user's address. The first supported source is any SEP-24 anchor; Shield Protocol level 2 ([Section 8](#8.-shield-protocol-level-2-specification-draft)) lets a source deposit straight into the pool.
+* **Private funding (ramp mode):** funds from an external source reach the user's private balance without exposing the user's address. The first supported source is a standard SEP-24 anchor; Shield Protocol level 2 ([Section 8](#8.-shield-protocol-level-2-specification-draft)) lets a source deposit straight into the pool.
 
 Status: both modes run end to end on Stellar testnet ([Section 9](#9.-what-exists-today-testnet-verifiable)). The architecture below is the one deployed today; [Section 10](#10.-what-each-tranche-builds) marks what each tranche adds.
 
@@ -87,7 +87,7 @@ flowchart TB
 | **SEP-53 (sign message)** | Every registration and every deposit request carries the account's signature (Freighter `signMessage`) over the exact payload, so nobody can attach keys to someone else's account or open deposits in their name. Deposit requests also carry a single-use `request_id` and a timestamp (≤ 5 min) against replay. |
 | **SEP-1** | Discovers the funding anchor's endpoints from its `stellar.toml`; nothing is hardcoded. |
 | **SEP-10** | Shield authenticates to the anchor as its omnibus account with an `id` memo per user, and fully verifies the challenge before signing. |
-| **SEP-24** | Opens an interactive deposit whose destination is Shield's omnibus account with a random intent memo. Works with any SEP-24 anchor without changes on the anchor's side. |
+| **SEP-24** | Opens an interactive deposit whose destination is Shield's omnibus account with a random intent memo. Works with standard SEP-24 anchors without changes on the anchor's side. |
 | **Horizon** | The watcher detects the anchor's payment by memo, asset code and issuer, and records the amount actually received. |
 | **Soroban RPC** | Simulation, submission and the pool's event history needed for proving. |
 
@@ -102,7 +102,7 @@ flowchart TB
 
 ### 6.2 Direct mode (user already holds USDC)
 
-The user deposits from their own wallet, transfers privately and withdraws. Keys are derived and Groth16 proofs generated in the browser; Shield moves no money in this mode. Limitation today: the user's account is the transaction source, so it is visible as a pool user (amounts and recipients stay hidden). The fee-bump relayer in Tranche 1 removes this.
+The user deposits from their own wallet, transfers privately and withdraws. Keys are derived and Groth16 proofs generated in the browser; Shield moves no money in this mode. Limitation today: the user's account is the transaction source, so it is visible as a pool user (amounts and recipients stay hidden). The relayer in Tranche 1 removes this for private transfers: it submits them as the transaction source and the pool's sender, so the user's account is neither. Direct deposits still come from the user's account, because the pool takes the tokens from the sender.
 
 ### 6.3 Ramp mode (external funding without exposure)
 
@@ -184,7 +184,7 @@ Logs carry intent ids and route templates, never "address + amount". The web app
 
 ## 8. Shield Protocol level 2 (specification draft)
 
-Level 2 lets a funding source deposit **directly** into the pool to the user's keys, removing the custody step of level 1. Level 1 (implemented) works with any SEP-24 anchor unchanged; level 2 proposes a SEP-24 extension:
+Level 2 lets a funding source deposit **directly** into the pool to the user's keys, removing the custody step of level 1. Level 1 (implemented) works with standard SEP-24 anchors without changes on their side; level 2 proposes a SEP-24 extension:
 
 * **Discovery** in `stellar.toml`: `SHIELD_PROTOCOL_VERSION`, `SHIELD_POOL_CONTRACT`, `SHIELD_ASP_ENDPOINT`.
 * **Capability** in SEP-24 `GET /info`: `features.shielded_deposit = true`.
@@ -213,15 +213,15 @@ In the ramp run of 2026-10-26, the user's address appears 0 times across the anc
 
 | Tranche | Builds on the architecture above |
 | --- | --- |
-| **1 — Developer-ready testnet** | ASP leaf bound to the registered key (closes known limit 7) · fee-bump relayer (direct-mode users no longer visible as signers) · project API keys, scoped permissions and sessions, including the integrator's eligibility decision through its key · TypeScript SDK generated from `openapi.yaml` |
-| **2 — Production readiness** | Shield Protocol level 2: complete specification that any SEP-24 anchor can adopt, with Lendara's anchor as the first reference implementation (direct deposits into the pool, no custody step) · operator, omnibus and view keys in a KMS/HSM with rotation · per-note selective disclosure for users and a role-based auditor portal with access logs · resolution of blocked users' funds (resume, return to the anchor or hold) with an audit log · integration with a second funding source · threat model (STRIDE-style) and monitoring plan for the production deployment |
-| **3 — Mainnet** | Mainnet deployment with archival RPC, monitoring and alerts · anonymity-set hardening (batching, rounding, delays) · first third-party wallet integration |
+| **1 — Developer-ready testnet** | ASP leaf bound to the registered key (closes known limit 7) · relayer with its own transaction source and pool-call sender (direct-mode users no longer visible as source or signer of private transfers) · project API keys, scoped permissions and sessions, including the integrator's eligibility decision through its key · TypeScript SDK generated from `openapi.yaml` |
+| **2 — Production readiness** | Shield Protocol level 2: complete specification that any SEP-24 anchor can adopt, with Lendara's anchor as the first reference implementation (direct deposits into the pool, no custody step) · operator and omnibus keys in a KMS/HSM with rotation; the view key stored encrypted with access logs (its public half is fixed per pool) · per-note selective disclosure for users and a role-based auditor portal with access logs · resolution of blocked users' funds (resume, return to the anchor or hold) with an audit log · integration with a second funding source · threat model (STRIDE-style) and monitoring plan for the production deployment |
+| **3 — Mainnet** | Mainnet deployment with archival RPC, monitoring and alerts; ramp mode on level 2 only, so Shield holds no user funds on mainnet · anonymity-set hardening (batching, rounding, delays) · first third-party wallet integration |
 
 See the [Roadmap](roadmap.md) for what is already done.
 
 ## 11. How Shield differs from existing Stellar privacy projects
 
-Shield differs in two places. It operates SPP as a shared compliance layer that any product integrates through one API, and it keeps funding private: money entering from an external source lands as a private balance with the user's address never on-chain. Comparison based on each project's public SCF submission or announcement:
+Shield differs in two places. It operates SPP as a shared compliance layer that any product integrates through one API, and it keeps funding private: money entering from an external source lands as a private balance without the user's address appearing in the ramp's settlement transactions. Comparison based on each project's public SCF submission or announcement:
 
 | Project | Approach | Shield's difference |
 | --- | --- | --- |
