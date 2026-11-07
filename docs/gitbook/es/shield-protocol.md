@@ -112,7 +112,7 @@ El usuario retira del pool a la cuenta del anchor con una prueba de membresía v
 - **Custodia.** El nivel 2 elimina la custodia ómnibus del nivel 1. El anchor nunca tiene la nota.
 - **Separación de funciones.** La llave de firma del ASP, la llave de distribución del anchor y la llave de vista del auditor deberían pertenecer a partes distintas o, al menos, ser llaves distintas.
 - **Poderes del emisor.** Un activo clásico cuyo emisor puede revocar o hacer clawback puede congelar el saldo del pool. Los pools deberían preferir activos con `AUTH_IMMUTABLE` o documentar el riesgo.
-- **Quién firma es público.** Las operaciones propias del usuario en el pool revelan su cuenta como firmante, salvo que un relayer (fee-bump) las envíe.
+- **Quién firma es público.** Las operaciones propias del usuario en el pool revelan su cuenta como firmante, salvo que un relayer las envíe como cuenta fuente y como sender del pool (un fee-bump solo no alcanza: la transacción interna mantiene al usuario como fuente).
 
 ## Preguntas abiertas
 

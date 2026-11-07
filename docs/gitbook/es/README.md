@@ -4,7 +4,7 @@ description: Un protocolo abierto para pagos privados con cumplimiento en Stella
 
 # Lendara Shield
 
-Lendara Shield le da a cualquier producto en Stellar pagos privados con cumplimiento a través de una sola API. Las wallets y los anchors lo integran para dar a sus usuarios saldos privados, con un Association Set que controla el integrador y divulgación solo para el auditor, sobre [Stellar Private Payments](https://developers.stellar.org/docs/build/apps/privacy). El dinero que llega desde una fuente de fondeo externa puede llegar a un saldo privado sin que la dirección del usuario aparezca nunca on-chain.
+Lendara Shield le da a cualquier producto en Stellar pagos privados con cumplimiento a través de una sola API. Las wallets y los anchors lo integran para dar a sus usuarios saldos privados, con un Association Set que controla el integrador y divulgación solo para el auditor, sobre [Stellar Private Payments](https://developers.stellar.org/docs/build/apps/privacy). El dinero que llega desde una fuente de fondeo externa puede llegar a un saldo privado sin que la dirección del usuario aparezca en las transacciones de liquidación de la rampa.
 
 Es la implementación de referencia del **Shield Protocol**, un borrador abierto que cualquier integrador puede adoptar.
 
@@ -34,7 +34,7 @@ Shield opera el ASP del pool. Cada integrador decide cuáles de sus usuarios son
 | --- | --- | --- |
 | Para | Usuarios fondeados por una fuente externa | Usuarios que ya tienen USDC |
 | El dinero viene de | Fuente de fondeo → cuenta ómnibus de Shield → pool | La wallet propia del usuario → pool |
-| Dirección del usuario on-chain | **Nunca** | Visible al depositar, y como firmante de sus propias transferencias (hasta el relayer) |
+| Dirección del usuario on-chain | **Nunca** en las transacciones de liquidación de la rampa | Visible al depositar, y como firmante de sus propias transferencias (hasta el relayer) |
 | Qué hace Shield | ASP, recibir, depositar, transferir, auditar | ASP, auditar |
 
 Ambos modos comparten el ASP, el cliente del pool, el auditor y la máquina de estados de los intents. El modo rampa habla con la fuente de fondeo **solo a través de SEPs estándar**. El primer tipo de fuente soportado es un anchor SEP-24 (SEPs 1, 10 y 24), sin cambios de su lado.
@@ -45,7 +45,7 @@ Los clientes de Shield son **wallets** y **anchors**. Las personas individuales 
 
 | | **Wallets** | **Anchors** |
 | --- | --- | --- |
-| Qué reciben sus usuarios | Saldos privados: depositar, transferir en privado y retirar, con pruebas generadas en el dispositivo del usuario | Depósitos que llegan como saldo privado, sin que la dirección del usuario aparezca on-chain |
+| Qué reciben sus usuarios | Saldos privados: depositar, transferir en privado y retirar, con pruebas generadas en el dispositivo del usuario | Depósitos que llegan como saldo privado, sin que la dirección del usuario aparezca en las transacciones de liquidación de la rampa |
 | Cómo integran | La API de Shield (OpenAPI) con una API key por proyecto, y el SDK de TypeScript (tramo 1) | **Nivel 1:** sin cambios; Shield actúa como cliente SEP-24 frente al anchor. **Nivel 2:** el anchor agrega la extensión de SEP-24 y deposita directo en el pool (tramo 2) |
 | Qué deciden | Cuáles de sus usuarios son elegibles, según su propia política (que puede incluir KYC) | Lo mismo, más sus controles habituales como fuente de fondeo |
 | Qué hace Shield | Escribe la allow-list y la block-list (ASP), protege la view key del auditor, paga las comisiones con un relayer (tramo 1) | El mismo rol de ASP y auditor; en el nivel 1, también el paso por la cuenta ómnibus |

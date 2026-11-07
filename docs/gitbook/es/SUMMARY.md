@@ -6,5 +6,6 @@
 * [Modelo de amenazas](threat-model.md)
 * [Escenarios](scenarios.md)
 * [Roadmap](roadmap.md)
+* [Plan de pruebas](test-plan.md)
 * [Verificación en testnet](testnet-verification.md)
 * [Ejecutar en local](run-locally.md)

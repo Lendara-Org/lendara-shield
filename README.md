@@ -1,12 +1,33 @@
-# Lendara Shield
+<div align="center">
+  <table cellpadding="20"><tr><td align="center" bgcolor="#161616">
+    <img src="docs/design-system/assets/lendara-logo-light.svg" alt="Lendara" width="180">
+  </td></tr></table>
 
-> **KYC once, pay privately, disclose selectively.**
+**KYC once, pay privately, disclose selectively.**
+
+[![Web app](https://img.shields.io/badge/Web_app-lendara--shield.duckdns.org-E22366?style=flat-square&labelColor=161616)](https://lendara-shield.duckdns.org/en)
+[![Docs](https://img.shields.io/badge/Docs-EN%20%2F%20ES-3d444d?style=flat-square&labelColor=161616)](https://lendara-shield.duckdns.org/en/docs)
+[![Built on Stellar](https://img.shields.io/badge/Built_on-Stellar-FFFFFF?style=flat-square&labelColor=161616&logo=stellar&logoColor=white)](https://stellar.org)
+[![Testnet only](https://img.shields.io/badge/Network-Testnet_only-f59e0b?style=flat-square&labelColor=161616)](#live-on-testnet)
+[![License](https://img.shields.io/badge/License-Apache_2.0-30363d?style=flat-square&labelColor=161616)](LICENSE)
+
+</div>
+
+---
 
 Lendara Shield is the reference implementation of the **Shield Protocol**: a compliant privacy layer for Stellar that connects fiat on-ramps (any SEP-24 anchor) to a [Stellar Private Payments](https://developers.stellar.org/docs/build/apps/privacy) pool. Money arrives in local currency and lands as a **private balance**, and the user's address **never appears on-chain**. An auditor holding the pool's view key can still see everything.
 
+> **Status.** Ramp mode and direct mode both run today on Stellar testnet, proved end to end with real transaction hashes (see [Proof on testnet](#proof-on-testnet)). Shield Protocol level 2 (anchors depositing natively into the pool) is a published draft, not yet implemented. Mainnet launch depends on SPP's own audit and mainnet release by Nethermind and SDF.
+
 > ⚠️ **Testnet only.** Stellar Private Payments is a developer preview with unaudited contracts. Do not use with real funds.
 
-Built for **HackMeridian 2026** (Genesis track).
+## Where to read next
+
+| If you are... | Start with |
+|---|---|
+| **A wallet or anchor** evaluating integration | [Developer docs](https://lendara-shield.duckdns.org/en/docs), the [API reference](https://lendara-shield.duckdns.org/api-reference.html), and [`openapi.yaml`](openapi.yaml) |
+| **A security reviewer** | [Threat model](docs/threat-model.md) and [SECURITY.md](SECURITY.md) |
+| **Anyone trying the demo** | The [5-minute demo](#5-minute-demo) below |
 
 ## Live on testnet
 
@@ -118,10 +139,29 @@ lendara-shield/
 └── docs/            Protocol draft, threat model, scenarios, SPP spike, demo script.
 ```
 
-- **Only the anchor's payment funds an intent.** Memos are random, and a payment with an intent's memo funds it only if the anchor reports that very transaction (SEP-24 `stellar_transaction_id`). Onboarding requires the account's SEP-53 signature over its keys.
-- **Money integrity.** Every intent moves through one state machine: `created → awaiting_anchor → funds_received → shielding → transferring → completed`. Each pool transaction is proved, signed and **stored before it is sent**. On retry the worker checks the stored hash and resends the same envelope; it never builds a second payment. The tests run against a fake chain that enforces Stellar's sequence rule, including ambiguous submits, dropped and refused transactions, RPC indexing lag and a chaotic mix. Every one of them asserts **exactly one deposit and one transfer**.
-- **Keys stay where they belong.** Spending keys never leave the user's browser. Shield's operator key (ASP), omnibus key (intake) and the auditor's Global View Key are three separate keys. The view key only reaches the auditor's `pool-cli` process, never the browser or the shielding worker.
 - **Why a CLI for the prover?** The SPP Rust SDK links a SQLite version that conflicts with `sqlx`. A separate stateless binary keeps the API free of it and gives the prover its own minimal environment.
+
+### Security model
+
+| What | How it's protected |
+|---|---|
+| User spending keys | Derived and kept in the user's browser only; Shield never holds them |
+| Operator, omnibus and auditor keys | Three separate keys, never reused. The Global View Key reaches only the auditor's `pool-cli` process, never the browser or the shielding worker |
+| Pool transactions | Proved, signed and **stored before submission**; on retry, the worker checks the stored hash first, so a deposit or transfer can never be sent twice. Tested against a fake chain under ambiguous submits, dropped and refused transactions, and RPC indexing lag. Every test asserts exactly one deposit and one transfer |
+| Onboarding and intents | Require the account's own SEP-53 signature over its keys; a signed intent request is single-use (`request_id`, replay-guarded) |
+| Logs | Never include view keys, notes, note secrets, or the pair "user address + amount" |
+
+Full detail: [Threat model](docs/threat-model.md) and [SECURITY.md](SECURITY.md).
+
+### Technology stack
+
+| Layer | Choice | Why |
+|---|---|---|
+| API | Rust, Axum, Postgres (`sqlx`) | Ports and adapters; typed domain, no `unwrap`/`panic` outside tests |
+| Prover | Rust, stateless CLI around the SPP SDK | SPP's SDK links a SQLite version that conflicts with `sqlx` |
+| Web | Next.js, TypeScript | Onboarding, deposit, wallet and audit, in English and Spanish |
+| Privacy pool | Soroban ([Stellar Private Payments](https://developers.stellar.org/docs/build/apps/privacy), by Nethermind), Groth16 on BN254 | Deployed unmodified, pinned to `sdk-v0.2.1` |
+| Funding source | Any SEP-1/10/24 anchor | Validated today against Lendara's own testnet sandbox anchor |
 
 ## Run locally
 
@@ -158,22 +198,23 @@ Try the gatekeeper too: onboard another account with **Rejected** (it never ente
 
 The web app has developer docs in English and Spanish at `/en/docs` and `/es/docs` (overview, protocol, quickstart, API, scenarios, security), plus the full API reference generated from `openapi.yaml` at `/api-reference.html`.
 
-
-- [Shield Protocol (draft)](docs/protocol/shield-protocol.md): Shield as middleware for any SEP-24 anchor (level 1) and native shielded deposits for anchors (level 2)
-- [Threat model](docs/threat-model.md): what is private, from whom, and the honest limits
-- [Scenarios](docs/scenarios.md): KYC and anchor outcomes and what Shield does with each
-- [SPP spike](docs/spikes/spp.md): what we verified about Stellar Private Payments before building
-- [Testnet verifications](docs/testing/): dated checks of the live deployment, the anchor and the contracts
-- [Demo video script](docs/demo-script.md)
-- [AGENTS.md](AGENTS.md): conventions and context for contributors and their AI assistants
+| Document | Description |
+|---|---|
+| [Shield Protocol (draft)](docs/protocol/shield-protocol.md) | Shield as middleware for any SEP-24 anchor (level 1) and native shielded deposits for anchors (level 2) |
+| [Threat model](docs/threat-model.md) | What is private, from whom, and the honest limits |
+| [Scenarios](docs/scenarios.md) | KYC and anchor outcomes and what Shield does with each |
+| [SECURITY.md](SECURITY.md) | Security fixes applied, and how to report a vulnerability |
+| [SPP spike](docs/spikes/spp.md) | What we verified about Stellar Private Payments before building |
+| [Testnet verifications](docs/testing/) | Dated checks of the live deployment, the anchor and the contracts |
+| [Demo video script](docs/demo-script.md) | Script for the submission's demo video |
 
 ## Team
 
-[Lendara](https://github.com/Lendara-Org), built for HackMeridian 2026:
+[Lendara](https://github.com/Lendara-Org)
 
-- **Anouk Rímola** — [LinkedIn](https://www.linkedin.com/in/anouk-r%C3%ADmola-b9915a223/)
-- **María Elisa Araya** — [LinkedIn](https://www.linkedin.com/in/arayamariaelisa/)
-- **Karen Giannetto** — [LinkedIn](https://www.linkedin.com/in/karen-giannetto/)
+- **Anouk Rímola** ([LinkedIn](https://www.linkedin.com/in/anouk-r%C3%ADmola-b9915a223/))
+- **María Elisa Araya** ([LinkedIn](https://www.linkedin.com/in/arayamariaelisa/))
+- **Karen Giannetto** ([LinkedIn](https://www.linkedin.com/in/karen-giannetto/))
 
 ## License
 

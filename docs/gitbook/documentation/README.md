@@ -4,7 +4,7 @@ description: An open protocol for compliant private payments on Stellar.
 
 # Lendara Shield
 
-Lendara Shield gives any product on Stellar compliant private payments through one API. Wallets and anchors integrate it to give their users private balances, with an Association Set the integrator controls and auditor-only disclosure, on top of [Stellar Private Payments](https://developers.stellar.org/docs/build/apps/privacy). Money arriving from an external funding source can reach a private balance without the user's address ever appearing on-chain.
+Lendara Shield gives any product on Stellar compliant private payments through one API. Wallets and anchors integrate it to give their users private balances, with an Association Set the integrator controls and auditor-only disclosure, on top of [Stellar Private Payments](https://developers.stellar.org/docs/build/apps/privacy). Money arriving from an external funding source can reach a private balance without the user's address appearing in the ramp's settlement transactions.
 
 It is the reference implementation of the **Shield Protocol**, an open draft that any integrator can adopt.
 
@@ -34,7 +34,7 @@ Shield operates the pool's ASP. Each integrator decides which of its users are e
 | --- | --- | --- |
 | For | Users funded by an external source | Users who already hold USDC |
 | Money comes from | Funding source → Shield's omnibus account → pool | The user's own wallet → pool |
-| User address on-chain | **Never** | Visible when depositing, and as the signer of their own transfers (until the relayer) |
+| User address on-chain | **Never** in the ramp's settlement transactions | Visible when depositing, and as the signer of their own transfers (until the relayer) |
 | What Shield does | ASP, receive, deposit, transfer, audit | ASP, audit |
 
 Both modes share the ASP, the pool client, the auditor and the intent state machine. Ramp mode talks to the funding source **only through standard SEPs**. The first supported source type is a SEP-24 anchor (SEPs 1, 10 and 24), with no changes on its side.
@@ -45,7 +45,7 @@ Shield's customers are **wallets** and **anchors**. Individuals are the end user
 
 | | **Wallets** | **Anchors** |
 | --- | --- | --- |
-| What their users get | Private balances: deposit, private transfer and withdraw, with proofs generated on the user's device | Deposits that arrive as a private balance, with the user's address never on-chain |
+| What their users get | Private balances: deposit, private transfer and withdraw, with proofs generated on the user's device | Deposits that arrive as a private balance, without the user's address in the ramp's settlement transactions |
 | How they integrate | Shield's API (OpenAPI) with a project API key, and the TypeScript SDK (Tranche 1) | **Level 1:** no changes; Shield acts as a SEP-24 client in front of the anchor. **Level 2:** the anchor adds the SEP-24 extension and deposits straight into the pool (Tranche 2) |
 | What they decide | Which of their users are eligible, under their own policy (which may include KYC) | The same, plus their usual checks as a funding source |
 | What Shield does | Writes the allow-list and block-list (ASP), protects the auditor's view key, pays fees through a relayer (Tranche 1) | Same ASP and auditor role; in level 1, also the omnibus step |
