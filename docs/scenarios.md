@@ -37,6 +37,8 @@ Any future expiry date and any 3-digit CVC work.
 | `4000 0000 0000 9995` | Payment not received | `expired` | Untouched |
 | `4000 0000 0000 0077` | Approved after 30 s | Stays `awaiting_anchor` while the anchor is `pending_anchor`, then completes | As approved |
 
+**Deposit cap.** The pool takes at most **1,000 USDC per deposit** (fixed when the pool was deployed; `pool.max_deposit` in `GET /v1/info`), while the sandbox anchor accepts up to 10,000 USDC. You type the amount in local currency: at the sandbox's quote on 2026-11-06 (CRC 1,000 → 1.4607843 USDC), the cap is about **CRC 684,000**. When Shield read the cap at startup (it is then in `/v1/info`), a larger payment stops at once with `error` and a message saying it is over the pool's cap; otherwise the pool refuses the deposit and the intent ends in `error` after the usual retries. Either way the USDC stays in Shield's custody for review (a refund or a split is not automatic yet). The deposit page shows the cap under the amount.
+
 Shield follows the anchor with `GET /sep24/transaction` (the sandbox has no webhooks) and detects the payment on Horizon by memo, asset code **and** issuer.
 
 ## 3. Money edge cases (covered by tests)
@@ -56,3 +58,4 @@ Shield follows the anchor with `GET /sep24/transaction` (the sandbox has no webh
 | The RPC has not indexed a landed transaction yet | Not replaced until it stays unseen for 60 s after the omnibus account's sequence passed it |
 | The proof went stale (e.g. the ASP root changed) | Prepared again and replaced; retries back off exponentially |
 | Repeated failures | `error` with "the funds are in Shield's custody and need review" |
+| The anchor pays more than the pool's maximum deposit | With the cap read at startup: `error` before any pool transaction, with the paid amount and the cap in the message. Without it: the pool refuses the deposit and the intent ends in `error` after the retries. The funds stay in the omnibus account for review |
