@@ -302,6 +302,23 @@ pub async fn transition(
     Ok(intent)
 }
 
+/// Intents still in `created` that were created before `before`, oldest
+/// first: their creation was interrupted between the database and the anchor.
+pub async fn stale_created(
+    db: impl PgExecutor<'_>,
+    before: DateTime<Utc>,
+    limit: i64,
+) -> Result<Vec<Uuid>, StoreError> {
+    Ok(sqlx::query_scalar(
+        "SELECT id FROM intents WHERE status = 'created' AND created_at < $1 \
+         ORDER BY created_at LIMIT $2",
+    )
+    .bind(before)
+    .bind(limit)
+    .fetch_all(db)
+    .await?)
+}
+
 /// Locks the intent with this SEP-24 memo until the transaction ends.
 pub async fn lock_by_memo(
     conn: &mut PgConnection,

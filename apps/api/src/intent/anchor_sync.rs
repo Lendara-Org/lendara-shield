@@ -37,6 +37,14 @@ pub const ANCHOR_PAYMENT_GRACE: Duration = Duration::from_mins(15);
 /// Message of an intent whose anchor payment could not be confirmed.
 pub const UNCONFIRMED_PAYMENT_MESSAGE: &str = "The anchor reports the deposit completed, but Shield could not confirm its payment. Any funds received are in Shield's custody and need review.";
 const BATCH: i64 = 20;
+/// How long an intent may stay in `created`. Creating one stores it, then asks
+/// the anchor within one HTTP request (cut at 15 s); an intent older than this
+/// was interrupted (a timeout or a restart) and no request still owns it.
+pub const INTERRUPTED_CREATION_AFTER: Duration = Duration::from_mins(5);
+/// Why an interrupted creation ended. The user never received the anchor's
+/// URL, so the widget could not be completed; Shield cannot know whether the
+/// anchor opened its side, and any payment that still arrives is kept for review.
+pub const INTERRUPTED_CREATION_MESSAGE: &str = "Starting the deposit with the anchor was interrupted. Start a new deposit; any payment that still arrives is kept in Shield's custody for review.";
 
 #[derive(Debug, thiserror::Error)]
 pub enum SyncError {
@@ -80,6 +88,7 @@ impl AnchorSync {
     /// Checks every due intent once. Returns how many left `awaiting_anchor`
     /// (funded, expired or failed).
     pub async fn check_due(&self) -> Result<usize, SyncError> {
+        self.end_interrupted_creations().await?;
         let now = self.clock.now();
         let next = now + chrono::Duration::from_std(CHECK_INTERVAL).unwrap_or_default();
         let mut finished = 0;
@@ -194,6 +203,40 @@ impl AnchorSync {
             Err(TransitionError::Stale(_)) => Ok(false),
             Err(err) => Err(err.into()),
         }
+    }
+
+    /// Ends in `error` the intents whose creation was interrupted before the
+    /// anchor answered (see [`INTERRUPTED_CREATION_AFTER`]); without this they
+    /// would stay `created` forever, since no other step picks that status up.
+    /// Returns how many it ended.
+    pub async fn end_interrupted_creations(&self) -> Result<usize, SyncError> {
+        let before = self.clock.now()
+            - chrono::Duration::from_std(INTERRUPTED_CREATION_AFTER).unwrap_or_default();
+        let mut ended = 0;
+        for id in intents::stale_created(&self.db, before, BATCH).await? {
+            let mut conn = self.db.acquire().await?;
+            match intents::transition(
+                &mut conn,
+                id,
+                IntentStatus::Created,
+                IntentStatus::Error,
+                Changes {
+                    message: Some(INTERRUPTED_CREATION_MESSAGE.to_owned()),
+                    ..Changes::default()
+                },
+            )
+            .await
+            {
+                Ok(_) => {
+                    tracing::warn!(intent_id = %id, "intent creation was interrupted; ended in error");
+                    ended += 1;
+                }
+                // Rejected (or finished) meanwhile.
+                Err(TransitionError::Stale(_)) => {}
+                Err(err) => return Err(err.into()),
+            }
+        }
+        Ok(ended)
     }
 
     /// Funds `intent` with the payment the anchor reports (`hash`), if the
