@@ -30,6 +30,7 @@ pub use info::InfoResponse;
 use rate_limit::{RateLimit, RateLimiter};
 
 use crate::{
+    adapters::pool_cli::DEFAULT_TIMEOUT as POOL_CLI_TIMEOUT,
     adapters::soroban::rpc::REQUEST_TIMEOUT as RPC_TIMEOUT, asp::service::CONFIRM_TIMEOUT,
     error::ApiError, state::AppState,
 };
@@ -48,6 +49,17 @@ const REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
 pub const ASP_REQUEST_TIMEOUT: Duration = Duration::from_secs(
     CONFIRM_TIMEOUT.as_secs() + 4 * RPC_TIMEOUT.as_secs() + ASP_REQUEST_SLACK.as_secs(),
 );
+
+/// Timeout of the auditor's view, a practical cap rather than a worst-case
+/// bound. `pool-cli audit` shares the intake's wallet with the shielding
+/// worker, so it may first wait for a worker run (one preparation takes about
+/// 15 to 45 s with a healthy RPC) and then needs a few seconds of its own when
+/// its caches are cold. Cutting it at the default 15 s answered 408 whenever a
+/// deposit was being shielded. It is read-only, so a long wait is safe; a
+/// pathological case (a worker run near the CLI timeout followed by a slow
+/// audit) can still answer 408. Only one audit runs at a time.
+pub const AUDIT_REQUEST_TIMEOUT: Duration =
+    Duration::from_secs(POOL_CLI_TIMEOUT.as_secs() + REQUEST_TIMEOUT.as_secs());
 
 /// Margin of [`ASP_REQUEST_TIMEOUT`] for database work around the RPC calls.
 const ASP_REQUEST_SLACK: Duration = Duration::from_secs(15);
@@ -81,6 +93,14 @@ pub fn build_app(state: AppState, options: HttpOptions) -> Router {
             ASP_REQUEST_TIMEOUT,
         ));
 
+    // The auditor's view may wait for the shielding worker (see the constant).
+    let audit_reads = Router::new()
+        .route("/v1/audit/transactions", get(audit::transactions))
+        .layer(TimeoutLayer::with_status_code(
+            StatusCode::REQUEST_TIMEOUT,
+            AUDIT_REQUEST_TIMEOUT,
+        ));
+
     // `Router::layer` wraps everything added before it, so the last layer is
     // the outermost: CORS, then request id, then tracing, then the timeout.
     Router::new()
@@ -89,7 +109,6 @@ pub fn build_app(state: AppState, options: HttpOptions) -> Router {
         .route("/v1/users/{account}", get(users::get_user))
         .route("/v1/intents", post(intents::create).layer(rate_limited()))
         .route("/v1/intents/{id}", get(intents::get))
-        .route("/v1/audit/transactions", get(audit::transactions))
         .route("/v1/audit/public/{tx_hash}", get(audit::public))
         .fallback(not_found)
         .layer(TimeoutLayer::with_status_code(
@@ -97,6 +116,7 @@ pub fn build_app(state: AppState, options: HttpOptions) -> Router {
             REQUEST_TIMEOUT,
         ))
         .merge(asp_writes)
+        .merge(audit_reads)
         .with_state(state)
         .layer(PropagateRequestIdLayer::new(REQUEST_ID_HEADER))
         .layer(

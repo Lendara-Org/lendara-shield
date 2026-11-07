@@ -95,6 +95,10 @@ pub enum AuditError {
     NotConfigured,
     #[error("{0}")]
     Unavailable(String),
+    /// Another audit is running: they share the intake's wallet with the
+    /// shielding worker, so queueing more would only hold deposits back.
+    #[error("another audit is in progress; try again shortly")]
+    Busy,
     #[error(transparent)]
     Store(#[from] StoreError),
 }
@@ -108,6 +112,8 @@ pub struct AuditService {
     hashes: Arc<Mutex<HashMap<u32, Option<TxHash>>>>,
     /// The intake's note key, once known. It never changes for a wallet.
     intake_key: Arc<Mutex<Option<PoolField>>>,
+    /// Held while an audit runs: at most one at a time (see [`AuditError::Busy`]).
+    running: Arc<tokio::sync::Mutex<()>>,
 }
 
 impl AuditService {
@@ -123,12 +129,14 @@ impl AuditService {
             explorer,
             hashes: Arc::default(),
             intake_key: Arc::default(),
+            running: Arc::default(),
         }
     }
 
     /// The newest `limit` pool transactions, decrypted and attributed.
     pub async fn transactions(&self, limit: usize) -> Result<Vec<AuditTxView>, AuditError> {
         let auditor = self.auditor.as_ref().ok_or(AuditError::NotConfigured)?;
+        let _running = self.running.try_lock().map_err(|_| AuditError::Busy)?;
         let txs = auditor
             .audit(limit)
             .await

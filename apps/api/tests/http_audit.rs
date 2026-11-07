@@ -329,3 +329,89 @@ async fn shows_the_public_view_without_a_token(db: PgPool) -> TestResult {
     assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
     Ok(())
 }
+
+/// A pool that is never contacted: these tests stop before any query.
+fn unused_db() -> Result<PgPool, sqlx::Error> {
+    PgPool::connect_lazy("postgres://unused@127.0.0.1:1/unused")
+}
+
+#[tokio::test(start_paused = true)]
+async fn the_audit_waits_for_a_busy_shielding_worker_instead_of_timing_out() -> TestResult {
+    // Longer than the 15 s other routes get, as when a worker run holds the wallet.
+    let auditor = Arc::new(FakeAuditor::with(history()));
+    auditor.set_delay(std::time::Duration::from_secs(120));
+    auditor.set_fails(true); // answers without touching the database
+    let app = audit_app(
+        unused_db()?,
+        Some(auditor),
+        Arc::new(FakeExplorer::default()),
+    )?;
+    let (status, _, body) = send(app, audit_request("", Some(AUDITOR_TOKEN))?).await?;
+    assert_eq!(
+        status,
+        StatusCode::SERVICE_UNAVAILABLE,
+        "the audit's own answer, not a 408"
+    );
+    assert_eq!(body["error"], "service_unavailable");
+    Ok(())
+}
+
+#[tokio::test(start_paused = true)]
+async fn an_audit_slower_than_its_own_budget_still_times_out() -> TestResult {
+    let auditor = Arc::new(FakeAuditor::with(history()));
+    auditor.set_delay(shield_api::http::AUDIT_REQUEST_TIMEOUT + std::time::Duration::from_secs(1));
+    let app = audit_app(
+        unused_db()?,
+        Some(auditor),
+        Arc::new(FakeExplorer::default()),
+    )?;
+    let started = tokio::time::Instant::now();
+    let (status, _, _) = send(app, audit_request("", Some(AUDITOR_TOKEN))?).await?;
+    assert_eq!(status, StatusCode::REQUEST_TIMEOUT);
+    // Cut at the audit's own deadline, not at the 15 s other routes get.
+    let elapsed = started.elapsed();
+    assert!(
+        elapsed >= shield_api::http::AUDIT_REQUEST_TIMEOUT,
+        "cut after {elapsed:?}"
+    );
+    assert!(elapsed < shield_api::http::AUDIT_REQUEST_TIMEOUT + std::time::Duration::from_secs(1));
+    Ok(())
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_second_audit_while_one_runs_is_refused_at_once() -> TestResult {
+    let auditor = Arc::new(FakeAuditor::with(history()));
+    auditor.set_delay(std::time::Duration::from_secs(60));
+    auditor.set_fails(true);
+    let app = audit_app(
+        unused_db()?,
+        Some(auditor.clone()),
+        Arc::new(FakeExplorer::default()),
+    )?;
+    let request = audit_request("", Some(AUDITOR_TOKEN))?;
+    let running = app.clone();
+    let first = tokio::spawn(async move {
+        tower::ServiceExt::oneshot(running, request)
+            .await
+            .map(|response| response.status())
+    });
+    while auditor.limits().is_empty() {
+        tokio::task::yield_now().await;
+    }
+    let started = tokio::time::Instant::now();
+    let (status, _, body) = send(app, audit_request("", Some(AUDITOR_TOKEN))?).await?;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(body["error"], "audit_in_progress");
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(1),
+        "not queued"
+    );
+    assert_eq!(auditor.limits().len(), 1, "the auditor ran once");
+    let first_status = first.await??;
+    assert_eq!(
+        first_status,
+        StatusCode::SERVICE_UNAVAILABLE,
+        "the first one finished"
+    );
+    Ok(())
+}

@@ -288,7 +288,8 @@ paths:
       summary: Pool activity decrypted with the Global View Key
       description: |
         What the auditor sees. The Global View Key stays on the server; this endpoint never returns it.
-        Newest first.
+        Newest first. The audit shares the intake's wallet with the shielding worker, so it may wait for a
+        deposit being shielded (up to about three minutes); only one audit runs at a time.
       security:
         - auditorToken: []
       parameters:
@@ -310,6 +311,12 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "409":
+          description: "`audit_in_progress`: another audit is running; try again shortly."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "503":
           description: "`service_unavailable`: the auditor is not configured or the pool could not be read."
           content:
