@@ -287,11 +287,18 @@ shielded_recipient=<note_public_key>:<encryption_public_key>`, "SEP-24 interacti
             [<C key="c">4000 0000 0000 0077</C>, "Approved after 30 s", <C key="s">completed</C>],
           ]}
         />
+        <P>
+          The pool takes at most 1,000 USDC per deposit (<C>pool.max_deposit</C> in <C>GET /v1/info</C>); the
+          anchor accepts up to 10,000. At the sandbox&apos;s quote on 2026-11-06 that is about CRC 684,000. When Shield
+          has read the cap, a larger payment stops at once with <C>error</C> and a message saying it is over the
+          pool&apos;s cap; either way the USDC stays in Shield&apos;s custody for review.
+        </P>
 
         <H2 id="money">Money edge cases</H2>
         <List>
           <li>A payment with someone&apos;s memo that the anchor does not report never funds anything: it waits for review.</li>
           <li>Late or second payments are kept for review, never applied automatically.</li>
+          <li>A payment over the pool&apos;s maximum deposit is never shielded: it waits in Shield&apos;s custody for review.</li>
           <li>Timeouts, dropped transactions and RPC lag never pay twice: the stored hash is checked first.</li>
         </List>
       </>

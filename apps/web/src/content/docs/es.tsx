@@ -291,11 +291,18 @@ shielded_recipient=<note_public_key>:<encryption_public_key>`, "Depósito intera
             [<C key="c">4000 0000 0000 0077</C>, "Aprobada a los 30 s", <C key="s">completed</C>],
           ]}
         />
+        <P>
+          El pool acepta como máximo 1.000 USDC por depósito (<C>pool.max_deposit</C> en <C>GET /v1/info</C>); el
+          anchor acepta hasta 10.000. Con la cotización del sandbox del 6/11/2026 son unos 684.000 CRC. Cuando Shield
+          pudo leer el máximo, un pago mayor se detiene enseguida con <C>error</C> y un mensaje que dice que supera el
+          máximo del pool; en cualquier caso los USDC quedan en custodia de Shield para revisión.
+        </P>
 
         <H2 id="dinero">Casos límite con dinero</H2>
         <List>
           <li>Un pago con el memo de otra persona que el anchor no reporta nunca fondea nada: queda en revisión.</li>
           <li>Los pagos tardíos o duplicados se guardan para revisión; nunca se aplican solos.</li>
+          <li>Un pago mayor al máximo de depósito del pool nunca entra al pool: queda en custodia de Shield para revisión.</li>
           <li>Los timeouts, las transacciones perdidas y el retraso del RPC nunca pagan dos veces: primero se revisa el hash guardado.</li>
         </List>
       </>
