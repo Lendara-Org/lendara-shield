@@ -204,6 +204,8 @@ export const en = {
     accessTitle: "Auditor access",
     token: "Auditor token",
     tokenHint: "Shield's AUDITOR_TOKEN. It is only sent to Shield's API.",
+    decrypting:
+      "Decrypting the pool's history with the view key. If a deposit is being shielded right now, this waits for it and can take a couple of minutes.",
     open: "Open the audit",
     badToken: "That auditor token is not valid.",
     empty: "The pool has no transactions yet.",

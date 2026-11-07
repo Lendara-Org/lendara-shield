@@ -125,6 +125,26 @@ describe("AuditView", () => {
     expect(screen.queryByText("What the auditor sees")).not.toBeInTheDocument();
   });
 
+  it("says it may take a while while the audit is decrypting", async () => {
+    let release: () => void = () => {};
+    const answered = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    server.use(
+      http.get(url("/v1/audit/transactions"), async () => {
+        await answered;
+        return apiError(401, "unauthorized", "Missing or invalid bearer token.");
+      }),
+    );
+    const user = renderAudit();
+    await user.type(screen.getByLabelText("Auditor token"), TOKEN);
+    await user.click(screen.getByRole("button", { name: "Open the audit" }));
+    expect(await screen.findByText(/this waits for it and can take a couple of minutes/)).toBeInTheDocument();
+    release();
+    await screen.findByRole("alert");
+    expect(screen.queryByText(/can take a couple of minutes/)).not.toBeInTheDocument();
+  });
+
   it("explains when the auditor is not configured", async () => {
     server.use(http.get(url("/v1/audit/transactions"), () => apiError(503, "service_unavailable", "A dependency is temporarily unavailable.")));
     const user = renderAudit();

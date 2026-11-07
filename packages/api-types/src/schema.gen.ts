@@ -181,7 +181,8 @@ export interface paths {
         /**
          * Pool activity decrypted with the Global View Key
          * @description What the auditor sees. The Global View Key stays on the server; this endpoint never returns it.
-         *     Newest first.
+         *     Newest first. The audit shares the intake's wallet with the shielding worker, so it may wait for a
+         *     deposit being shielded (up to about three minutes); only one audit runs at a time.
          */
         get: operations["listAuditTransactions"];
         put?: never;
@@ -855,6 +856,15 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+            /** @description `audit_in_progress`: another audit is running; try again shortly. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
             /** @description `service_unavailable`: the auditor is not configured or the pool could not be read. */
             503: {
                 headers: {

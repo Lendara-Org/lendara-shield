@@ -109,6 +109,10 @@ fn audit_error(err: AuditError) -> ApiError {
         AuditError::NotConfigured | AuditError::Unavailable(_) => {
             ApiError::Unavailable(err.to_string())
         }
+        AuditError::Busy => ApiError::Conflict {
+            code: "audit_in_progress",
+            message: "Another audit is in progress. Try again in a moment.".to_owned(),
+        },
         AuditError::Store(err) => ApiError::Internal(err.into()),
     }
 }

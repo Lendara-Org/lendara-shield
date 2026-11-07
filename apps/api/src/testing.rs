@@ -634,6 +634,8 @@ pub struct FakeAuditor {
     limits: Mutex<Vec<usize>>,
     /// The intake's note key; `None` makes the lookup fail.
     intake_key: Mutex<Option<PoolField>>,
+    /// How long each audit takes, as when it waits for the shielding worker.
+    delay: Mutex<Option<std::time::Duration>>,
 }
 
 impl FakeAuditor {
@@ -655,6 +657,11 @@ impl FakeAuditor {
         lock(&self.limits).clone()
     }
 
+    /// Makes every audit take `delay` (on the tokio clock, so tests pause it).
+    pub fn set_delay(&self, delay: std::time::Duration) {
+        *lock(&self.delay) = Some(delay);
+    }
+
     /// The key [`PoolAuditor::intake_note_key`] answers; unset, it fails.
     pub fn set_intake_key(&self, key: PoolField) {
         *lock(&self.intake_key) = Some(key);
@@ -665,6 +672,10 @@ impl FakeAuditor {
 impl PoolAuditor for FakeAuditor {
     async fn audit(&self, limit: usize) -> Result<Vec<AuditedTx>, PoolError> {
         lock(&self.limits).push(limit);
+        let delay = *lock(&self.delay);
+        if let Some(delay) = delay {
+            tokio::time::sleep(delay).await;
+        }
         if *lock(&self.fails) {
             return Err(PoolError {
                 code: "cli_timeout".into(),

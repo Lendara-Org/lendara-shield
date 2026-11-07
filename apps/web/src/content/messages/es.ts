@@ -206,6 +206,8 @@ export const es: Messages = {
     accessTitle: "Acceso de auditoría",
     token: "Token de auditoría",
     tokenHint: "El AUDITOR_TOKEN de Shield. Solo se envía al API de Shield.",
+    decrypting:
+      "Descifrando el historial del pool con la llave de vista. Si en este momento se está protegiendo un depósito, la auditoría espera a que termine y puede tardar un par de minutos.",
     open: "Abrir la auditoría",
     badToken: "Ese token de auditoría no es válido.",
     empty: "El pool todavía no tiene transacciones.",

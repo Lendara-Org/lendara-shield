@@ -50,5 +50,7 @@ uuid = { version = "1.29.0", features = ["v7", "serde"] }
 
 [dev-dependencies]
 http-body-util = "0.1.5"
+# Same tokio, with the paused clock for timeout tests (no real sleeps).
+tokio = { version = "1.54.1", features = ["test-util"] }
 tower = { version = "0.5.3", features = ["util"] }
 wiremock = "0.6.5"

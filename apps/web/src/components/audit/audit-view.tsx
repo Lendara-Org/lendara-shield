@@ -57,6 +57,7 @@ export function AuditView() {
           <Button type="submit" busy={busy} disabled={token.trim() === ""}>
             {a.open}
           </Button>
+          {busy && <Notice>{a.decrypting}</Notice>}
           {error && <Notice tone="error">{error}</Notice>}
         </form>
       </Card>
