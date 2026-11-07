@@ -12,6 +12,7 @@ export const info: Info = {
   network_passphrase: "Test SDF Network ; September 2015",
   pool: {
     contract_id: "CCUJRW6VOQBFT5EWSKTYF24WHLFQFTO6SH33VFWAGOJFFSYGXPWXK4HF",
+    max_deposit: "1000",
     asset: {
       code: "USDC",
       issuer: "GBVIQ7QVTTJ4NLFTYYFPEKWYJWAMKDAOFYSR52ZGWJFSGTSVOO5H47B5",

@@ -27,6 +27,8 @@ pub struct InfoResponse {
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 struct PoolInfo {
     contract_id: ContractId,
+    /// Largest deposit the pool accepts, in the asset; `None` if unknown.
+    max_deposit: Option<String>,
     asset: AssetInfo,
     asp_policy: [&'static str; 2],
     asp_membership_contract: ContractId,
@@ -61,12 +63,18 @@ struct DirectMode {
 
 impl InfoResponse {
     #[must_use]
-    pub fn new(deployment: &PoolDeployment, ramp_anchor_home_domain: Option<String>) -> Self {
+    pub fn new(
+        deployment: &PoolDeployment,
+        ramp_anchor_home_domain: Option<String>,
+        max_deposit: Option<i64>,
+    ) -> Self {
         Self {
             network: TESTNET,
             network_passphrase: TESTNET_PASSPHRASE,
             pool: PoolInfo {
                 contract_id: deployment.pool.clone(),
+                max_deposit: max_deposit
+                    .map(|stroops| crate::domain::amount::format_stroops(i128::from(stroops))),
                 asset: AssetInfo {
                     code: deployment.asset.code.clone(),
                     issuer: deployment.asset.issuer.clone(),

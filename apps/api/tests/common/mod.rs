@@ -123,7 +123,12 @@ fn app_with_options(
     audit: AuditService,
     rate_limit: Option<RateLimit>,
 ) -> Result<Router, Box<dyn std::error::Error>> {
-    let info = InfoResponse::new(&deployment()?, anchor.as_ref().map(|_| ANCHOR.to_owned()));
+    // The testnet pool's cap: 1,000 USDC at 7 decimals.
+    let info = InfoResponse::new(
+        &deployment()?,
+        anchor.as_ref().map(|_| ANCHOR.to_owned()),
+        Some(10_000_000_000),
+    );
     let asp = AspService::new(db.clone(), chain, Arc::new(SystemClock))
         // Budget for a whole request: room for several steps' database work.
         .with_timing(Duration::from_secs(1), Duration::from_millis(5));

@@ -11,7 +11,9 @@ use shield_api::{
     intent::{
         IntentStatus,
         service::{CreateIntent, IntentService},
-        shielding::{BLOCKED_USER_MESSAGE, MAX_ATTEMPTS, ShieldingWorker},
+        shielding::{
+            BLOCKED_USER_MESSAGE, MAX_ATTEMPTS, ShieldingWorker, over_max_deposit_message,
+        },
     },
     ports::AnchorClient,
     store::{
@@ -446,5 +448,41 @@ async fn a_failed_transfer_is_not_rebuilt_for_a_user_blocked_meanwhile(db: PgPoo
         h.pool.applied(),
         vec![PoolWrite::Deposit { amount: AMOUNT }]
     );
+    Ok(())
+}
+
+#[sqlx::test]
+async fn an_amount_over_the_pools_maximum_deposit_is_stopped_before_any_attempt(
+    db: PgPool,
+) -> TestResult {
+    // The pool refuses deposits over its cap and the anchor may pay more:
+    // stop at once, with the funds in the intake, instead of failing five times.
+    let (h, intent) = harness(db).await?;
+    let worker = h.worker.clone().with_max_deposit(Some(AMOUNT - 1));
+    h.clock.advance(secs(10));
+    worker.process_due().await?;
+
+    let stopped = h.intents.get(intent.id).await?;
+    assert_eq!(stopped.status, IntentStatus::Error);
+    assert_eq!(
+        stopped.message.as_deref(),
+        Some(over_max_deposit_message(AMOUNT, AMOUNT - 1, "USDC").as_str())
+    );
+    assert!(stopped.pool_deposit.is_none());
+    assert_eq!(h.pool.prepares(), 0);
+    assert!(h.pool.applied().is_empty());
+    Ok(())
+}
+
+#[sqlx::test]
+async fn an_amount_at_the_pools_maximum_deposit_is_shielded(db: PgPool) -> TestResult {
+    let (h, intent) = harness(db).await?;
+    let h = Harness {
+        worker: h.worker.clone().with_max_deposit(Some(AMOUNT)),
+        ..h
+    };
+    h.rounds(8, secs(10)).await?;
+    assert_eq!(h.status(&intent).await?, IntentStatus::Completed);
+    h.assert_paid_exactly_once();
     Ok(())
 }

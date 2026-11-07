@@ -274,6 +274,12 @@ export interface components {
         };
         PoolInfo: {
             contract_id: components["schemas"]["ContractId"];
+            /**
+             * @description The most the pool accepts in one deposit, in the asset (fixed when the pool was deployed). A ramp
+             *     intent whose anchor payment is larger stops in `error` with the funds in Shield's custody, so clients
+             *     should warn before sending the user to the anchor. `null` if Shield could not read it at startup.
+             */
+            max_deposit: components["schemas"]["DecimalAmount"] | null;
             asset: {
                 /** @example USDC */
                 code: string;

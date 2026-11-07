@@ -18,6 +18,7 @@ async fn describes_the_pool_and_the_enabled_modes() -> TestResult {
             "network_passphrase": "Test SDF Network ; September 2015",
             "pool": {
                 "contract_id": "CCAEA4MKORUJV3G3V47SKWLJKQZBYGGFU42JSCXNUIJIZMNN2MSDLFMO",
+                "max_deposit": "1000",
                 "asset": {
                     "code": "USDC",
                     "issuer": "GBVIQ7QVTTJ4NLFTYYFPEKWYJWAMKDAOFYSR52ZGWJFSGTSVOO5H47B5",
@@ -57,5 +58,15 @@ async fn does_not_need_the_database() -> TestResult {
     // Info is computed at startup: it must keep working during a DB outage.
     let (status, _, _) = send(app(unreachable_pool()?)?, get("/v1/info")?).await?;
     assert_eq!(status, StatusCode::OK);
+    Ok(())
+}
+
+#[test]
+fn publishes_no_maximum_deposit_when_it_could_not_be_read() -> TestResult {
+    let info = shield_api::http::InfoResponse::new(&common::deployment()?, None, None);
+    assert_eq!(
+        serde_json::to_value(info)?["pool"]["max_deposit"],
+        json!(null)
+    );
     Ok(())
 }

@@ -459,3 +459,93 @@ async fn rejects_an_invalid_secret_and_never_prints_it() -> TestResult {
     assert!(adapter.operator_address().starts_with('G'));
     Ok(())
 }
+
+/// A pool instance entry holding `MaximumDepositAmount`, as `getLedgerEntries` returns it.
+fn pool_instance_xdr(max: u64) -> Result<String, Box<dyn std::error::Error>> {
+    use stellar_xdr::{
+        ContractDataDurability, ContractDataEntry, ContractExecutable, ContractId as XdrContractId,
+        ExtensionPoint, Hash, ScAddress, ScContractInstance, ScMap, ScMapEntry, ScSymbol, ScVec,
+        UInt256Parts,
+    };
+    let key = ScVal::Vec(Some(ScVec(
+        vec![ScVal::Symbol(
+            ScSymbol::try_from("MaximumDepositAmount").map_err(|()| "symbol")?,
+        )]
+        .try_into()?,
+    )));
+    let entry = LedgerEntryData::ContractData(ContractDataEntry {
+        ext: ExtensionPoint::V0,
+        contract: ScAddress::Contract(XdrContractId(Hash([7; 32]))),
+        key: ScVal::LedgerKeyContractInstance,
+        durability: ContractDataDurability::Persistent,
+        val: ScVal::ContractInstance(ScContractInstance {
+            executable: ContractExecutable::Wasm(Hash([1; 32])),
+            storage: Some(ScMap(
+                vec![ScMapEntry {
+                    key,
+                    val: ScVal::U256(UInt256Parts {
+                        hi_hi: 0,
+                        hi_lo: 0,
+                        lo_hi: 0,
+                        lo_lo: max,
+                    }),
+                }]
+                .try_into()?,
+            )),
+        }),
+    });
+    Ok(entry.to_xdr_base64(Limits::none())?)
+}
+
+#[tokio::test]
+async fn reads_the_pools_maximum_deposit_with_one_ledger_entries_request() -> TestResult {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(body_partial_json(json!({"method": "getLedgerEntries"})))
+        .respond_with(rpc_result(&json!({
+            "entries": [{"xdr": pool_instance_xdr(10_000_000_000)?, "lastModifiedLedgerSeq": 1}],
+            "latestLedger": 2
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let rpc = shield_api::adapters::soroban::rpc::SorobanRpc::new(server.uri())?;
+    assert_eq!(rpc.pool_max_deposit(&[7; 32]).await?, 10_000_000_000);
+
+    // The request asks for exactly one key: the pool's persistent instance entry.
+    let requests = server.received_requests().await.unwrap_or_default();
+    let body: Value = serde_json::from_slice(&requests.first().ok_or("no request")?.body)?;
+    let keys = body["params"]["keys"].as_array().ok_or("keys")?;
+    assert_eq!(keys.len(), 1);
+    let key =
+        stellar_xdr::LedgerKey::from_xdr_base64(keys[0].as_str().ok_or("key")?, Limits::none())?;
+    let stellar_xdr::LedgerKey::ContractData(data) = key else {
+        return Err("not a contract data key".into());
+    };
+    assert_eq!(data.key, ScVal::LedgerKeyContractInstance);
+    assert_eq!(
+        data.durability,
+        stellar_xdr::ContractDataDurability::Persistent
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_missing_pool_instance_or_an_rpc_error_is_reported() -> TestResult {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .respond_with(rpc_result(&json!({"entries": [], "latestLedger": 2})))
+        .mount(&server)
+        .await;
+    let rpc = shield_api::adapters::soroban::rpc::SorobanRpc::new(server.uri())?;
+    assert!(rpc.pool_max_deposit(&[7; 32]).await.is_err());
+
+    let failing = MockServer::start().await;
+    Mock::given(method("POST"))
+        .respond_with(ResponseTemplate::new(503))
+        .mount(&failing)
+        .await;
+    let rpc = shield_api::adapters::soroban::rpc::SorobanRpc::new(failing.uri())?;
+    assert!(rpc.pool_max_deposit(&[7; 32]).await.is_err());
+    Ok(())
+}

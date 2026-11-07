@@ -73,12 +73,30 @@ pub struct ShieldingWorker {
     db: PgPool,
     pool: Arc<dyn PoolClient>,
     clock: Arc<dyn Clock>,
+    /// The pool's maximum deposit, in stroops, when known. The pool refuses
+    /// a larger deposit and has no way to raise the cap, while the anchor
+    /// may pay more: such an intent is stopped before any attempt instead
+    /// of failing five times.
+    max_deposit: Option<i64>,
 }
 
 impl ShieldingWorker {
     #[must_use]
     pub fn new(db: PgPool, pool: Arc<dyn PoolClient>, clock: Arc<dyn Clock>) -> Self {
-        Self { db, pool, clock }
+        Self {
+            db,
+            pool,
+            clock,
+            max_deposit: None,
+        }
+    }
+
+    /// Stops intents whose received amount is over the pool's maximum
+    /// deposit (in stroops) before preparing anything.
+    #[must_use]
+    pub fn with_max_deposit(mut self, max_deposit: Option<i64>) -> Self {
+        self.max_deposit = max_deposit;
+        self
     }
 
     /// Advances every due intent by one step. Returns how many were touched.
@@ -103,6 +121,9 @@ impl ShieldingWorker {
             // Nothing has moved yet: a blocked key gets no deposit.
             IntentStatus::FundsReceived if item.asp_status != AspStatus::Allowed => {
                 self.stop_for_blocked_user(intent).await
+            }
+            IntentStatus::FundsReceived if self.over_max_deposit(intent) => {
+                self.stop_over_max_deposit(intent).await
             }
             IntentStatus::FundsReceived => self.start_deposit(item).await,
             IntentStatus::Shielding => self.follow(item, PoolStep::Deposit).await,
@@ -316,6 +337,35 @@ impl ShieldingWorker {
         Ok(())
     }
 
+    fn over_max_deposit(&self, intent: &Intent) -> bool {
+        self.max_deposit.is_some_and(|max| amount(intent) > max)
+    }
+
+    /// The anchor paid more than the pool accepts in one deposit. Nothing
+    /// was sent: the funds stay in the intake for review (a refund to the
+    /// anchor, or a split once the worker supports it).
+    async fn stop_over_max_deposit(&self, intent: &Intent) -> Result<(), ShieldingError> {
+        let max = self.max_deposit.unwrap_or_default();
+        let mut conn = self.db.acquire().await?;
+        intents::transition(
+            &mut conn,
+            intent.id,
+            intent.status,
+            IntentStatus::Error,
+            Changes {
+                message: Some(over_max_deposit_message(
+                    amount(intent),
+                    max,
+                    &intent.asset_code,
+                )),
+                ..Changes::default()
+            },
+        )
+        .await?;
+        tracing::warn!(intent_id = %intent.id, "shielding stopped: the amount is over the pool's maximum deposit; manual review needed");
+        Ok(())
+    }
+
     async fn give_up(&self, intent: &Intent) -> Result<(), ShieldingError> {
         let mut conn = self.db.acquire().await?;
         intents::transition(
@@ -371,6 +421,17 @@ impl ShieldingWorker {
 
 fn grace() -> chrono::Duration {
     chrono::Duration::from_std(UNSEEN_GRACE).unwrap_or_default()
+}
+
+/// Message of an intent stopped because the anchor paid more than the
+/// pool's maximum deposit.
+#[must_use]
+pub fn over_max_deposit_message(amount: i64, max: i64, asset: &str) -> String {
+    format!(
+        "The anchor paid {} {asset}, more than the pool accepts in one deposit ({} {asset}); the funds are in Shield's custody and need review.",
+        crate::domain::amount::format_stroops(i128::from(amount)),
+        crate::domain::amount::format_stroops(i128::from(max)),
+    )
 }
 
 /// The whole amount received from the anchor, in stroops.
