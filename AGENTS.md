@@ -287,7 +287,7 @@ Before handing over a PR: format, lint, typecheck, tests and build of what chang
 |---|---|
 | P1 | Shield Protocol level 2 spec: full SEP-24 extension, request/response examples, security discussion |
 | P2 | Integrators: projects and hashed API keys, auth on every endpoint (including user status) |
-| P3 | Relayer: fee-bump for users' pool operations (no XLM needed, signer not revealed) |
+| P3 | Relayer: submits users' private transfers and withdrawals as the source account **and** the pool's `sender` (the user pays no fees, though account and trustline reserves remain; the signer is not revealed, while a withdrawal's recipient stays public). SPP always requires `sender`'s authorization but only pulls tokens from it on a deposit, and `ExtData` (bound by the proof) does not include it, so the relayer cannot change recipient or amounts. A fee-bump is not enough: it changes who pays the fee, not the inner transaction's source or `sender`. Deposits still come from the user's account |
 | P4 | Anonymity-set hardening: batched, rounded and delayed deposits from the intake |
 | P5 | Per-note selective disclosure for users |
 | P6 | Agents: agent keys under their owner's KYC, spending limits, owner audit |

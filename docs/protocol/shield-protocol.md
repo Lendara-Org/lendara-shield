@@ -111,7 +111,7 @@ The user withdraws from the pool to the anchor's account with a valid membership
 - **Custody.** Level 2 removes the omnibus custody of level 1. The anchor never holds the note.
 - **Separation of duties.** The ASP's signing key, the anchor's distribution key and the auditor's view key should belong to different parties or at least different keys.
 - **Issuer powers.** A classic asset whose issuer can revoke or claw back can freeze the pool's balance. Pools should prefer assets with `AUTH_IMMUTABLE` or document the risk.
-- **Who signs is public.** Users' own pool operations reveal their account as the signer unless a relayer (fee-bump) submits them.
+- **Who signs is public.** Users' own pool operations reveal their account as the signer unless a relayer submits them as the source account and the pool's `sender`. That works for private transfers and withdrawals; a fee-bump alone does not, because the inner transaction stays the user's, and a deposit always pulls its tokens from the depositor's account.
 
 ## Open questions
 
