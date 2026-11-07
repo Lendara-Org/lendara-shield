@@ -124,6 +124,8 @@ export const en = {
     currency: "Currency",
     amount: "Amount",
     amountHint: "The anchor quotes it in USDC.",
+    maxDeposit: (max: string, asset: string) =>
+      `The pool takes up to ${max} ${asset} per deposit: a larger payment is held by Shield for review instead of reaching your private balance.`,
     toAnchor: "Continue to the anchor",
     completeInWindow: "Complete the payment in the anchor's window.",
     reopen: "Reopen it",
