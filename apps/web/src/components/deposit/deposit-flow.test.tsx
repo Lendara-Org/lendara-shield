@@ -130,6 +130,21 @@ describe("DepositFlow with a ramp", () => {
   });
 });
 
+describe("DepositFlow with the pool's deposit cap", () => {
+  it("warns about the pool's cap before going to the anchor", async () => {
+    await renderConnected(<DepositFlow />, fakeWallet());
+    expect(await screen.findByText(/The pool takes up to 1000 USDC per deposit/)).toBeInTheDocument();
+  });
+
+  it("says nothing about a cap Shield could not read", async () => {
+    server.use(http.get(url("/v1/info"), () => HttpResponse.json({ ...info, pool: { ...info.pool, max_deposit: null } })));
+    await renderConnected(<DepositFlow />, fakeWallet());
+    await screen.findByRole("button", { name: "Continue to the anchor" });
+    expect(screen.getByText("The anchor quotes it in USDC.")).toBeInTheDocument();
+    expect(screen.queryByText(/The pool takes up to/)).not.toBeInTheDocument();
+  });
+});
+
 describe("DepositFlow before connecting", () => {
   it("recommends the anchor's ramp, which needs no USDC, and hides it once connected", async () => {
     const { user: ui } = renderUnconnected(<DepositFlow />);

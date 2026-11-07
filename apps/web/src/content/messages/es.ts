@@ -126,6 +126,8 @@ export const es: Messages = {
     currency: "Moneda",
     amount: "Monto",
     amountHint: "El anchor lo cotiza en USDC.",
+    maxDeposit: (max, asset) =>
+      `El pool acepta hasta ${max} ${asset} por depósito: un pago mayor queda retenido por Shield para revisión en lugar de llegar a tu saldo privado.`,
     toAnchor: "Continuar al anchor",
     completeInWindow: "Completa el pago en la ventana del anchor.",
     reopen: "Volver a abrirla",

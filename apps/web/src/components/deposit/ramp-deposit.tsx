@@ -16,7 +16,18 @@ const AMOUNT = /^(0|[1-9]\d*)(\.\d{1,2})?$/;
 const CURRENCY = /^[A-Z]{3}$/;
 const ZERO = /^0+(\.0+)?$/;
 
-export function RampDeposit({ wallet, anchor }: { wallet: ShieldWallet; anchor: string | null | undefined }) {
+export function RampDeposit({
+  wallet,
+  anchor,
+  maxDeposit,
+  asset,
+}: {
+  wallet: ShieldWallet;
+  anchor: string | null | undefined;
+  /** The pool's cap per deposit (from `/v1/info`), in the asset; null if unknown. */
+  maxDeposit?: string | null | undefined;
+  asset?: string | undefined;
+}) {
   const { t } = useI18n();
   const [currency, setCurrency] = useState("CRC");
   const [amount, setAmount] = useState("");
@@ -83,7 +94,7 @@ export function RampDeposit({ wallet, anchor }: { wallet: ShieldWallet; anchor: 
               />
             )}
           </Field>
-          <Field label={t.deposit.amount} hint={t.deposit.amountHint}>
+          <Field label={t.deposit.amount} hint={amountHint(t.deposit, maxDeposit, asset)}>
             {(control) => (
               <input
                 {...control}
@@ -103,4 +114,13 @@ export function RampDeposit({ wallet, anchor }: { wallet: ShieldWallet; anchor: 
       </form>
     </Card>
   );
+}
+
+/** The amount hint, plus the pool's cap when Shield knows it: the anchor may accept more than the pool. */
+export function amountHint(
+  t: { amountHint: string; maxDeposit: (max: string, asset: string) => string },
+  maxDeposit: string | null | undefined,
+  asset: string | undefined,
+): string {
+  return maxDeposit ? `${t.amountHint} ${t.maxDeposit(maxDeposit, asset ?? "USDC")}` : t.amountHint;
 }
