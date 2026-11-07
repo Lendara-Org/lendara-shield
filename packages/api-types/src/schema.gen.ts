@@ -241,7 +241,8 @@ export interface components {
          */
         PoolField: string;
         /**
-         * @description Positive decimal amount as a string, never a float. Up to 7 decimals (Stellar precision).
+         * @description Decimal amount as a string, never a float: greater than zero, at most 11 integer digits and
+         *     7 decimals (Stellar precision). Zero and longer amounts answer `invalid_amount`.
          * @example 100.00
          */
         DecimalAmount: string;
@@ -489,10 +490,12 @@ export interface components {
     };
     responses: {
         /**
-         * @description The request is malformed. Codes: `invalid_request` (unparseable body or parameter),
-         *     `invalid_account`, `invalid_key`, `invalid_amount`, `invalid_currency`, `invalid_signature`
-         *     (not the account's SEP-53 signature of the request), `request_expired` (a signed request's
-         *     `issued_at` is too far from the server's time).
+         * @description The request is malformed. Codes: `invalid_request` (unparseable body, path or parameter, or a
+         *     body over the size limit), `invalid_account`, `invalid_key`, `invalid_amount`,
+         *     `invalid_currency`, `invalid_signature` (not the account's SEP-53 signature of the request),
+         *     `request_expired` (a signed request's `issued_at` is too far from the server's time),
+         *     `invalid_limit` (audit `limit` outside 1–100), `invalid_tx_hash` (not a 64-character hex
+         *     transaction hash).
          */
         BadRequest: {
             headers: {
