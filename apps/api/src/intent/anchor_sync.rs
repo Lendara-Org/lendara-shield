@@ -14,7 +14,7 @@ use chrono::{DateTime, Utc};
 
 use sqlx::PgPool;
 
-use super::state::IntentStatus;
+use super::{matching::ExpectedAsset, state::IntentStatus};
 use crate::{
     domain::TxHash,
     ports::{AnchorClient, AnchorStatus, Clock},
@@ -57,12 +57,24 @@ pub struct AnchorSync {
     db: PgPool,
     anchor: Arc<dyn AnchorClient>,
     clock: Arc<dyn Clock>,
+    /// The pool's asset: only a payment of it funds an intent.
+    asset: ExpectedAsset,
 }
 
 impl AnchorSync {
     #[must_use]
-    pub fn new(db: PgPool, anchor: Arc<dyn AnchorClient>, clock: Arc<dyn Clock>) -> Self {
-        Self { db, anchor, clock }
+    pub fn new(
+        db: PgPool,
+        anchor: Arc<dyn AnchorClient>,
+        clock: Arc<dyn Clock>,
+        asset: ExpectedAsset,
+    ) -> Self {
+        Self {
+            db,
+            anchor,
+            clock,
+            asset,
+        }
     }
 
     /// Checks every due intent once. Returns how many left `awaiting_anchor`
@@ -188,8 +200,14 @@ impl AnchorSync {
     /// watcher already recorded it. Returns whether the intent was funded.
     async fn fund(&self, intent: &Intent, hash: &TxHash) -> Result<bool, SyncError> {
         let mut tx = self.db.begin().await?;
-        let Some((operation_id, amount)) =
-            intake_payments::lock_confirmed(&mut tx, hash, intent.memo).await?
+        let Some((operation_id, amount)) = intake_payments::lock_confirmed(
+            &mut tx,
+            hash,
+            intent.memo,
+            &self.asset.code,
+            &self.asset.issuer,
+        )
+        .await?
         else {
             return Ok(false);
         };

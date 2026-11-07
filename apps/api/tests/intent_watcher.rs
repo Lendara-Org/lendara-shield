@@ -74,8 +74,8 @@ async fn harness(db: PgPool) -> Result<Harness, Box<dyn std::error::Error>> {
             Some(anchor.clone() as Arc<dyn AnchorClient>),
             "USDC".into(),
         ),
-        watcher: IntakeWatcher::new(db.clone(), ledger.clone(), asset),
-        sync: AnchorSync::new(db.clone(), anchor.clone(), clock.clone()),
+        watcher: IntakeWatcher::new(db.clone(), ledger.clone(), asset.clone()),
+        sync: AnchorSync::new(db.clone(), anchor.clone(), clock.clone(), asset),
         db,
         anchor,
         ledger,
@@ -494,6 +494,49 @@ async fn dust_with_the_memo_cannot_hijack_a_deposit(db: PgPool) -> TestResult {
         "the dust waits for review"
     );
     Ok(())
+}
+
+/// The anchor reports a transaction whose payment to the intake, with the
+/// intent's memo, is not the pool's asset: it must never fund the intent.
+async fn an_anchor_reported_payment_of_another_asset_funds_nothing(
+    db: PgPool,
+    code: &str,
+    issuer: &str,
+) -> TestResult {
+    let h = harness(db.clone()).await?;
+    let intent = h.intent().await?;
+    h.ledger.push(payment(4, memo(&intent), code, issuer)?);
+    h.watcher.poll().await?;
+    h.anchor_paid(&intent, 4);
+
+    // Never funded, however long it waits: after the grace period it ends in review.
+    let grace = chrono::Duration::from_std(ANCHOR_PAYMENT_GRACE)?;
+    assert_eq!(h.sync.check_due().await?, 0);
+    assert_eq!(h.status(&intent).await?, IntentStatus::AwaitingAnchor);
+    h.clock.advance(grace + chrono::Duration::minutes(1));
+    assert_eq!(h.sync.check_due().await?, 1);
+    let ended = h.intents.get(intent.id).await?;
+    assert_eq!(ended.status, IntentStatus::Error);
+    assert_eq!(ended.message.as_deref(), Some(UNCONFIRMED_PAYMENT_MESSAGE));
+    assert!(ended.amount_asset.is_none(), "nothing was funded");
+    assert!(ended.intake_payment_tx_hash.is_none());
+    let attached: Option<uuid::Uuid> =
+        sqlx::query_scalar("SELECT intent_id FROM intake_payments WHERE operation_id = 'op-4'")
+            .fetch_one(&db)
+            .await?;
+    assert_eq!(attached, None, "the payment stays unmatched, for review");
+    Ok(())
+}
+
+#[sqlx::test]
+async fn an_anchor_reported_payment_of_another_asset_code_funds_nothing(db: PgPool) -> TestResult {
+    an_anchor_reported_payment_of_another_asset_funds_nothing(db, "FAKE", ISSUER).await
+}
+
+#[sqlx::test]
+async fn an_anchor_reported_usdc_from_another_issuer_funds_nothing(db: PgPool) -> TestResult {
+    // Anyone can issue an asset called USDC: the issuer must match too.
+    an_anchor_reported_payment_of_another_asset_funds_nothing(db, "USDC", ANCHOR_ACCOUNT).await
 }
 
 #[sqlx::test]

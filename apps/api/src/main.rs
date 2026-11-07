@@ -219,8 +219,8 @@ fn background_loop(
     let shielding = shielding_worker(config, deployment, pool, &intake, clock, wallet)?
         .map(|worker| worker.with_max_deposit(max_deposit));
     Ok(Some(Background {
-        watcher: IntakeWatcher::new(pool.clone(), Arc::new(ledger), asset),
-        anchor_sync: AnchorSync::new(pool.clone(), anchor.clone(), clock.clone()),
+        watcher: IntakeWatcher::new(pool.clone(), Arc::new(ledger), asset.clone()),
+        anchor_sync: AnchorSync::new(pool.clone(), anchor.clone(), clock.clone(), asset),
         shielding,
     }))
 }
