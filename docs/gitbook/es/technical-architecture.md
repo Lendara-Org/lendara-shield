@@ -14,7 +14,7 @@ Repositorio: [github.com/Lendara-Org/lendara-shield](https://github.com/Lendara-
 
 ## 1. Resumen
 
-Lendara Shield les da a las wallets y los anchors de Stellar pagos privados con cumplimiento a través de una sola API. Sus usuarios obtienen saldos privados; el integrador controla quién es elegible (el Association Set) y solo un auditor autorizado puede ver los detalles, sin que nadie tenga que construir la infraestructura de privacidad desde cero. El fondeo también queda privado: el dinero que llega desde una fuente externa puede llegar a un saldo privado sin que la dirección del usuario aparezca nunca on-chain.
+Lendara Shield les da a las wallets y los anchors de Stellar pagos privados con cumplimiento a través de una sola API. Sus usuarios obtienen saldos privados; el integrador controla quién es elegible (el Association Set) y solo un auditor autorizado puede ver los detalles, sin que nadie tenga que construir la infraestructura de privacidad desde cero. El fondeo también queda privado: el dinero que llega desde una fuente externa puede llegar a un saldo privado sin que la dirección del usuario aparezca en las transacciones de liquidación de la rampa.
 
 Shield es la implementación de referencia del **Shield Protocol**: la capa de operador que necesita un privacy pool con cumplimiento y que ningún producto debería tener que construir solo. Corre sobre [Stellar Private Payments (SPP)](https://developers.stellar.org/docs/build/apps/privacy), la implementación de Privacy Pools de Nethermind para Stellar (circuitos Circom, pruebas Groth16 verificadas en contratos Soroban), y no agrega criptografía nueva.
 
@@ -23,7 +23,7 @@ Un pool de SPP con cumplimiento necesita a alguien que mantenga su Association S
 * **Saldos privados:** depósitos, transferencias privadas y retiros, con pruebas generadas del lado del cliente.
 * **Un Association Set on-chain que controla el integrador:** el integrador decide cuáles de sus usuarios son elegibles; Shield escribe la allow-list y la block-list.
 * **Divulgación selectiva:** un auditor autorizado puede descifrar cada nota; nadie más puede.
-* **Fondeo privado (modo rampa):** los fondos de una fuente externa llegan al saldo privado del usuario sin exponer su dirección. La primera fuente soportada es cualquier anchor SEP-24; el nivel 2 del Shield Protocol ([sección 8](#8.-shield-protocol-nivel-2-borrador)) permite que una fuente deposite directo en el pool.
+* **Fondeo privado (modo rampa):** los fondos de una fuente externa llegan al saldo privado del usuario sin exponer su dirección. La primera fuente soportada es un anchor SEP-24 estándar; el nivel 2 del Shield Protocol ([sección 8](#8.-shield-protocol-nivel-2-borrador)) permite que una fuente deposite directo en el pool.
 
 Estado: ambos modos corren de punta a punta en Stellar testnet ([sección 9](#9.-lo-que-existe-hoy-testnet-verificable)). La arquitectura de abajo es la que está desplegada hoy; la [sección 10](#10.-lo-que-construye-cada-tramo) marca lo que agrega cada tramo.
 
@@ -87,7 +87,7 @@ flowchart TB
 | **SEP-53 (firmar mensaje)** | Cada registro y cada solicitud de depósito lleva la firma de la cuenta (`signMessage` de Freighter) sobre el payload exacto, así que nadie puede asociar llaves a la cuenta de otra persona ni abrir depósitos a su nombre. Las solicitudes de depósito también llevan un `request_id` de un solo uso y un timestamp (≤ 5 min) contra el replay. |
 | **SEP-1** | Descubre los endpoints del anchor de fondeo desde su `stellar.toml`; nada está hardcodeado. |
 | **SEP-10** | Shield se autentica ante el anchor como su cuenta ómnibus con un memo `id` por usuario, y verifica el challenge por completo antes de firmar. |
-| **SEP-24** | Abre un depósito interactivo cuyo destino es la cuenta ómnibus de Shield con un memo de intent aleatorio. Funciona con cualquier anchor SEP-24 sin cambios del lado del anchor. |
+| **SEP-24** | Abre un depósito interactivo cuyo destino es la cuenta ómnibus de Shield con un memo de intent aleatorio. Funciona con anchors SEP-24 estándar, sin cambios del lado del anchor. |
 | **Horizon** | El watcher detecta el pago del anchor por memo, código del activo e issuer, y registra el monto recibido realmente. |
 | **Soroban RPC** | Simulación, envío y el historial de eventos del pool necesario para generar pruebas. |
 
@@ -102,7 +102,7 @@ flowchart TB
 
 ### 6.2 Modo directo (el usuario ya tiene USDC)
 
-El usuario deposita desde su propia wallet, transfiere en privado y retira. Las llaves se derivan y las pruebas Groth16 se generan en el navegador; en este modo Shield no mueve dinero. Limitación actual: la cuenta del usuario es la fuente de la transacción, así que es visible como usuaria del pool (los montos y los destinatarios siguen ocultos). El relayer con fee-bump del tramo 1 elimina esto.
+El usuario deposita desde su propia wallet, transfiere en privado y retira. Las llaves se derivan y las pruebas Groth16 se generan en el navegador; en este modo Shield no mueve dinero. Limitación actual: la cuenta del usuario es la fuente de la transacción, así que es visible como usuaria del pool (los montos y los destinatarios siguen ocultos). El relayer del tramo 1 elimina esto en las transferencias privadas: las envía como cuenta fuente y como sender del pool, así que la cuenta del usuario no es ninguna de las dos. Los depósitos directos siguen saliendo de la cuenta del usuario, porque el pool toma los tokens del sender.
 
 ### 6.3 Modo rampa (fondeo externo sin exposición)
 
@@ -184,7 +184,7 @@ Los logs llevan ids de intent y plantillas de ruta, nunca "dirección + monto". 
 
 ## 8. Shield Protocol nivel 2 (borrador)
 
-El nivel 2 permite que una fuente de fondeo deposite **directo** en el pool a las llaves del usuario, lo que elimina el paso de custodia del nivel 1. El nivel 1 (implementado) funciona con cualquier anchor SEP-24 sin cambios; el nivel 2 propone una extensión de SEP-24:
+El nivel 2 permite que una fuente de fondeo deposite **directo** en el pool a las llaves del usuario, lo que elimina el paso de custodia del nivel 1. El nivel 1 (implementado) funciona con anchors SEP-24 estándar, sin cambios de su lado; el nivel 2 propone una extensión de SEP-24:
 
 * **Descubrimiento** en `stellar.toml`: `SHIELD_PROTOCOL_VERSION`, `SHIELD_POOL_CONTRACT`, `SHIELD_ASP_ENDPOINT`.
 * **Capacidad** en `GET /info` de SEP-24: `features.shielded_deposit = true`.
@@ -213,15 +213,15 @@ En la corrida de rampa del 2026-10-26, la dirección del usuario aparece 0 veces
 
 | Tramo | Construye sobre la arquitectura de arriba |
 | --- | --- |
-| **1 — Testnet lista para developers** | Hoja del ASP amarrada a la llave registrada (cierra el límite conocido 7) · relayer con fee-bump (los usuarios del modo directo ya no son visibles como firmantes) · API keys por proyecto, permisos acotados y sesiones, incluida la decisión de elegibilidad del integrador a través de su key · SDK de TypeScript generado desde `openapi.yaml` |
-| **2 — Preparación para producción** | Shield Protocol nivel 2: especificación completa que cualquier anchor SEP-24 puede adoptar, con el anchor de Lendara como primera implementación de referencia (depósitos directos al pool, sin paso de custodia) · llaves de operador, ómnibus y de vista en un KMS/HSM con rotación · divulgación selectiva por nota para los usuarios y un portal de auditor basado en roles con registros de acceso · resolución de los fondos de usuarios bloqueados (reanudar, devolver al anchor o retener) con registro de auditoría · integración con una segunda fuente de fondeo · modelo de amenazas (al estilo STRIDE) y plan de monitoreo para el despliegue de producción |
-| **3 — Mainnet** | Despliegue en mainnet con RPC de archivo, monitoreo y alertas · refuerzo del anonymity set (agrupación, redondeo, demoras) · primera integración con una wallet de terceros |
+| **1 — Testnet lista para developers** | Hoja del ASP amarrada a la llave registrada (cierra el límite conocido 7) · relayer con su propia cuenta fuente y como sender de la llamada al pool (los usuarios del modo directo ya no son visibles como fuente ni firmantes de sus transferencias privadas) · API keys por proyecto, permisos acotados y sesiones, incluida la decisión de elegibilidad del integrador a través de su key · SDK de TypeScript generado desde `openapi.yaml` |
+| **2 — Preparación para producción** | Shield Protocol nivel 2: especificación completa que cualquier anchor SEP-24 puede adoptar, con el anchor de Lendara como primera implementación de referencia (depósitos directos al pool, sin paso de custodia) · llaves de operador y ómnibus en un KMS/HSM con rotación; la llave de vista guardada cifrada y con registro de accesos (su parte pública queda fija por pool) · divulgación selectiva por nota para los usuarios y un portal de auditor basado en roles con registros de acceso · resolución de los fondos de usuarios bloqueados (reanudar, devolver al anchor o retener) con registro de auditoría · integración con una segunda fuente de fondeo · modelo de amenazas (al estilo STRIDE) y plan de monitoreo para el despliegue de producción |
+| **3 — Mainnet** | Despliegue en mainnet con RPC de archivo, monitoreo y alertas; el modo rampa solo con el nivel 2, así que Shield no tiene fondos de usuarios en mainnet · refuerzo del anonymity set (agrupación, redondeo, demoras) · primera integración con una wallet de terceros |
 
 Consulta el [Roadmap](roadmap.md) para ver lo que ya está hecho.
 
 ## 11. En qué se diferencia Shield de los proyectos de privacidad existentes en Stellar
 
-Shield se diferencia en dos puntos. Opera SPP como una capa de cumplimiento compartida que cualquier producto integra a través de una sola API, y mantiene privado el fondeo: el dinero que entra desde una fuente externa llega como saldo privado sin que la dirección del usuario quede nunca on-chain. Comparación basada en la postulación pública al SCF o el anuncio de cada proyecto:
+Shield se diferencia en dos puntos. Opera SPP como una capa de cumplimiento compartida que cualquier producto integra a través de una sola API, y mantiene privado el fondeo: el dinero que entra desde una fuente externa llega como saldo privado sin que la dirección del usuario aparezca en las transacciones de liquidación de la rampa. Comparación basada en la postulación pública al SCF o el anuncio de cada proyecto:
 
 | Proyecto | Enfoque | Diferencia de Shield |
 | --- | --- | --- |

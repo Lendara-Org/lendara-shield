@@ -109,7 +109,22 @@ Run on `develop` at `9bb595d` (the deployed commit).
 
 **Result:** passed. The check *pool deployment ledger is inside the RPC retention window* will start failing around 2026-11-02 (see Findings).
 
+## 6. Re-verification on the redeployed pool (2026-11-06)
+
+The first pool left the public RPC's history window on 2026-11-02 (Finding 2). It was redeployed on 2026-11-06 at ledger 5,591,375 ([CAB6FI43…KR4](https://stellar.expert/explorer/testnet/contract/CAB6FI43BVMPMAXYCLVZ7R5DYQY3IUJF3G7JMSBEXJHWO7LEUE3H4KR4)), with SPP's bootnode serving events older than the RPC window. Every flow was then run by hand from the live web app with Freighter. All transactions succeeded; in the three ramp transactions the user's address appears 0 times (Horizon: transactions, operations and effects).
+
+| Flow | UTC | Transaction |
+| --- | --- | --- |
+| Ramp: anchor → omnibus (9.3039215 USDC, intent memo) | 19:08:31 | [7ce42090…](https://stellar.expert/explorer/testnet/tx/7ce4209056f81d311f7a55a2f25e2a99e4ae5cba30ef469e0dd8db5635cf810f) |
+| Ramp: pool deposit by Shield | 19:11:11 | [2a8dd765…](https://stellar.expert/explorer/testnet/tx/2a8dd76594d81d566b67cceaa9c7b35b7cd087c952e7d28e6ccb000b2b795bda) |
+| Ramp: private transfer to the user's keys | 19:12:11 | [4e3c5c0a…](https://stellar.expert/explorer/testnet/tx/4e3c5c0a1fcfe09df21434252c2d586aea475dc719ec731ba6d38ef3c72c7d9d) |
+| Direct: deposit from the user's wallet | 19:01:31 | [e2f171da…](https://stellar.expert/explorer/testnet/tx/e2f171dad9a6f67b3bc0d407fa18beb7e001c5f78f7650d5454f1ab588568aec) |
+| Direct: private transfer from the browser | 21:13:11 | [eee163a9…](https://stellar.expert/explorer/testnet/tx/eee163a927aa368798072306ab7d15dfa16c18f1bc318ca0d0962cccf2e6be2d) |
+| Direct: withdraw of 5 USDC to the user's account | 21:28:01 | [1a8bb88e…](https://stellar.expert/explorer/testnet/tx/1a8bb88ecbef914ead7a43019e80bbaf154f23cb44f6162caa03df41f1dfc71b) |
+
+A later ramp the same day took about 13 minutes from the anchor's payment to the private transfer. The cause was the public RPC's latency, not Shield or SPP: see `docs/testing/2026-11-06-rpc-latency.md` in the repository.
+
 ## Findings
 
-1. **Deposit limit mismatch.** The pool's `MaximumDepositAmount` is `10000000000` stroops (1,000 USDC); the anchor accepts up to 10,000 USDC and the API does not check the pool limit when creating an intent. A ramp intent between 1,000 and 10,000 USDC would be paid by the anchor, refused by the pool and end in `error` with the USDC in the intake. Demo amounts (CRC 5000 ≈ 9.30 USDC) are unaffected.
-2. **RPC history window.** The pool was deployed at ledger `5395126`; the public RPC keeps 120,960 ledgers (oldest was `5316399`). At ~5 s per ledger, the deployment leaves the window around **2026-11-02**, after which proving fails in both modes. Options: run SPP's `tools/bootnode` or redeploy (see the repository's AGENTS.md, section 9).
+1. **Deposit limit mismatch.** The pool's `MaximumDepositAmount` is `10000000000` stroops (1,000 USDC); the anchor accepts up to 10,000 USDC and the API does not check the pool limit when creating an intent. A ramp intent between 1,000 and 10,000 USDC would be paid by the anchor, refused by the pool and end in `error` with the USDC in the intake. Demo amounts (CRC 5000 ≈ 9.30 USDC) are unaffected. **Resolved for the demo (2026-11-06, #62–#64):** the API publishes the cap as `pool.max_deposit` in `/v1/info`, the deposit page shows it before the user goes to the anchor, and an over-cap payment stops at once in `error` with a clear message.
+2. **RPC history window.** The pool was deployed at ledger `5395126`; the public RPC keeps 120,960 ledgers (oldest was `5316399`). At ~5 s per ledger, the deployment leaves the window around **2026-11-02**, after which proving fails in both modes. Options: run SPP's `tools/bootnode` or redeploy (see the repository's AGENTS.md, section 9). **Resolved (2026-11-06):** the pool was redeployed and SPP's bootnode now serves the older history (Section 6).
