@@ -101,6 +101,7 @@ async fn run() -> Result<(), BoxError> {
     }
 
     let clock: Arc<dyn Clock> = Arc::new(SystemClock);
+    let max_deposit = pool_max_deposit(&config, &deployment).await;
     let asp_contract = asp_contract(&config, &deployment, clock.clone())?;
     let anchor = anchor_client(&config, &deployment, clock.clone())?;
     // `pool-cli` runs for the worker and the auditor share the intake's wallet.
@@ -112,6 +113,7 @@ async fn run() -> Result<(), BoxError> {
         anchor.as_ref(),
         &clock,
         &wallet,
+        max_deposit,
     )?;
 
     let app = build_app(
@@ -120,6 +122,7 @@ async fn run() -> Result<(), BoxError> {
             info: Arc::new(InfoResponse::new(
                 &deployment,
                 config.ramp_anchor_home_domain.clone(),
+                max_deposit,
             )),
             asp: AspService::new(pool.clone(), asp_contract, clock.clone()),
             intents: IntentService::new(pool.clone(), anchor, deployment.asset.code.clone()),
@@ -201,6 +204,7 @@ fn background_loop(
     anchor: Option<&Arc<dyn AnchorClient>>,
     clock: &Arc<dyn Clock>,
     wallet: &Arc<tokio::sync::Mutex<()>>,
+    max_deposit: Option<i64>,
 ) -> Result<Option<Background>, BoxError> {
     let (Some(anchor), Some(secret)) = (anchor, config.intake_secret.as_ref()) else {
         return Ok(None);
@@ -212,7 +216,8 @@ fn background_loop(
         issuer: deployment.asset.issuer.as_str().to_owned(),
     };
     tracing::info!("intake watcher and anchor sync enabled");
-    let shielding = shielding_worker(config, deployment, pool, &intake, clock, wallet)?;
+    let shielding = shielding_worker(config, deployment, pool, &intake, clock, wallet)?
+        .map(|worker| worker.with_max_deposit(max_deposit));
     Ok(Some(Background {
         watcher: IntakeWatcher::new(pool.clone(), Arc::new(ledger), asset),
         anchor_sync: AnchorSync::new(pool.clone(), anchor.clone(), clock.clone()),
@@ -271,6 +276,28 @@ async fn check_intake(client: CliPoolClient, deployment: PoolDeployment) {
             message = %err.message,
             "cannot check the intake (pool keys / allow-list)"
         ),
+    }
+}
+
+/// The pool's maximum deposit in stroops, read once from its instance
+/// storage (fixed at deployment). A failure only disables the check.
+async fn pool_max_deposit(config: &Config, deployment: &PoolDeployment) -> Option<i64> {
+    let read = async {
+        let pool = stellar_strkey::Contract::from_string(deployment.pool.as_str())?.0;
+        let max = SorobanRpc::new(config.soroban_rpc_url.clone())?
+            .pool_max_deposit(&pool)
+            .await?;
+        Ok::<i64, BoxError>(max)
+    };
+    match read.await {
+        Ok(max) => {
+            tracing::info!(max_deposit = max, "pool maximum deposit read");
+            Some(max)
+        }
+        Err(err) => {
+            tracing::warn!(error = %err, "could not read the pool's maximum deposit; over-cap intents will fail after retries");
+            None
+        }
     }
 }
 

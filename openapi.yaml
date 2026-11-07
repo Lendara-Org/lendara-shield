@@ -513,10 +513,18 @@ components:
     PoolInfo:
       type: object
       required:
-        [contract_id, asset, asp_policy, asp_membership_contract, asp_non_membership_contract, gvk_mode, kdf_domain]
+        [contract_id, asset, asp_policy, asp_membership_contract, asp_non_membership_contract, gvk_mode, kdf_domain, max_deposit]
       properties:
         contract_id:
           $ref: "#/components/schemas/ContractId"
+        max_deposit:
+          description: |
+            The most the pool accepts in one deposit, in the asset (fixed when the pool was deployed). A ramp
+            intent whose anchor payment is larger stops in `error` with the funds in Shield's custody, so clients
+            should warn before sending the user to the anchor. `null` if Shield could not read it at startup.
+          oneOf:
+            - $ref: "#/components/schemas/DecimalAmount"
+            - type: "null"
         asset:
           type: object
           required: [code, issuer, contract_id]

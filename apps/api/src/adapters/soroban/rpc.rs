@@ -6,8 +6,10 @@ use std::time::Duration;
 use serde::{Deserialize, de::DeserializeOwned};
 use serde_json::{Value, json};
 use stellar_xdr::{
-    AccountId, LedgerEntryData, LedgerKey, LedgerKeyAccount, Limits, PublicKey, ReadXdr, ScVal,
-    SorobanAuthorizationEntry, SorobanTransactionData, TransactionEnvelope, Uint256, WriteXdr,
+    AccountId, ContractDataDurability, ContractId, Hash, LedgerEntryData, LedgerKey,
+    LedgerKeyAccount, LedgerKeyContractData, Limits, PublicKey, ReadXdr, ScAddress, ScSymbol,
+    ScVal, ScVec, SorobanAuthorizationEntry, SorobanTransactionData, TransactionEnvelope, Uint256,
+    WriteXdr,
 };
 
 use super::tx::Simulation;
@@ -115,6 +117,27 @@ impl SorobanRpc {
             LedgerEntryData::Account(account) => Ok(account.seq_num.0),
             _ => Err(RpcError::Decode("expected an account ledger entry".into())),
         }
+    }
+
+    /// The SPP pool's maximum deposit, in stroops, from the contract's
+    /// instance storage (`MaximumDepositAmount`, set at deployment; the pool
+    /// has no getter and no setter for it).
+    pub async fn pool_max_deposit(&self, pool: &[u8; 32]) -> Result<i64, RpcError> {
+        let key = LedgerKey::ContractData(LedgerKeyContractData {
+            contract: ScAddress::Contract(ContractId(Hash(*pool))),
+            key: ScVal::LedgerKeyContractInstance,
+            durability: ContractDataDurability::Persistent,
+        });
+        let result: LedgerEntries = self
+            .call("getLedgerEntries", json!({ "keys": [encode(&key)?] }))
+            .await?;
+        let entry = result
+            .entries
+            .unwrap_or_default()
+            .into_iter()
+            .next()
+            .ok_or_else(|| RpcError::Decode("the pool contract instance was not found".into()))?;
+        max_deposit_from_instance(&decode::<LedgerEntryData>(&entry.xdr)?)
     }
 
     pub async fn simulate(
@@ -262,6 +285,42 @@ fn encode<T: WriteXdr>(value: &T) -> Result<String, RpcError> {
         .map_err(|e| RpcError::Decode(e.to_string()))
 }
 
+/// Reads `MaximumDepositAmount` (a `u256`) from a contract instance entry.
+fn max_deposit_from_instance(entry: &LedgerEntryData) -> Result<i64, RpcError> {
+    let LedgerEntryData::ContractData(data) = entry else {
+        return Err(RpcError::Decode("expected a contract data entry".into()));
+    };
+    let ScVal::ContractInstance(instance) = &data.val else {
+        return Err(RpcError::Decode("expected a contract instance".into()));
+    };
+    let wanted = ScVal::Vec(Some(ScVec(
+        vec![ScVal::Symbol(
+            ScSymbol::try_from("MaximumDepositAmount")
+                .map_err(|()| RpcError::Decode("symbol".into()))?,
+        )]
+        .try_into()
+        .map_err(|_| RpcError::Decode("key".into()))?,
+    )));
+    let value = instance
+        .storage
+        .as_ref()
+        .and_then(|map| map.iter().find(|entry| entry.key == wanted))
+        .map(|entry| &entry.val)
+        .ok_or_else(|| RpcError::Decode("the pool has no MaximumDepositAmount".into()))?;
+    let ScVal::U256(parts) = value else {
+        return Err(RpcError::Decode(
+            "MaximumDepositAmount is not a u256".into(),
+        ));
+    };
+    if parts.hi_hi != 0 || parts.hi_lo != 0 || parts.lo_hi != 0 {
+        return Err(RpcError::Decode(
+            "MaximumDepositAmount does not fit in i64".into(),
+        ));
+    }
+    i64::try_from(parts.lo_lo)
+        .map_err(|_| RpcError::Decode("MaximumDepositAmount does not fit in i64".into()))
+}
+
 fn decode<T: ReadXdr>(b64: &str) -> Result<T, RpcError> {
     T::from_xdr_base64(b64, Limits::none()).map_err(|e| RpcError::Decode(e.to_string()))
 }
@@ -353,4 +412,81 @@ struct RawSend {
 struct RawGet {
     status: String,
     result_xdr: Option<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use stellar_xdr::{
+        ContractDataEntry, ContractExecutable, ExtensionPoint, ScContractInstance, ScMap,
+        ScMapEntry, UInt256Parts,
+    };
+
+    use super::*;
+
+    fn instance(entries: Vec<(&str, ScVal)>) -> LedgerEntryData {
+        let storage = entries
+            .into_iter()
+            .map(|(name, val)| ScMapEntry {
+                key: ScVal::Vec(Some(ScVec(
+                    vec![ScVal::Symbol(ScSymbol::try_from(name).unwrap_or_default())]
+                        .try_into()
+                        .unwrap_or_default(),
+                ))),
+                val,
+            })
+            .collect::<Vec<_>>();
+        LedgerEntryData::ContractData(ContractDataEntry {
+            ext: ExtensionPoint::V0,
+            contract: ScAddress::Contract(ContractId(Hash([7; 32]))),
+            key: ScVal::LedgerKeyContractInstance,
+            durability: ContractDataDurability::Persistent,
+            val: ScVal::ContractInstance(ScContractInstance {
+                executable: ContractExecutable::Wasm(Hash([1; 32])),
+                storage: Some(ScMap(storage.try_into().unwrap_or_default())),
+            }),
+        })
+    }
+
+    fn u256(lo_lo: u64) -> ScVal {
+        ScVal::U256(UInt256Parts {
+            hi_hi: 0,
+            hi_lo: 0,
+            lo_hi: 0,
+            lo_lo,
+        })
+    }
+
+    #[test]
+    fn reads_the_pools_maximum_deposit_from_its_instance_storage() {
+        // As deployed on testnet: 1,000 USDC at 7 decimals.
+        let entry = instance(vec![
+            ("Admin", ScVal::Void),
+            ("MaximumDepositAmount", u256(10_000_000_000)),
+        ]);
+        assert_eq!(max_deposit_from_instance(&entry), Ok(10_000_000_000));
+    }
+
+    #[test]
+    fn refuses_a_missing_or_malformed_maximum_deposit() {
+        assert!(max_deposit_from_instance(&instance(vec![("Admin", ScVal::Void)])).is_err());
+        assert!(
+            max_deposit_from_instance(&instance(vec![("MaximumDepositAmount", ScVal::U32(5))]))
+                .is_err()
+        );
+        let huge = ScVal::U256(UInt256Parts {
+            hi_hi: 0,
+            hi_lo: 0,
+            lo_hi: 1,
+            lo_lo: 0,
+        });
+        assert!(
+            max_deposit_from_instance(&instance(vec![("MaximumDepositAmount", huge)])).is_err()
+        );
+        assert!(
+            max_deposit_from_instance(&instance(vec![("MaximumDepositAmount", u256(u64::MAX))]))
+                .is_err()
+        );
+        let account = LedgerEntryData::Account(stellar_xdr::AccountEntry::default());
+        assert!(max_deposit_from_instance(&account).is_err());
+    }
 }
