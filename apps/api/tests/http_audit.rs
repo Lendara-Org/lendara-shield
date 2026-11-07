@@ -366,8 +366,12 @@ async fn an_audit_slower_than_its_own_budget_still_times_out() -> TestResult {
         Arc::new(FakeExplorer::default()),
     )?;
     let started = tokio::time::Instant::now();
-    let (status, _, _) = send(app, audit_request("", Some(AUDITOR_TOKEN))?).await?;
+    let (status, _, body) = send(app, audit_request("", Some(AUDITOR_TOKEN))?).await?;
     assert_eq!(status, StatusCode::REQUEST_TIMEOUT);
+    assert_eq!(
+        body["error"], "request_timeout",
+        "a timeout has the error body too"
+    );
     // Cut at the audit's own deadline, not at the 15 s other routes get.
     let elapsed = started.elapsed();
     assert!(
