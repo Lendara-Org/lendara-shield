@@ -1,0 +1,31 @@
+{
+  "_embedded": {
+    "records": [
+      {
+        "id": "0023159700610641921-0000000001",
+        "paging_token": "23159700610641921-1",
+        "account": "GCWQUSCIB2S4LNW6FIOKL2N6BLFKAQ365A43IZVWJBR2ANAEDSIG3GQK",
+        "type": "account_debited",
+        "type_i": 3,
+        "created_at": "2026-10-26T03:23:47Z",
+        "asset_type": "credit_alphanum4",
+        "asset_code": "USDC",
+        "asset_issuer": "GBVIQ7QVTTJ4NLFTYYFPEKWYJWAMKDAOFYSR52ZGWJFSGTSVOO5H47B5",
+        "amount": "2.0000000"
+      },
+      {
+        "id": "0023159700610641921-0000000002",
+        "paging_token": "23159700610641921-2",
+        "account": "GCWQUSCIB2S4LNW6FIOKL2N6BLFKAQ365A43IZVWJBR2ANAEDSIG3GQK",
+        "type": "contract_credited",
+        "type_i": 96,
+        "created_at": "2026-10-26T03:23:47Z",
+        "asset_type": "credit_alphanum4",
+        "asset_code": "USDC",
+        "asset_issuer": "GBVIQ7QVTTJ4NLFTYYFPEKWYJWAMKDAOFYSR52ZGWJFSGTSVOO5H47B5",
+        "contract": "CCUJRW6VOQBFT5EWSKTYF24WHLFQFTO6SH33VFWAGOJFFSYGXPWXK4HF",
+        "amount": "2.0000000"
+      }
+    ]
+  }
+}

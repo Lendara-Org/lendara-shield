@@ -1,0 +1,28 @@
+/** Public runtime configuration (baked in at build time by Next). */
+
+/** Base URL of the Shield API, without a trailing slash. */
+export const API_BASE_URL = (process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8080").replace(/\/$/, "");
+
+/** Stellar RPC the browser SDK syncs and proves against. */
+export const SOROBAN_RPC_URL = process.env.NEXT_PUBLIC_SOROBAN_RPC_URL ?? "https://soroban-testnet.stellar.org";
+
+const bootnode = process.env.NEXT_PUBLIC_BOOTNODE_URL?.trim();
+
+/**
+ * SPP bootnode serving pool events older than the RPC's ~7-day window,
+ * without a trailing slash; `undefined` if not configured.
+ */
+export const BOOTNODE_URL = bootnode ? bootnode.replace(/\/$/, "") : undefined;
+
+/** Where `scripts/stage-web-sdk.sh` serves the pool SDK and the deployment. */
+export const SDK_BASE_PATH = "/spp";
+
+/** How often a pending intent is polled. */
+export const INTENT_POLL_MS = 2500;
+
+/**
+ * How long onboarding may stay `pending` before the page offers to retry it.
+ * Reads never resume an ASP write that could not even be prepared (chain
+ * down): only replaying the signed onboarding does.
+ */
+export const ONBOARDING_RETRY_AFTER_MS = 20_000;

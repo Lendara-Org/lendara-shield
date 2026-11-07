@@ -1,0 +1,8 @@
+extends:
+  - recommended
+
+rules:
+  # localhost is the documented local server.
+  no-server-example.com: off
+  # /health and /v1/info are public reads with no client error cases.
+  operation-4xx-response: off

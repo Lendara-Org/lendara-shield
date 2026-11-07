@@ -1,0 +1,35 @@
+/* Recetas de implementación derivadas de Paper; optativas, sin reset global. */
+.lendara-ui { color:var(--color-text-primary); background:var(--color-surface-primary); font-family:var(--font-body),sans-serif; font-size:16px; line-height:24px; }
+.lendara-button { display:inline-flex; align-items:center; justify-content:center; gap:8px; min-height:48px; padding:12px 20px; border:1px solid transparent; border-radius:var(--radius-control); font:600 16px/24px var(--font-body),sans-serif; cursor:pointer; transition:background-color 150ms,color 150ms,border-color 150ms; }
+.lendara-button--primary { background:var(--color-action-primary); color:var(--color-text-inverse); }
+@media (hover:hover) {
+ .lendara-button--primary:hover:not(:disabled) { background:var(--color-action-primary-hover); }
+ .lendara-button--secondary:hover:not(:disabled), .lendara-button--ghost:hover:not(:disabled) { background:var(--color-action-secondary-hover); }
+}
+.lendara-button--primary:active:not(:disabled) { background:var(--color-action-primary-pressed); }
+.lendara-button--secondary { background:var(--color-action-secondary); color:var(--color-text-primary); border-color:var(--color-border-control); }
+.lendara-button--ghost { background:transparent; color:var(--color-text-primary); }
+.lendara-button--secondary:active:not(:disabled), .lendara-button--ghost:active:not(:disabled) { background:var(--color-action-secondary-pressed); }
+.lendara-button:disabled { background:var(--color-action-disabled); color:var(--color-action-disabled-text); border-color:transparent; cursor:not-allowed; }
+.lendara-button:focus-visible,.lendara-input:focus-visible,.lendara-select:focus-visible { outline:2px solid var(--color-focus-ring); outline-offset:3px; }
+.lendara-field { display:flex; flex-direction:column; gap:8px; }
+.lendara-label { font:500 14px/20px var(--font-body),sans-serif; }
+.lendara-help { font:400 14px/22px var(--font-body),sans-serif; color:var(--color-text-secondary); }
+.lendara-input,.lendara-select { box-sizing:border-box; width:100%; min-height:48px; padding:11px 12px; border:1px solid var(--color-border-control); border-radius:var(--radius-control); background:var(--color-surface-primary); color:var(--color-text-primary); font:400 16px/24px var(--font-body),sans-serif; }
+.lendara-input[aria-invalid=true],.lendara-select[aria-invalid=true] { border-color:var(--color-error); }
+.lendara-error { color:var(--color-error); font:400 14px/22px var(--font-body),sans-serif; }
+.lendara-input:disabled,.lendara-select:disabled { background:var(--color-action-disabled); color:var(--color-action-disabled-text); opacity:1; }
+.lendara-input[readonly] { background:var(--color-surface-subtle); }
+.lendara-card { padding:24px; border:1px solid var(--color-border-default); border-radius:var(--radius-2xl); background:var(--color-surface-primary); }
+.lendara-amount { font-family:var(--font-body),sans-serif; font-variant-numeric:tabular-nums; }
+.lendara-code { font:400 14px/23px var(--font-code),monospace; overflow-x:auto; }
+.lendara-badge { display:inline-flex; align-items:center; gap:6px; padding:6px 10px; border-radius:var(--radius-pill); font:500 14px/20px var(--font-body),sans-serif; }
+.lendara-badge--success { color:var(--color-success); background:var(--color-success-subtle); }
+.lendara-badge--info { color:var(--color-info); background:var(--color-info-subtle); }
+.lendara-badge--warning { color:var(--color-warning); background:var(--color-warning-subtle); }
+.lendara-badge--error { color:var(--color-error); background:var(--color-error-subtle); }
+.lendara-icon-button { width:48px; min-height:48px; padding:0; flex-shrink:0; }
+.lendara-icon-button svg { width:20px; height:20px; flex-shrink:0; }
+@media (max-width:639px) { .lendara-card { padding:20px; } }
+@media (prefers-reduced-motion:reduce) { .lendara-button { transition:none; } }
+

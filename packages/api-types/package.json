@@ -1,0 +1,21 @@
+{
+  "name": "@lendara/shield-api-types",
+  "version": "0.1.0",
+  "private": true,
+  "description": "TypeScript types generated from the Lendara Shield openapi.yaml.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "codegen": "openapi-typescript ../../openapi.yaml --output src/schema.gen.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test \"test/*.test.ts\""
+  },
+  "devDependencies": {
+    "@types/node": "24.19.2",
+    "openapi-typescript": "7.13.0",
+    "typescript": "5.9.3"
+  }
+}

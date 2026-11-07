@@ -1,0 +1,39 @@
+# Caddy in front of the demo server (/etc/caddy/Caddyfile). Kept here so the
+# edge configuration is reviewed like code; copy it to the server, run
+# `caddy validate --config /etc/caddy/Caddyfile`, then `systemctl reload caddy`.
+
+# Security headers for the site's responses: the web's pages (Next.js sets the
+# same and its CSP; `?` keeps those), the API, the bootnode and the redirects
+# Next.js serves without its headers. Caddy's own error pages (e.g. a 502 when
+# an upstream is down) only get HSTS: the `?` defaults are deferred and skipped
+# on handler errors.
+(security_headers) {
+	# HTTPS only (Freighter and the pool SDK need a secure context anyway).
+	# One year, this host only: no includeSubDomains, no preload list.
+	header Strict-Transport-Security "max-age=31536000"
+	# One directive each: in one block, Caddy 2.11 sets the `?` defaults only
+	# when all of them are missing.
+	header ?X-Content-Type-Options "nosniff"
+	header ?Referrer-Policy "strict-origin-when-cross-origin"
+	header ?X-Frame-Options "DENY"
+}
+
+# Same site on the DuckDNS name and the old sslip.io name.
+lendara-shield.duckdns.org, 64-226-124-221.sslip.io {
+	import security_headers
+	encode zstd gzip
+	@api path /v1/* /health
+	reverse_proxy @api 127.0.0.1:8080
+	# SPP bootnode (docker compose in /home/shield/bootnode): pool events
+	# older than the public RPC keeps. Only getEvents/getLatestLedger.
+	handle_path /bootnode* {
+		reverse_proxy 127.0.0.1:8090
+	}
+	reverse_proxy 127.0.0.1:3000
+}
+
+# Plain port 80 on the bare IP sends visitors to the HTTPS name (Freighter and
+# the pool SDK need a secure context).
+http://64.226.124.221 {
+	redir https://lendara-shield.duckdns.org{uri}
+}

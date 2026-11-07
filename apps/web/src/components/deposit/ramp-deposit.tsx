@@ -1,0 +1,126 @@
+"use client";
+
+import type { Intent } from "@lendara/shield-api-types";
+import { useState } from "react";
+
+import { useI18n } from "@/components/i18n";
+import { message } from "@/components/session";
+import { Button, Card, Field, Notice, inputClass } from "@/components/ui/primitives";
+import { api } from "@/lib/api";
+import { signedIntentRequest } from "@/lib/intent-request";
+import type { ShieldWallet } from "@/lib/pool/types";
+
+import { IntentProgress } from "./intent-progress";
+
+const AMOUNT = /^(0|[1-9]\d*)(\.\d{1,2})?$/;
+const CURRENCY = /^[A-Z]{3}$/;
+const ZERO = /^0+(\.0+)?$/;
+
+export function RampDeposit({
+  wallet,
+  anchor,
+  maxDeposit,
+  asset,
+}: {
+  wallet: ShieldWallet;
+  anchor: string | null | undefined;
+  /** The pool's cap per deposit (from `/v1/info`), in the asset; null if unknown. */
+  maxDeposit?: string | null | undefined;
+  asset?: string | undefined;
+}) {
+  const { t } = useI18n();
+  const [currency, setCurrency] = useState("CRC");
+  const [amount, setAmount] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [intent, setIntent] = useState<Intent | null>(null);
+
+  const valid = CURRENCY.test(currency) && AMOUNT.test(amount) && !ZERO.test(amount);
+
+  async function start(event: React.FormEvent) {
+    event.preventDefault();
+    if (!valid) return;
+    setBusy(true);
+    setError(null);
+    // Opened in the click so the browser does not block it as a popup.
+    const popup = window.open("about:blank", "shield-anchor", "popup,width=480,height=760");
+    try {
+      // Freighter signs the amount: only the account's owner can start it.
+      const created = await api.createIntent(await signedIntentRequest(wallet, currency, amount));
+      setIntent(created);
+      if (created.interactive_url) {
+        if (popup) popup.location.href = created.interactive_url;
+      } else {
+        popup?.close();
+      }
+    } catch (err) {
+      popup?.close();
+      setError(message(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (intent) {
+    return (
+      <div className="space-y-6">
+        {intent.interactive_url && (
+          <Notice>
+            {t.deposit.completeInWindow}{" "}
+            <a href={intent.interactive_url} target="_blank" rel="noreferrer" className="font-medium underline">
+              {t.deposit.reopen}
+            </a>
+          </Notice>
+        )}
+        <IntentProgress initial={intent} />
+      </div>
+    );
+  }
+
+  return (
+    <Card title={t.deposit.rampTitle}>
+      <p className="mb-4 text-base text-gray">{t.deposit.rampIntro(anchor ?? null)}</p>
+      <form onSubmit={(e) => void start(e)} className="max-w-3xl space-y-6">
+        <div className="grid gap-4 sm:grid-cols-[8rem_1fr]">
+          <Field label={t.deposit.currency}>
+            {(control) => (
+              <input
+                {...control}
+                className={inputClass}
+                value={currency}
+                maxLength={3}
+                onChange={(e) => setCurrency(e.target.value.toUpperCase())}
+                aria-invalid={!CURRENCY.test(currency)}
+              />
+            )}
+          </Field>
+          <Field label={t.deposit.amount} hint={amountHint(t.deposit, maxDeposit, asset)}>
+            {(control) => (
+              <input
+                {...control}
+                className={inputClass}
+                inputMode="decimal"
+                placeholder="5000"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value.trim())}
+              />
+            )}
+          </Field>
+        </div>
+        <Button type="submit" busy={busy} disabled={!valid}>
+          {t.deposit.toAnchor}
+        </Button>
+        {error && <Notice tone="error">{error}</Notice>}
+      </form>
+    </Card>
+  );
+}
+
+/** The amount hint, plus the pool's cap when Shield knows it: the anchor may accept more than the pool. */
+export function amountHint(
+  t: { amountHint: string; maxDeposit: (max: string, asset: string) => string },
+  maxDeposit: string | null | undefined,
+  asset: string | undefined,
+): string {
+  return maxDeposit ? `${t.amountHint} ${t.maxDeposit(maxDeposit, asset ?? "USDC")}` : t.amountHint;
+}

@@ -1,0 +1,43 @@
+# Env (only the example is versioned)
+.env*
+!.env.example
+
+# JS
+node_modules/
+.next/
+dist/
+coverage/
+*.tsbuildinfo
+playwright-report/
+test-results/
+
+# Rust
+/apps/api/target/
+target/
+*.profraw
+lcov.info
+
+# Pool SDK local state (wallets), circuit artifacts and downloaded proving keys
+.storage/
+*.sqlite
+*.sqlite-*
+*.db.key
+artifacts/
+*.zkey
+*.ptau
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+
+# Local AI context
+CLAUDE.local.md
+# Local working notes (e.g. the SCF application draft): never versioned.
+docs/scf-context.md
+
+# Pool SDK served to the browser (scripts/stage-web-sdk.sh)
+apps/web/public/spp/
+apps/web/next-env.d.ts
+# API reference generated from openapi.yaml (pnpm run api-reference)
+apps/web/public/api-reference.html

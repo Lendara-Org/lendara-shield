@@ -1,0 +1,52 @@
+/** Wording of the side-by-side audit comparison. Pure, so it is tested. */
+import type { AuditNote, AuditTransaction, PublicTransaction } from "@lendara/shield-api-types";
+
+import type { Messages } from "@/content/messages";
+
+import { formatAmount, parseAmount } from "./amount";
+import { shorten } from "./explorer";
+
+type AuditCopy = Messages["audit"];
+
+/** The public amount as the explorer shows it. */
+export function publicAmount(t: AuditCopy, ext: string | null, asset: string): string {
+  if (ext === null) return t.notPool;
+  if (ext === "0") return t.amountHidden;
+  return ext.startsWith("-") ? t.amountOut(ext.slice(1), asset) : t.amountIn(ext, asset);
+}
+
+/**
+ * Who a note belongs to, for the auditor. The API says which kind of owner
+ * it is: Shield's own intake gets a name instead of looking like an
+ * unidentified key, which in a permissioned pool would read as an alarm.
+ * An API without `owner_kind` (deployed before this web) still shows the
+ * account, or the key as unknown.
+ */
+export function owner(t: AuditCopy, note: AuditNote): string {
+  if (note.owner_kind === "intake") return t.intakeOwner;
+  return note.owner_stellar_account ? shorten(note.owner_stellar_account, 6, 4) : t.unknownKey(shorten(note.owner_note_public_key, 8, 4));
+}
+
+/** The explanation shown next to an owner, if it needs one. */
+export function ownerHint(t: AuditCopy, note: AuditNote): string | undefined {
+  return note.owner_kind === "intake" ? t.intakeOwnerHint : undefined;
+}
+
+/** Accounts the explorer shows besides the signer (e.g. an asset issuer). */
+export function otherVisible(tx: PublicTransaction): string[] {
+  return tx.visible_accounts.filter((account) => account !== tx.source_account);
+}
+
+/** An output back to one of the spenders: the change of a transfer. */
+export function isChange(tx: AuditTransaction, note: AuditNote): boolean {
+  return tx.inputs.some((input) => input.owner_note_public_key === note.owner_note_public_key);
+}
+
+/** What the operation moved: the public amount, or what a transfer sent to others. */
+export function movedAmount(tx: AuditTransaction): string {
+  if (tx.kind !== "transfer") return tx.ext_amount.replace(/^-/, "");
+  const sent = tx.outputs
+    .filter((note) => !isChange(tx, note))
+    .reduce((sum, note) => sum + (parseAmount(note.amount) ?? 0n), 0n);
+  return formatAmount(sent);
+}

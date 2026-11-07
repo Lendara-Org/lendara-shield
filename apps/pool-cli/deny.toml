@@ -1,0 +1,35 @@
+# cargo-deny: licenses, security advisories, banned and untrusted sources.
+# https://embarkstudios.github.io/cargo-deny/
+
+[graph]
+targets = ["x86_64-unknown-linux-gnu"]
+all-features = true
+
+[advisories]
+# Every RUSTSEC advisory fails the build unless listed here with a reason.
+ignore = [
+    # `derivative` is unmaintained (not vulnerable): a derive macro used at
+    # compile time by arkworks (`ark-crypto-primitives`) inside the SPP SDK's
+    # Groth16 prover. Not ours to replace; revisit when SPP updates arkworks.
+    { id = "RUSTSEC-2024-0388", reason = "unmaintained compile-time dependency of the SPP prover (arkworks)" },
+]
+
+[licenses]
+confidence-threshold = 0.9
+allow = [
+    "Apache-2.0",
+    "MIT",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-3.0",
+    "Zlib",
+]
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
