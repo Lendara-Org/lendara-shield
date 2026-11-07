@@ -6,6 +6,7 @@ mod extract;
 mod health;
 mod info;
 mod intents;
+mod json_errors;
 pub mod rate_limit;
 mod users;
 
@@ -118,6 +119,9 @@ pub fn build_app(state: AppState, options: HttpOptions) -> Router {
         .merge(asp_writes)
         .merge(audit_reads)
         .with_state(state)
+        // Around every route and its timeout: framework errors (405, 408, an
+        // undecodable path) get the API's error body too.
+        .layer(middleware::map_response(json_errors::ensure_json))
         .layer(PropagateRequestIdLayer::new(REQUEST_ID_HEADER))
         .layer(
             TraceLayer::new_for_http()

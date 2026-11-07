@@ -19,7 +19,12 @@ info:
     the ASP membership leaf.
 
     Every error response has the body `{ "error": "<code>", "message": "..." }`. Codes are stable and
-    listed in each operation.
+    listed in each operation. Any operation may also answer:
+
+    - `405 method_not_allowed`: the path exists but not with this method (see the `Allow` header);
+    - `408 request_timeout`: the request took longer than its budget (15 s; longer for ASP writes
+      and the audit) and was stopped;
+    - `500 internal_error`: an unexpected server error (details are only in the server's logs).
 servers:
   - url: http://localhost:8080
     description: Local development
@@ -378,10 +383,12 @@ components:
   responses:
     BadRequest:
       description: |
-        The request is malformed. Codes: `invalid_request` (unparseable body or parameter),
-        `invalid_account`, `invalid_key`, `invalid_amount`, `invalid_currency`, `invalid_signature`
-        (not the account's SEP-53 signature of the request), `request_expired` (a signed request's
-        `issued_at` is too far from the server's time).
+        The request is malformed. Codes: `invalid_request` (unparseable body, path or parameter, or a
+        body over the size limit), `invalid_account`, `invalid_key`, `invalid_amount`,
+        `invalid_currency`, `invalid_signature` (not the account's SEP-53 signature of the request),
+        `request_expired` (a signed request's `issued_at` is too far from the server's time),
+        `invalid_limit` (audit `limit` outside 1–100), `invalid_tx_hash` (not a 64-character hex
+        transaction hash).
       content:
         application/json:
           schema:
@@ -460,7 +467,9 @@ components:
 
     DecimalAmount:
       type: string
-      description: Positive decimal amount as a string, never a float. Up to 7 decimals (Stellar precision).
+      description: |
+        Decimal amount as a string, never a float: greater than zero, at most 11 integer digits and
+        7 decimals (Stellar precision). Zero and longer amounts answer `invalid_amount`.
       pattern: "^(0|[1-9][0-9]*)(\\.[0-9]{1,7})?$"
       examples: ["100.00"]
 
