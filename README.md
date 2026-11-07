@@ -1,8 +1,7 @@
 <div align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/design-system/assets/lendara-logo-light.svg">
-    <img src="docs/design-system/assets/lendara-logo-dark.svg" alt="Lendara" width="180">
-  </picture>
+  <table cellpadding="20"><tr><td align="center" bgcolor="#161616">
+    <img src="docs/design-system/assets/lendara-logo-light.svg" alt="Lendara" width="180">
+  </td></tr></table>
 
 **KYC once, pay privately, disclose selectively.**
 
