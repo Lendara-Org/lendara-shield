@@ -1,6 +1,6 @@
 # pool-cli
 
-Stateless JSON CLI around the [Stellar Private Payments](https://github.com/NethermindEth/stellar-private-payments) Rust SDK (`=0.2.1`). The Shield API runs it as a subprocess for everything that needs the Groth16 prover: the SDK (`rusqlite`) and the API (`sqlx`) link incompatible versions of the native SQLite library, so they cannot share a binary.
+Stateless JSON CLI around the [Stellar Private Payments](https://github.com/NethermindEth/stellar-private-payments) Rust SDK (`=0.3.0`, `unencrypted-storage`, default features disabled). The Shield API runs it as a subprocess for everything that needs the Groth16 prover: the SDK (`rusqlite`) and the API (`sqlx`) link incompatible versions of the native SQLite library, so they cannot share a binary.
 
 It acts as Shield's **intake** account. Business state, retries and idempotency live in the API; the CLI only prepares, sends and checks transactions.
 
@@ -30,3 +30,11 @@ Same names as the API's `.env` (written by `make setup-testnet`): `SHIELD_INTAKE
 make build-pool-cli   # target/release/pool-cli
 make test-pool-cli
 ```
+
+The native SDK uses patched `libsqlite3-sys 0.39.1` / SQLite 3.54.1. Contracts,
+browser SDK and the deployment's circuit lock remain unchanged. Plaintext
+storage is selected explicitly to keep encryption as a separate migration.
+Opening an existing SDK 0.2.1 wallet still upgrades its schema from v5 to v7.
+Before deploying this binary, back up the wallet with all consumers stopped;
+rollback requires that backup together with the old binary. Do not reopen a
+migrated wallet with SDK 0.2.1. See the [compatibility report](../../docs/testing/2026-11-12-native-sqlite.md).
