@@ -108,6 +108,8 @@ The private balance then shows `9.3039215 USDC` on `/en/wallet`, and `/en/audit`
 
 Kira's public USDC balance went from 9.3039215 to 7.8039215 (−2 deposited, +0.5 withdrawn).
 
+**Latest live ramp run, 2026-11-12** (current pool, after the native SDK 0.3.0 upgrade): CRC 1,000 → 1.4607843 USDC, `completed` 51 s after the anchor's payment landed (58 s after the intent was created). The user's address appears 0 times in the anchor payment, the deposit and the transfer (Horizon transactions, operations and effects). Anchor payment [`95992ef6…`](https://stellar.expert/explorer/testnet/tx/95992ef66ec8bd04bd8f1a49bc61b8ba3ff5113ef8cce26dd5b401b6ca47d987), pool deposit [`d1d967d0…`](https://stellar.expert/explorer/testnet/tx/d1d967d0121f11251b297453883689f1c01aecb02961294924b64e1fb535c69a), private transfer [`7ef1791a…`](https://stellar.expert/explorer/testnet/tx/7ef1791a434c8c1bc4d287f433f2d423309b3d4c31e51aca41e623c5f874429f). See [docs/testing/2026-11-12-native-deploy.md](docs/testing/2026-11-12-native-deploy.md).
+
 **Re-verified on 2026-10-28** (read-only, plus one trustline on a fresh account): web, API, anchor and contracts share the same configuration, and the intake completed 5 ramp intents with no USDC left in custody. See [docs/testing/2026-10-28-testnet-verification.md](docs/testing/2026-10-28-testnet-verification.md).
 
 **Testnet deployment** (SPP `sdk-v0.2.1`, policy `allowlist-blocklist` + `gvk-traceable`, deployed at ledger 5,591,375 on 2026-11-06; the hashes above are from the first pool, `CDD66GL3…C7OF`, deployed at ledger 5,395,126):
