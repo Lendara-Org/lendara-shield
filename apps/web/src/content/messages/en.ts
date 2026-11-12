@@ -163,6 +163,7 @@ export const en = {
     intro: "Your balance in the pool, private transfers and withdrawals.",
     balanceTitle: "Private balance",
     sync: "Sync",
+    syncUnavailable: "Couldn't sync your balance. Check your connection and try again.",
     balanceNote: "Only you (and the auditor's view key) can see this balance.",
     receiveTitle: "Receive privately",
     receiveIntro: "Share your private address off-chain. It holds only public keys and is not linked to your account on-chain.",

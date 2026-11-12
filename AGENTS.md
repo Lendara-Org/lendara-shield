@@ -188,6 +188,8 @@ Direct deposit and withdraw first read the account's trustline to the pool's ass
 
 The browser SDK syncs pool events older than the RPC's ~7-day window from SPP's bootnode when `NEXT_PUBLIC_BOOTNODE_URL` is set (`lib/pool/bootnode.ts`; its origin is added to the CSP). Without it, a pool older than the window fails at load with a message naming the variable.
 
+The SDK's `PrivatePool.balance()` already syncs in inline mode. The web wraps that read with `poolRead` (`lib/pool/sync.ts`), sharing concurrent callers and retrying only transient `indexer[ catch-up]: network error:` failures twice. Do not add a redundant explicit sync before balance reads or wrap transaction submissions in this retry helper. Persistent read failures remain visible, with localized copy and a manual Sync action.
+
 ## 7. Conventions and quality
 
 ### Rust
