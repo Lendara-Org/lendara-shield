@@ -6,6 +6,9 @@
 mod command;
 mod pool;
 
+#[cfg(test)]
+mod wallet_tests;
+
 use std::{io::Write, process::ExitCode};
 
 use command::CliError;
