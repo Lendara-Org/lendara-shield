@@ -35,6 +35,8 @@ The native SDK uses patched `libsqlite3-sys 0.39.1` / SQLite 3.54.1. Contracts,
 browser SDK and the deployment's circuit lock remain unchanged. Plaintext
 storage is selected explicitly to keep encryption as a separate migration.
 Opening an existing SDK 0.2.1 wallet still upgrades its schema from v5 to v7.
-Before deploying this binary, back up the wallet with all consumers stopped;
+The demo's intake wallet was migrated on 2026-11-12 (see the
+[deployment record](../../docs/testing/2026-11-12-native-deploy.md)). For any
+future upgrade or restore, back up the wallet with all consumers stopped;
 rollback requires that backup together with the old binary. Do not reopen a
 migrated wallet with SDK 0.2.1. See the [compatibility report](../../docs/testing/2026-11-12-native-sqlite.md).
