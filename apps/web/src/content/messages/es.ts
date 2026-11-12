@@ -165,6 +165,7 @@ export const es: Messages = {
     intro: "Tu saldo en el pool, transferencias privadas y retiros.",
     balanceTitle: "Saldo privado",
     sync: "Sincronizar",
+    syncUnavailable: "No pudimos sincronizar tu saldo. Revisá tu conexión e intentá de nuevo.",
     balanceNote: "Solo tú (y la llave de vista del auditor) pueden ver este saldo.",
     receiveTitle: "Recibe en privado",
     receiveIntro: "Comparte tu dirección privada fuera de la cadena. Solo contiene llaves públicas y no está ligada a tu cuenta on-chain.",

@@ -12,6 +12,7 @@ import { formatAmount, parseAmount } from "@/lib/amount";
 import { useTrustline } from "@/lib/hooks/use-trustline";
 import { useCircuitPreload } from "@/lib/pool/circuits";
 import type { PoolResult, ShieldWallet } from "@/lib/pool/types";
+import { isTransientSyncFailure } from "@/lib/pool/sync";
 import { decodeRecipient, encodeRecipient } from "@/lib/recipient";
 
 export function WalletView() {
@@ -35,11 +36,11 @@ function Wallet({ wallet }: { wallet: ShieldWallet }) {
     try {
       setBalance(await wallet.balance());
     } catch (err) {
-      setBalanceError(message(err));
+      setBalanceError(isTransientSyncFailure(err) ? t.wallet.syncUnavailable : message(err));
     } finally {
       setSyncing(false);
     }
-  }, [wallet]);
+  }, [wallet, t.wallet.syncUnavailable]);
 
   // First load: state is only set from the promise's callbacks.
   useEffect(() => {
@@ -48,13 +49,13 @@ function Wallet({ wallet }: { wallet: ShieldWallet }) {
       .balance()
       .then(
         (value) => active && setBalance(value),
-        (err: unknown) => active && setBalanceError(message(err)),
+        (err: unknown) => active && setBalanceError(isTransientSyncFailure(err) ? t.wallet.syncUnavailable : message(err)),
       )
       .finally(() => active && setSyncing(false));
     return () => {
       active = false;
     };
-  }, [wallet]);
+  }, [wallet, t.wallet.syncUnavailable]);
 
   return (
     <div className="space-y-6">

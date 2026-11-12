@@ -14,6 +14,7 @@ import { circuitsBaseUrl, preloadPoolCircuits } from "./circuits";
 import { type PoolOperation, classifyPoolFailure } from "./errors";
 import { FreighterSigner, connectFreighter } from "./freighter-signer";
 import { withOneProverRetry } from "./retry";
+import { poolRead } from "./sync";
 import { PoolOperationError, type PoolResult, type RecipientKeys, type ShieldWallet, type WalletConnector } from "./types";
 
 type SppModule = typeof Spp;
@@ -75,6 +76,7 @@ export function sppConnector(networkPassphrase: string): WalletConnector {
     async connect(): Promise<ShieldWallet> {
       const address = await connectFreighter(networkPassphrase);
       const { client, poolContract } = await sppRuntime();
+      const sync = poolRead(() => client.sync());
       const signer = new FreighterSigner();
       const account = await client.account({ networkPassphrase, userAddress: address }, signer);
       // The SDK only finds this user's notes once their keys are derived in
@@ -90,6 +92,10 @@ export function sppConnector(networkPassphrase: string): WalletConnector {
         await deriveKeys();
         return (pool ??= account.pool({ poolContract }));
       };
+      // balance() already catches up the SDK's index in inline sync mode.
+      // Cover that read itself, rather than syncing twice and leaving the
+      // second catch-up outside recovery.
+      const readBalance = poolRead(async () => (await openPool()).balance());
 
       return {
         address,
@@ -105,11 +111,7 @@ export function sppConnector(networkPassphrase: string): WalletConnector {
           const { signedMessage } = await signer.signMessage(message, { address, networkPassphrase });
           return signedMessage;
         },
-        async balance() {
-          const opened = await openPool();
-          await client.sync();
-          return opened.balance();
-        },
+        balance: readBalance,
         // Each operation proves: the circuit is downloaded first, outside
         // the prover's 30 s budget, and a proving timeout is retried once.
         async deposit(amount: bigint) {
@@ -118,7 +120,7 @@ export function sppConnector(networkPassphrase: string): WalletConnector {
         },
         async transfer(to: RecipientKeys, amount: bigint) {
           const [opened] = await Promise.all([openPool(), preloadPoolCircuits()]);
-          await client.sync();
+          await sync();
           return done(
             "transfer",
             await withOneProverRetry(() => opened.transferToKeys(to.notePublicKey, to.encryptionPublicKey, amount)),
@@ -126,7 +128,7 @@ export function sppConnector(networkPassphrase: string): WalletConnector {
         },
         async withdraw(amount: bigint) {
           const [opened] = await Promise.all([openPool(), preloadPoolCircuits()]);
-          await client.sync();
+          await sync();
           return done("withdraw", await withOneProverRetry(() => opened.withdraw(amount)));
         },
       };

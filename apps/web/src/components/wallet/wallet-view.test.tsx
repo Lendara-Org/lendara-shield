@@ -116,4 +116,13 @@ describe("WalletView", () => {
     await renderConnected(<WalletView />, fakeWallet({ balance: () => Promise.reject(new Error("RPC unavailable")) }));
     expect(await screen.findByRole("alert")).toHaveTextContent("RPC unavailable");
   });
+
+  it("explains an unavailable event sync without showing SDK decoding details", async () => {
+    const error = new Error('indexer catch-up: network error: missing field `events`');
+    await renderConnected(<WalletView />, fakeWallet({ balance: () => Promise.reject(error) }));
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("Couldn't sync your balance. Check your connection and try again.");
+    expect(alert).not.toHaveTextContent("missing field");
+    expect(screen.getByRole("button", { name: "Sync" })).toBeEnabled();
+  });
 });
