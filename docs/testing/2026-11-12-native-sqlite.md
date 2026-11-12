@@ -14,8 +14,13 @@ Only the native `pool-cli` dependency moves to SPP `=0.3.0`, resolving
 SDK 0.3.0's default encrypted-storage feature is intentionally not enabled.
 The adapter's production transaction code and the API state machine are unchanged.
 Browser SDK, contracts, pool, circuit lock, environment variables and HTTP/CLI
-contracts stay unchanged. This change is prepared for integration, not deployed
-to the demo server. The independently deployed web fix remains active there.
+contracts stay unchanged.
+
+> **Deployed.** This change was deployed to the demo server on 2026-11-12 and
+> the live intake wallet is now on schema v7: never point SDK 0.2.1 at it.
+> The cutover, backup and live ramp check are recorded in
+> [2026-11-12-native-deploy.md](2026-11-12-native-deploy.md). It reached `main`
+> in the release PR #89.
 
 ## Compatibility verification
 
@@ -58,8 +63,8 @@ manifest during native deployment.
 
 ## Required native deployment and rollback procedure
 
-This PR does not authorize an automatic native deployment. Before a later
-deployment:
+This is the procedure the 2026-11-12 deployment followed; reuse it for any
+future native SDK upgrade or wallet restore:
 
 1. Stop the API, including shielding, auditing and its startup readiness check;
    do not run `init-intake`, `setup-testnet.sh` or the deploy script before the
@@ -79,4 +84,4 @@ deployment:
    transactions with the API/network and replay chain events before resuming;
    never blindly resend an operation after restoring a wallet snapshot.
 
-Encryption of storage and promotion to main remain separate work.
+Encryption of storage remains separate work.
