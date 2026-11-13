@@ -9,7 +9,7 @@ use ed25519_dalek::{Signature, SigningKey, Verifier};
 use secrecy::SecretString;
 use serde_json::{Value, json};
 use shield_api::{
-    adapters::soroban::{SorobanAspConfig, SorobanAspContract},
+    adapters::soroban::{SorobanAspConfig, SorobanAspContract, rpc::RpcError},
     asp::AspAction,
     domain::{ContractId, PoolField, TxHash},
     ports::{AspContract, AspKeys, ChainError, TxStatus},
@@ -27,6 +27,8 @@ use wiremock::{
 };
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
+
+const BUDGET: Duration = Duration::from_secs(30);
 
 const PASSPHRASE: &str = "Test SDF Network ; September 2015";
 const MEMBERSHIP: &str = "CDUJHXHC2DXXOXKBIK5E5QDKD6C3WUSMDIUFF6QTCECBNI4S2656VYD6";
@@ -547,5 +549,123 @@ async fn a_missing_pool_instance_or_an_rpc_error_is_reported() -> TestResult {
         .await;
     let rpc = shield_api::adapters::soroban::rpc::SorobanRpc::new(failing.uri())?;
     assert!(rpc.pool_max_deposit(&[7; 32]).await.is_err());
+    Ok(())
+}
+
+#[tokio::test]
+async fn the_maximum_deposit_read_retries_until_the_rpc_is_reachable() -> TestResult {
+    let server = MockServer::start().await;
+    // Mounted first wins: the first two requests fail, then the RPC answers.
+    Mock::given(method("POST"))
+        .respond_with(ResponseTemplate::new(503))
+        .up_to_n_times(2)
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .respond_with(rpc_result(&json!({
+            "entries": [{"xdr": pool_instance_xdr(10_000_000_000)?, "lastModifiedLedgerSeq": 1}],
+            "latestLedger": 2
+        })))
+        .mount(&server)
+        .await;
+    let rpc = shield_api::adapters::soroban::rpc::SorobanRpc::new(server.uri())?;
+    let delays = [Duration::ZERO; 3];
+    assert_eq!(
+        rpc.pool_max_deposit_retrying(&[7; 32], &delays, BUDGET)
+            .await?,
+        10_000_000_000
+    );
+    assert_eq!(
+        server.received_requests().await.unwrap_or_default().len(),
+        3
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn the_maximum_deposit_read_gives_up_after_its_last_delay() -> TestResult {
+    let failing = MockServer::start().await;
+    Mock::given(method("POST"))
+        .respond_with(ResponseTemplate::new(503))
+        .mount(&failing)
+        .await;
+    let rpc = shield_api::adapters::soroban::rpc::SorobanRpc::new(failing.uri())?;
+    let result = rpc
+        .pool_max_deposit_retrying(&[7; 32], &[Duration::ZERO; 2], BUDGET)
+        .await;
+    assert!(matches!(result, Err(RpcError::Transport(_))), "{result:?}");
+    assert_eq!(
+        failing.received_requests().await.unwrap_or_default().len(),
+        3
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_pool_without_a_maximum_deposit_is_not_retried() -> TestResult {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .respond_with(rpc_result(&json!({"entries": [], "latestLedger": 2})))
+        .mount(&server)
+        .await;
+    let rpc = shield_api::adapters::soroban::rpc::SorobanRpc::new(server.uri())?;
+    let result = rpc
+        .pool_max_deposit_retrying(&[7; 32], &[Duration::ZERO; 3], BUDGET)
+        .await;
+    assert!(matches!(result, Err(RpcError::Decode(_))), "{result:?}");
+    assert_eq!(
+        server.received_requests().await.unwrap_or_default().len(),
+        1
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn an_unreachable_rpc_is_a_retryable_transport_error() -> TestResult {
+    // A port nothing listens on: the request fails before any HTTP answer,
+    // as when the host's resolver or network is restarting.
+    let listener = std::net::TcpListener::bind("127.0.0.1:0")?;
+    let addr = listener.local_addr()?;
+    drop(listener);
+    let rpc = shield_api::adapters::soroban::rpc::SorobanRpc::new(format!("http://{addr}/"))?;
+    let result = rpc
+        .pool_max_deposit_retrying(&[7; 32], &[Duration::ZERO], BUDGET)
+        .await;
+    assert!(matches!(result, Err(RpcError::Transport(_))), "{result:?}");
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_body_cut_short_is_a_retryable_transport_error() -> TestResult {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    // Headers arrive, then the connection closes before the promised body.
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+    let addr = listener.local_addr()?;
+    let server = tokio::spawn(async move {
+        let (mut socket, _) = listener.accept().await?;
+        let mut request = [0_u8; 4096];
+        let _ = socket.read(&mut request).await?;
+        socket
+            .write_all(b"HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: 100\r\n\r\n{\"jsonrpc\"")
+            .await?;
+        Ok::<(), std::io::Error>(())
+    });
+    let rpc = shield_api::adapters::soroban::rpc::SorobanRpc::new(format!("http://{addr}/"))?;
+    let result = rpc.pool_max_deposit(&[7; 32]).await;
+    assert!(matches!(result, Err(RpcError::Transport(_))), "{result:?}");
+    server.await??;
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_complete_body_that_does_not_parse_is_a_decode_error() -> TestResult {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("not json"))
+        .mount(&server)
+        .await;
+    let rpc = shield_api::adapters::soroban::rpc::SorobanRpc::new(server.uri())?;
+    let result = rpc.pool_max_deposit(&[7; 32]).await;
+    assert!(matches!(result, Err(RpcError::Decode(_))), "{result:?}");
     Ok(())
 }
