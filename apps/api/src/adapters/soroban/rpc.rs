@@ -140,6 +140,21 @@ impl SorobanRpc {
         max_deposit_from_instance(&decode::<LedgerEntryData>(&entry.xdr)?)
     }
 
+    /// [`Self::pool_max_deposit`], retrying transport failures after each of
+    /// `delays`, all within `budget` (requests and waits included). The API
+    /// reads the cap once at startup, and a host's package upgrade can
+    /// restart it together with its DNS resolver and network service: a
+    /// single attempt then fails and leaves the cap unknown until the next
+    /// restart. Other errors are returned without retrying.
+    pub async fn pool_max_deposit_retrying(
+        &self,
+        pool: &[u8; 32],
+        delays: &[Duration],
+        budget: Duration,
+    ) -> Result<i64, RpcError> {
+        retry_transport(delays, budget, || self.pool_max_deposit(pool)).await
+    }
+
     pub async fn simulate(
         &self,
         envelope: &TransactionEnvelope,
@@ -267,14 +282,60 @@ impl SorobanRpc {
         if !response.status().is_success() {
             return Err(RpcError::Transport(format!("HTTP {}", response.status())));
         }
-        let envelope: JsonRpcResponse<T> = response
-            .json()
+        // A body cut short or timed out is a transport failure (retryable);
+        // only a complete body that does not parse is a decode error.
+        let bytes = response
+            .bytes()
             .await
-            .map_err(|e| RpcError::Decode(e.to_string()))?;
+            .map_err(|e| RpcError::Transport(e.to_string()))?;
+        let envelope: JsonRpcResponse<T> =
+            serde_json::from_slice(&bytes).map_err(|e| RpcError::Decode(e.to_string()))?;
         match (envelope.result, envelope.error) {
             (_, Some(error)) => Err(error.into()),
             (Some(result), None) => Ok(result),
             (None, None) => Err(RpcError::Decode("neither result nor error".into())),
+        }
+    }
+}
+
+/// Runs `op`, and again after each of `delays` while it fails with
+/// [`RpcError::Transport`], giving up when `budget` runs out. Only for
+/// idempotent reads.
+async fn retry_transport<T, F, Fut>(
+    delays: &[Duration],
+    budget: Duration,
+    op: F,
+) -> Result<T, RpcError>
+where
+    F: FnMut() -> Fut,
+    Fut: std::future::Future<Output = Result<T, RpcError>>,
+{
+    tokio::time::timeout(budget, retry_each(delays, op))
+        .await
+        .unwrap_or_else(|_| {
+            Err(RpcError::Transport(format!(
+                "no answer within {} s",
+                budget.as_secs()
+            )))
+        })
+}
+
+async fn retry_each<T, F, Fut>(delays: &[Duration], mut op: F) -> Result<T, RpcError>
+where
+    F: FnMut() -> Fut,
+    Fut: std::future::Future<Output = Result<T, RpcError>>,
+{
+    let mut delays = delays.iter();
+    loop {
+        match op().await {
+            Err(RpcError::Transport(err)) => {
+                let Some(delay) = delays.next() else {
+                    return Err(RpcError::Transport(err));
+                };
+                tracing::warn!(error = %err, retry_in_ms = delay.as_millis(), "RPC read failed; retrying");
+                tokio::time::sleep(*delay).await;
+            }
+            other => return other,
         }
     }
 }
@@ -488,5 +549,84 @@ mod tests {
         );
         let account = LedgerEntryData::Account(stellar_xdr::AccountEntry::default());
         assert!(max_deposit_from_instance(&account).is_err());
+    }
+
+    const BUDGET: Duration = Duration::from_secs(30);
+
+    #[tokio::test(start_paused = true)]
+    async fn the_budget_bounds_requests_and_waits() {
+        let start = tokio::time::Instant::now();
+        // A request that never answers, as with a stalled connection.
+        let stalled = retry_transport::<i64, _, _>(&[Duration::from_secs(1)], BUDGET, || {
+            std::future::pending()
+        })
+        .await;
+        assert!(
+            matches!(stalled, Err(RpcError::Transport(_))),
+            "{stalled:?}"
+        );
+        assert_eq!(start.elapsed(), BUDGET);
+
+        // An RPC that keeps failing gives up at the budget, mid-wait.
+        let start = tokio::time::Instant::now();
+        let failing =
+            retry_transport::<i64, _, _>(&[Duration::from_secs(20); 3], BUDGET, || async {
+                Err(RpcError::Transport("down".into()))
+            })
+            .await;
+        assert!(
+            matches!(failing, Err(RpcError::Transport(_))),
+            "{failing:?}"
+        );
+        assert_eq!(start.elapsed(), BUDGET);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn transport_failures_are_retried_after_each_delay() {
+        let start = tokio::time::Instant::now();
+        let calls = std::cell::RefCell::new(Vec::new());
+        let delays = [Duration::from_secs(2), Duration::from_secs(4)];
+        let result = retry_transport(&delays, BUDGET, || {
+            calls.borrow_mut().push(start.elapsed());
+            let attempt = calls.borrow().len();
+            async move {
+                if attempt < 3 {
+                    Err(RpcError::Transport("dns".into()))
+                } else {
+                    Ok(7)
+                }
+            }
+        })
+        .await;
+        assert_eq!(result, Ok(7));
+        assert_eq!(
+            calls.into_inner(),
+            [
+                Duration::ZERO,
+                Duration::from_secs(2),
+                Duration::from_secs(6)
+            ]
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn other_errors_and_exhausted_delays_are_returned() {
+        let mut calls = 0;
+        let decode = retry_transport::<i64, _, _>(&[Duration::from_secs(1)], BUDGET, || {
+            calls += 1;
+            async { Err(RpcError::Decode("bad".into())) }
+        })
+        .await;
+        assert_eq!(decode, Err(RpcError::Decode("bad".into())));
+        assert_eq!(calls, 1);
+
+        let mut calls = 0;
+        let exhausted = retry_transport::<i64, _, _>(&[Duration::from_secs(1)], BUDGET, || {
+            calls += 1;
+            async { Err(RpcError::Transport("down".into())) }
+        })
+        .await;
+        assert_eq!(exhausted, Err(RpcError::Transport("down".into())));
+        assert_eq!(calls, 2);
     }
 }

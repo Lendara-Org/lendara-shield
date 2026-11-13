@@ -6,7 +6,7 @@
 //! `shield-api init-intake` derives the intake's pool keys and allow-lists
 //! it if needed (see `shield_api::intake`), then exits.
 
-use std::{net::SocketAddr, process::ExitCode, sync::Arc};
+use std::{net::SocketAddr, process::ExitCode, sync::Arc, time::Duration};
 
 use shield_api::{
     HttpOptions,
@@ -279,13 +279,27 @@ async fn check_intake(client: CliPoolClient, deployment: PoolDeployment) {
     }
 }
 
-/// The pool's maximum deposit in stroops, read once from its instance
+/// Waits between startup reads of the pool's maximum deposit, long enough
+/// to outlast a restart of the host's network services.
+const MAX_DEPOSIT_RETRY_DELAYS: [Duration; 4] = [
+    Duration::from_secs(1),
+    Duration::from_secs(2),
+    Duration::from_secs(4),
+    Duration::from_secs(8),
+];
+
+/// The whole startup read, retries included: the API does not listen
+/// until it ends, and a slow RPC could otherwise hold it for a minute and
+/// a half (five 15 s timeouts plus the delays).
+const MAX_DEPOSIT_READ_BUDGET: Duration = Duration::from_secs(30);
+
+/// The pool's maximum deposit in stroops, read at startup from its instance
 /// storage (fixed at deployment). A failure only disables the check.
 async fn pool_max_deposit(config: &Config, deployment: &PoolDeployment) -> Option<i64> {
     let read = async {
         let pool = stellar_strkey::Contract::from_string(deployment.pool.as_str())?.0;
         let max = SorobanRpc::new(config.soroban_rpc_url.clone())?
-            .pool_max_deposit(&pool)
+            .pool_max_deposit_retrying(&pool, &MAX_DEPOSIT_RETRY_DELAYS, MAX_DEPOSIT_READ_BUDGET)
             .await?;
         Ok::<i64, BoxError>(max)
     };
