@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 
+import { DOCS_URL } from "../src/lib/links";
 import { info } from "../src/test/fixtures";
 
 const API = "http://localhost:8080";
@@ -95,7 +96,7 @@ test("an unknown URL answers 404 in both languages", async ({ page }) => {
   expect((await page.goto("/fr"))?.status()).toBe(404);
 });
 
-test("switches language and reads the docs", async ({ page }) => {
+test("switches language and links the docs to GitBook", async ({ page, request }) => {
   await page.goto("/en");
   // The document's language is the page's (screen readers, translation, hyphenation).
   await expect(page.locator("html")).toHaveAttribute("lang", "en");
@@ -109,11 +110,17 @@ test("switches language and reads the docs", async ({ page }) => {
   await page.getByRole("group", { name: "Language" }).getByRole("link", { name: "es" }).click();
   await expect(page.locator("html")).toHaveAttribute("lang", "es");
 
-  await page.getByRole("navigation", { name: "Principal" }).getByRole("link", { name: "Docs" }).click();
-  await expect(page).toHaveURL(/\/es\/docs$/);
-  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Introducción");
-  await page.getByRole("link", { name: /Siguiente/ }).click();
-  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Shield Protocol");
+  await expect(page.getByRole("navigation", { name: "Principal" }).getByRole("link", { name: "Docs" })).toHaveAttribute("href", DOCS_URL);
+  for (const link of await page.getByRole("link", { name: "Leer los docs" }).all()) {
+    await expect(link).toHaveAttribute("href", DOCS_URL);
+  }
+
+  // The old docs pages redirect to GitBook.
+  for (const path of ["/docs", "/en/docs", "/es/docs", "/en/docs/quickstart"]) {
+    const response = await request.get(path, { maxRedirects: 0 });
+    expect(response.status(), path).toBe(307);
+    expect(response.headers()["location"], path).toBe(DOCS_URL);
+  }
 
   // Old links still work, in English.
   await page.goto("/onboard");
@@ -130,7 +137,7 @@ test("the CSP lets the app and the SDK's WebAssembly run, and nothing else", asy
   const policy = response?.headers()["content-security-policy"] ?? "";
   expect(policy).toContain("frame-ancestors 'none'");
   expect(policy).toContain(`connect-src 'self' ${API}`);
-  for (const path of ["/en/onboard", "/en/deposit", "/en/wallet", "/en/audit", "/en/docs"]) {
+  for (const path of ["/en/onboard", "/en/deposit", "/en/wallet", "/en/audit"]) {
     await page.goto(path);
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
   }
@@ -280,10 +287,10 @@ test("entry illustrations lift on hover without rotation or zoom", async ({ page
   await expect(card.locator(".entry-payment-window")).toHaveCSS("transform", "matrix(1, 0, 0, 1, 0, -10)");
 });
 
-test("app and docs pages share the wider, readable home scale", async ({ page }) => {
+test("app pages share the wider, readable home scale", async ({ page }) => {
   for (const width of [375, 1920]) {
     await page.setViewportSize({ width, height: 1000 });
-    for (const route of ["onboard", "deposit", "wallet", "audit", "docs"]) {
+    for (const route of ["onboard", "deposit", "wallet", "audit"]) {
       await page.goto(`/es/${route}`);
       await expect(page.getByRole("main")).toHaveCSS("max-width", "1440px");
       await expect(page.getByRole("heading", { level: 1 })).toHaveCSS("font-size", width === 375 ? "40px" : "64px");
