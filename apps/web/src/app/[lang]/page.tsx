@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { EntryPaymentVisual, HeroPaymentVisual } from "@/components/landing/payment-visuals";
 import { localized } from "@/lib/i18n";
+import { DOCS_URL } from "@/lib/links";
 import { type LangParams, pageCopy } from "@/lib/page-params";
 
 export default async function Home(props: LangParams) {
@@ -25,12 +26,12 @@ export default async function Home(props: LangParams) {
             >
               {landing.start}
             </Link>
-            <Link
-              href={localized(lang, "/docs")}
+            <a
+              href={DOCS_URL}
               className="inline-flex min-h-14 items-center rounded-full border border-border-control bg-surface px-7 py-4 text-lg font-semibold transition-colors hover:bg-action-secondary-hover active:bg-action-secondary-pressed"
             >
               {landing.readDocs}
-            </Link>
+            </a>
           </div>
         </div>
         <HeroPaymentVisual copy={landing.visual} />
@@ -68,9 +69,9 @@ export default async function Home(props: LangParams) {
             <Link href={localized(lang, "/onboard")} className="inline-flex min-h-14 items-center justify-center rounded-full bg-action-primary px-7 py-4 text-lg font-semibold text-text-inverse transition-colors hover:bg-action-primary-hover active:bg-action-primary-pressed">
               {landing.start}
             </Link>
-            <Link href={localized(lang, "/docs")} className="inline-flex min-h-14 items-center justify-center rounded-full border border-border-control bg-surface px-7 py-4 text-lg font-semibold transition-colors hover:bg-action-secondary-hover active:bg-action-secondary-pressed">
+            <a href={DOCS_URL} className="inline-flex min-h-14 items-center justify-center rounded-full border border-border-control bg-surface px-7 py-4 text-lg font-semibold transition-colors hover:bg-action-secondary-hover active:bg-action-secondary-pressed">
               {landing.readDocs}
-            </Link>
+            </a>
           </div>
           <span className="font-mono text-sm text-gray">SEP-1 / SEP-10 / SEP-24 · Stellar Testnet</span>
         </div>

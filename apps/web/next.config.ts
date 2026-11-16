@@ -1,6 +1,7 @@
 import type { NextConfig } from "next";
 
 import { API_REFERENCE_CSP, contentSecurityPolicy } from "./src/lib/csp";
+import { DOCS_URL } from "./src/lib/links";
 
 // Same defaults as `src/lib/config.ts`.
 const csp = contentSecurityPolicy({
@@ -17,13 +18,20 @@ const nextConfig: NextConfig = {
   experimental: { globalNotFound: true },
   // The API types package ships TypeScript sources.
   transpilePackages: ["@lendara/shield-api-types"],
-  // Pages moved under /<lang>; old links keep working in English.
   async redirects() {
-    return ["onboard", "deposit", "wallet", "audit", "docs"].map((page) => ({
+    // Pages moved under /<lang>; old links keep working in English.
+    const pages = ["onboard", "deposit", "wallet", "audit"].map((page) => ({
       source: `/${page}/:rest*`,
       destination: `/en/${page}/:rest*`,
       permanent: false,
     }));
+    // The docs moved to GitBook; every old docs link lands there.
+    const docs = ["/docs/:rest*", "/:lang(en|es)/docs/:rest*"].map((source) => ({
+      source,
+      destination: DOCS_URL,
+      permanent: false,
+    }));
+    return [...pages, ...docs];
   },
   async headers() {
     return [
