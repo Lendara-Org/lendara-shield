@@ -13,7 +13,7 @@ import { type StepState, intentSteps } from "@/lib/intent-steps";
 
 const MARK: Record<StepState, string> = {
   done: "bg-success-subtle text-success",
-  current: "border-2 border-action-primary text-action-primary",
+  current: "text-action-primary",
   pending: "border border-line text-gray",
   failed: "bg-error text-paper",
 };
@@ -33,7 +33,10 @@ export function IntentProgress({ initial }: { initial: Intent }) {
       <ol className="space-y-6" aria-live="polite">
         {intentSteps(intent).map((step, i) => (
           <li key={step.key} className="flex gap-3" data-state={step.state}>
-            <span aria-hidden className={`flex size-8 shrink-0 items-center justify-center rounded-full text-sm ${MARK[step.state]}`}>
+            <span aria-hidden className={`relative flex size-8 shrink-0 items-center justify-center rounded-full text-sm ${MARK[step.state]}`}>
+              {step.state === "current" && (
+                <span data-testid="step-spinner" className="absolute inset-0 animate-spin rounded-full border-2 border-action-primary border-r-transparent" />
+              )}
               {step.state === "done" ? "✓" : step.state === "failed" ? "!" : i + 1}
             </span>
             <div className="space-y-0.5">
@@ -42,12 +45,18 @@ export function IntentProgress({ initial }: { initial: Intent }) {
                 <span className="sr-only">: {t.progress.state[step.state]}</span>
               </p>
               <p className="text-sm text-gray">{t.progress.steps[step.key].detail}</p>
+              {step.state === "current" && (
+                <p aria-hidden className="animate-pulse text-sm font-medium text-action-primary">
+                  {t.progress.working[step.key]}
+                </p>
+              )}
               {step.hash && <TxLink hash={step.hash} />}
             </div>
           </li>
         ))}
       </ol>
       <div className="mt-5">
+        {!final && <p className="text-sm text-gray">{t.progress.wait}</p>}
         {intent.status === "completed" && (
           <Notice tone="ok">{t.progress.completed(intent.amount_asset ?? "", intent.asset_code)}</Notice>
         )}

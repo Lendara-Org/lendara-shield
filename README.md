@@ -4,7 +4,7 @@
 **KYC once, pay privately, disclose selectively.**
 
 [![Web app](https://img.shields.io/badge/Web_app-lendara--shield.duckdns.org-E22366?style=flat-square&labelColor=161616)](https://lendara-shield.duckdns.org/en)
-[![Docs](https://img.shields.io/badge/Docs-EN%20%2F%20ES-3d444d?style=flat-square&labelColor=161616)](https://lendara-shield.duckdns.org/en/docs)
+[![Docs](https://img.shields.io/badge/Docs-GitBook-3d444d?style=flat-square&labelColor=161616)](https://lendara.gitbook.io/lendara-shield-docs)
 [![Built on Stellar](https://img.shields.io/badge/Built_on-Stellar-FFFFFF?style=flat-square&labelColor=161616&logo=stellar&logoColor=white)](https://stellar.org)
 [![Testnet only](https://img.shields.io/badge/Network-Testnet_only-f59e0b?style=flat-square&labelColor=161616)](#live-on-testnet)
 [![License](https://img.shields.io/badge/License-Apache_2.0-30363d?style=flat-square&labelColor=161616)](LICENSE)
@@ -23,7 +23,7 @@ Lendara Shield is the reference implementation of the **Shield Protocol**: a com
 
 | If you are... | Start with |
 |---|---|
-| **A wallet or anchor** evaluating integration | [Developer docs](https://lendara-shield.duckdns.org/en/docs), the [API reference](https://lendara-shield.duckdns.org/api-reference.html), and [`openapi.yaml`](openapi.yaml) |
+| **A wallet or anchor** evaluating integration | [Developer docs](https://lendara.gitbook.io/lendara-shield-docs), the [API reference](https://lendara-shield.duckdns.org/api-reference.html), and [`openapi.yaml`](openapi.yaml) |
 | **A security reviewer** | [Threat model](docs/threat-model.md) and [SECURITY.md](SECURITY.md) |
 | **Anyone trying the demo** | The [5-minute demo](#5-minute-demo) below |
 
@@ -32,7 +32,7 @@ Lendara Shield is the reference implementation of the **Shield Protocol**: a com
 | | |
 |---|---|
 | Web app (English / Spanish) | <https://lendara-shield.duckdns.org/en> · <https://lendara-shield.duckdns.org/es> |
-| Developer docs | <https://lendara-shield.duckdns.org/en/docs> |
+| Developer docs | <https://lendara.gitbook.io/lendara-shield-docs> |
 | API reference (from `openapi.yaml`) | <https://lendara-shield.duckdns.org/api-reference.html> |
 | API | <https://lendara-shield.duckdns.org/v1/info> · health: <https://lendara-shield.duckdns.org/health> |
 | SEP-24 anchor used by ramp mode | Lendara sandbox, home domain `lendara-monorepo-fixh.vercel.app` |
@@ -132,7 +132,7 @@ lendara-shield/
 ├── apps/pool-cli/   Rust: stateless JSON CLI around the SPP SDK (prover, signing, GVK audit).
 │                    The API runs it as a subprocess with an isolated environment.
 ├── apps/web/        Next.js, in English and Spanish: onboarding, deposit (both modes), private
-│                    wallet, audit, and developer docs (/en/docs, /es/docs) with the API reference.
+│                    wallet and audit, plus the API reference; /docs redirects to GitBook.
 │                    The SPP browser SDK proves in the user's browser.
 ├── packages/api-types/  TypeScript types generated from openapi.yaml.
 ├── openapi.yaml     The API contract (source of truth).
@@ -196,7 +196,7 @@ Try the gatekeeper too: onboard another account with **Rejected** (it never ente
 
 ## Documentation
 
-The web app has developer docs in English and Spanish at `/en/docs` and `/es/docs` (overview, protocol, quickstart, API, scenarios, security), plus the full API reference generated from `openapi.yaml` at `/api-reference.html`.
+The developer docs live on [GitBook](https://lendara.gitbook.io/lendara-shield-docs); `/docs`, `/en/docs` and `/es/docs` redirect there. The full API reference generated from `openapi.yaml` is served at `/api-reference.html`.
 
 | Document | Description |
 |---|---|

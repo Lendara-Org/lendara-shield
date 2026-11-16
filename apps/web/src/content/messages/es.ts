@@ -156,6 +156,13 @@ export const es: Messages = {
       transfer: { label: "Transferencia privada a tus llaves", detail: "ext_amount = 0: el monto y el destinatario quedan ocultos." },
     },
     state: { done: "listo", current: "en curso", pending: "pendiente", failed: "falló" },
+    working: {
+      anchor: "Esperando que el anchor confirme tu pago…",
+      received: "Esperando el pago del anchor…",
+      deposit: "Generando la prueba y enviando el depósito al pool…",
+      transfer: "Generando la prueba y enviando la transferencia privada…",
+    },
+    wait: "Esto tarda alrededor de un minuto. Cada paso se pone en verde cuando queda en Stellar.",
     completed: (amount, asset) => `${amount} ${asset} ya están en privado en tu saldo del pool.`,
     ended: (status, message) => `Depósito ${status}${message ? `: ${message}` : "."}`,
     status: { rejected: "rechazado", expired: "vencido", error: "fallido" },

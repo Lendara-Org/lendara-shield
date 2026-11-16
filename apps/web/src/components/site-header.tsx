@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 
 import { shorten } from "@/lib/explorer";
 import { LANGS, switchLang } from "@/lib/i18n";
+import { DOCS_URL } from "@/lib/links";
 
 import { Isotipo } from "./brand/isotipo";
 import { useI18n } from "./i18n";
@@ -19,7 +20,6 @@ export function SiteHeader() {
     { path: "/deposit", label: t.nav.deposit },
     { path: "/wallet", label: t.nav.wallet },
     { path: "/audit", label: t.nav.audit },
-    { path: "/docs", label: t.nav.docs },
   ];
   return (
     <header className="border-b border-line bg-surface">
@@ -31,7 +31,7 @@ export function SiteHeader() {
         <ul className="col-span-2 row-start-2 flex flex-wrap items-center justify-center gap-x-6 gap-y-1 text-lg xl:col-span-1 xl:col-start-2 xl:row-start-1 xl:gap-x-7">
           {links.map(({ path, label }) => {
             const target = href(path);
-            const current = pathname === target || (path === "/docs" && pathname.startsWith(`${target}/`));
+            const current = pathname === target;
             return (
               <li key={path}>
                 <Link
@@ -44,6 +44,11 @@ export function SiteHeader() {
               </li>
             );
           })}
+          <li>
+            <a href={DOCS_URL} className="inline-flex min-h-12 items-center border-b-2 border-transparent text-gray hover:text-ink">
+              {t.nav.docs}
+            </a>
+          </li>
         </ul>
         <div className="col-start-2 row-start-1 flex flex-wrap items-center justify-end gap-3 xl:col-start-3">
           <span className="hidden font-mono text-sm text-gray sm:inline">{wallet ? shorten(wallet.address, 4, 4) : t.nav.testnet}</span>
