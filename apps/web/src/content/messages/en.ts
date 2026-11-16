@@ -154,6 +154,13 @@ export const en = {
       transfer: { label: "Private transfer to your keys", detail: "ext_amount = 0: amount and recipient are hidden." },
     },
     state: { done: "done", current: "in progress", pending: "pending", failed: "failed" },
+    working: {
+      anchor: "Waiting for the anchor to confirm your payment…",
+      received: "Waiting for the anchor's payment…",
+      deposit: "Proving and sending the deposit to the pool…",
+      transfer: "Proving and sending the private transfer…",
+    },
+    wait: "This takes about a minute. Each step turns green when it lands on Stellar.",
     completed: (amount: string, asset: string) => `${amount} ${asset} are now private in your pool balance.`,
     ended: (status: string, message: string | null) => `Deposit ${status}${message ? `: ${message}` : "."}`,
     status: { rejected: "rejected", expired: "expired", error: "failed" } as Record<string, string>,
