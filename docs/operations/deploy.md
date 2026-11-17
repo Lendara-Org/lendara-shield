@@ -28,17 +28,22 @@ for an ordinary change. Pushes to `develop` and pull requests never deploy.
    its state before any network call, AGENTS.md §5.3), so that intent only
    resumes after the restart.
 5. Points `/home/shield/current` at the new release and restarts the web (and
-   starts the API). The systemd units run whatever `current` points to
-   (`deploy/systemd/`).
-6. Checks the web and `/health`. If any cutover step or check fails, it points
-   `current` back to the previous release and restarts it, stopping the new API
-   the same careful way. A missing `max_deposit` after an API restart is reported
-   as a warning (RPC unreachable at startup), not a failure.
-7. Keeps the current release and the three newest others it made.
+   starts the API). The systemd units run whatever `current` points to when they
+   start (`deploy/systemd/`), so after a web-only deploy the API keeps running
+   from the release it started in until its next restart (the binary is the
+   same: it was copied).
+6. Checks the web and, if it restarted the API, `/health`. If any cutover step or
+   check fails, it points `current` back to the previous release and restarts
+   it, stopping the new API the same careful way. An API it did not restart is
+   still checked, and only warned about if unhealthy (rolling back the web would
+   not fix it). A missing `max_deposit` after an API restart is also a warning
+   (RPC unreachable at startup), not a failure.
+7. Keeps the current release, any release a running service still uses, and
+   the three newest others it made.
 
 Root only takes the lock, counts intents in custody and controls the services;
 everything that touches the release files runs as `shield`. Output goes to the
-job log and to `/var/log/shield-deploy.log`. The deploy keeps going if the job is
+job log and to `/var/log/shield-deploy.log` (mode 640). The deploy keeps going if the job is
 cancelled or the SSH connection drops.
 
 ## Access and keys
@@ -49,14 +54,18 @@ cancelled or the SSH connection drops.
   public host keys, so the job refuses an impostor). GitHub never shows the
   secret again, but a workflow running on `main` can use it: **whoever can merge
   to `main` is trusted to deploy**, and review should treat workflow changes as
-  sensitive.
+  sensitive. `main` only blocks force pushes and deletion (a ruleset); pushes
+  need no review, by the team's choice. Whoever holds the key could also ask for
+  `main`'s head before its CI finishes: the server checks the commit, not CI.
 - **Server:** the key belongs to the `deploy` user, which has no password and no
   shell access: its `authorized_keys` entry is
   `restrict,command="/usr/local/sbin/shield-deploy-ssh"`, so the only thing it can
   send is a commit hash. `deploy/deploy-ssh.sh` checks it is 40 hex characters
   and runs `sudo -n /usr/local/sbin/shield-deploy <commit>`, the only command the
-  `deploy` user may run as root (`deploy/sudoers-deploy`). The deployed code
-  runs as `shield`, as before.
+  `deploy` user may run as root, and only with one 40-hex argument
+  (`deploy/sudoers-deploy`, a sudo regex), so not `--manual` or `--bootstrap`.
+  The deployed code runs as `shield`, as before, and can read `.env` like the
+  services always could.
 - The scripts in `/usr/local/sbin` are root-owned copies: changing them in the
   repo does not change the server until someone installs them again
   (`install -o root -g root -m 755 deploy/deploy.sh /usr/local/sbin/shield-deploy`,
