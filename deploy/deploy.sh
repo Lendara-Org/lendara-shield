@@ -73,9 +73,9 @@ stop_api_when_idle() {
 healthy() {
   local api=$1
   for _ in $(seq 1 30); do
-    if curl -fsS -o /dev/null --max-time 5 "$WEB_URL/en" &&
+    if curl -fs -o /dev/null --max-time 5 "$WEB_URL/en" &&
       { [[ $api == no ]] ||
-        curl -fsS --max-time 5 "$API_URL/health" | grep -q '"status":"ok"'; }; then
+        curl -fs --max-time 5 "$API_URL/health" | grep -q '"status":"ok"'; }; then
       return 0
     fi
     sleep 2
@@ -123,6 +123,8 @@ esac
 sha=${1:-}
 [[ $sha =~ ^[0-9a-f]{40}$ ]] || die "usage: shield-deploy [--manual|--bootstrap] <40-hex commit>"
 [[ $EUID == 0 ]] || die "run as root"
+# Over SSH the script starts in /home/deploy, which `shield` cannot enter.
+cd /
 
 # Keep going if the SSH session that started the deploy drops: a half-done
 # cutover is worse than a finished one. Everything also goes to the log.
