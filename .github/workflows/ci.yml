@@ -10,7 +10,8 @@ permissions:
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  # Never cancel a push run: on main it may be deploying.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   js:
@@ -138,4 +139,36 @@ jobs:
       - name: Run actionlint
         run: docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:1.7.12 -color
       - name: Run shellcheck
-        run: docker run --rm -v "$PWD:/mnt" -w /mnt koalaman/shellcheck:v0.10.0 -x scripts/*.sh
+        run: docker run --rm -v "$PWD:/mnt" -w /mnt koalaman/shellcheck:v0.10.0 -x scripts/*.sh deploy/*.sh
+
+  deploy:
+    name: Deploy to the demo server
+    # Only a push to main whose every check passed. The `demo` environment
+    # holds the SSH key and only allows main (docs/operations/deploy.md).
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [js, api, pool-cli, contract, secrets, workflows]
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment:
+      name: demo
+      url: https://lendara-shield.duckdns.org
+    concurrency:
+      group: deploy-demo
+      cancel-in-progress: false
+    steps:
+      - name: Deploy this commit over SSH
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+          DEPLOY_KNOWN_HOSTS: ${{ vars.DEPLOY_KNOWN_HOSTS }}
+          COMMIT: ${{ github.sha }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          # The key's forced command reads only the commit; the server checks
+          # it is main's head, builds, switches and rolls back on failure.
+          ssh -i ~/.ssh/deploy_key -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes -o ServerAliveInterval=30 \
+            "deploy@$DEPLOY_HOST" "$COMMIT"
