@@ -70,17 +70,36 @@ stop_api_when_idle() {
   done
 }
 
+web_ok() { curl -fs -o /dev/null --max-time 5 "$WEB_URL/en"; }
+api_ok() { curl -fs --max-time 5 "$API_URL/health" | grep -q '"status":"ok"'; }
+
+# The web and, when it was restarted, the API. An API that was not restarted
+# is checked afterwards and only warned about: rolling back the web cannot fix it.
 healthy() {
   local api=$1
   for _ in $(seq 1 30); do
-    if curl -fs -o /dev/null --max-time 5 "$WEB_URL/en" &&
-      { [[ $api == no ]] ||
-        curl -fs --max-time 5 "$API_URL/health" | grep -q '"status":"ok"'; }; then
+    if web_ok && { [[ $api == no ]] || api_ok; }; then
       return 0
     fi
     sleep 2
   done
   return 1
+}
+
+# Release directories a running service executes from or works in. Fails if
+# it cannot tell (then nothing is pruned); a stopped service uses none.
+in_use() {
+  local unit pid path dirs=""
+  for unit in shield-api shield-web; do
+    pid=$(systemctl show "$unit" -p MainPID --value) || return 1
+    [[ $pid =~ ^[0-9]+$ ]] || return 1
+    ((pid > 0)) || continue
+    for path in cwd exe; do
+      path=$(readlink -f "/proc/$pid/$path") || return 1
+      dirs+="$path"$'\n'
+    done
+  done
+  printf '%s' "$dirs" | { grep -oE "^$RELEASES/[^/]+" || true; } | sort -u
 }
 
 switch_to() {
@@ -129,6 +148,8 @@ cd /
 # Keep going if the SSH session that started the deploy drops: a half-done
 # cutover is worse than a finished one. Everything also goes to the log.
 trap '' HUP PIPE
+touch /var/log/shield-deploy.log
+chmod 640 /var/log/shield-deploy.log
 exec > >(tee -p -a /var/log/shield-deploy.log) 2>&1
 
 exec 9>/run/lock/shield-deploy.lock
@@ -190,7 +211,8 @@ as_shield bash -c "cd '$rel' && pnpm install --frozen-lockfile --prefer-offline 
 log "web built"
 
 if [[ $build_api == yes ]]; then
-  as_shield bash -c "CARGO_TARGET_DIR='$CARGO_TARGET' cargo build --quiet --manifest-path '$rel/apps/api/Cargo.toml' --release --locked &&
+  # From apps/api so rustup picks its pinned rust-toolchain.toml.
+  as_shield bash -c "cd '$rel/apps/api' && CARGO_TARGET_DIR='$CARGO_TARGET' cargo build --quiet --release --locked &&
     install -m 755 '$CARGO_TARGET/release/shield-api' '$rel/bin/shield-api'"
   log "API built"
 else
@@ -215,14 +237,23 @@ if ! { switch_to "$rel" &&
   healthy "$restart_api"; }; then
   rollback "the cutover or the health checks failed"
 fi
+if [[ $restart_api == no ]] && ! api_ok; then
+  log "warning: the API (not restarted by this deploy) fails /health; see journalctl -u shield-api"
+fi
 if [[ $restart_api == yes ]] && ! curl -fsS --max-time 5 "$API_URL/v1/info" | grep -q '"max_deposit":"[0-9]'; then
   log "warning: /v1/info has no max_deposit (RPC unreachable at startup?); restart shield-api once the RPC answers"
 fi
 log "deployed $sha"
 
-# Keep the current release and the newest others made by this script.
+# Keep the current release, any release a running service uses (the API keeps
+# its release across web-only deploys) and the newest others made by this script.
+if ! used=$(in_use); then
+  log "warning: could not tell which releases the services use; nothing pruned"
+  exit 0
+fi
+keep=$(printf '%s\n' "$rel" "$used")
 as_shield find "$RELEASES" -mindepth 2 -maxdepth 2 -name .commit -printf '%T@ %h\n' | sort -rn | cut -d' ' -f2 |
-  grep -vxF "$rel" | tail -n +$((KEEP_RELEASES + 1)) | while read -r old; do
+  { grep -vxF "$keep" || true; } | tail -n +$((KEEP_RELEASES + 1)) | while read -r old; do
   log "removing old release $old"
   as_shield rm -rf -- "$old"
 done

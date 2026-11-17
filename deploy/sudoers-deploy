@@ -1,2 +1,3 @@
 # /etc/sudoers.d/shield-deploy (mode 440, check with visudo -cf)
-deploy ALL=(root) NOPASSWD: /usr/local/sbin/shield-deploy
+# Only a 40-hex commit as the single argument: no --manual or --bootstrap.
+deploy ALL=(root) NOPASSWD: /usr/local/sbin/shield-deploy ^[0-9a-f]{40}$
